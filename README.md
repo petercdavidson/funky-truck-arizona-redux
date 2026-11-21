@@ -60,7 +60,9 @@ saved to storage while a test parameter is set.
 | `assets/levels.json` | The 9 stages (tile grids and start points) and per-tile collision lines. |
 | `assets/sprites.json` | Each sprite frame's image and its offset from the sprite's origin. |
 
-The game runs on the original 576×448 coordinate grid, scaled to fit the screen.
+The game runs on the original 576×448 coordinate grid, scaled to fit the screen. All words on
+screen are live text in fonts already on the device, so they stay sharp at any size. The menu
+screens are drawn from the original backdrop, keycaps and boxes, with the text added on top.
 
 ## History
 

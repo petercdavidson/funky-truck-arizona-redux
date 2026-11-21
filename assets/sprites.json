@@ -232,25 +232,5 @@
    "sy": 1.0,
    "mul": 0.8984375
   }
- ],
- "dmgLabel": [
-  {
-   "file": "dmgLabel_0.png",
-   "tx": 0.0,
-   "ty": 0.0,
-   "sx": 1.0,
-   "sy": 1.0,
-   "mul": 1.0
-  }
- ],
- "scoreLabel": [
-  {
-   "file": "scoreLabel_0.png",
-   "tx": 0.0,
-   "ty": 0.0,
-   "sx": 1.0,
-   "sy": 1.0,
-   "mul": 1.0
-  }
  ]
 }
