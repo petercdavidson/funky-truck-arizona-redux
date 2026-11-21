@@ -1,10 +1,13 @@
 // render.js — draws the game onto a 2D canvas.
 //
 // All drawing uses the original 576x448 stage coordinates (y down, clockwise rotation), scaled to
-// the canvas. Tiles are drawn in device pixels with snapped edges so they never show seams.
+// the canvas. All art is vector (see vector.js), so it is drawn sharp at whatever size the screen
+// is. Terrain tiles are rendered once per screen size into tile-sized canvases, then drawn in
+// device pixels with snapped edges so they never show seams.
 
 import { TILE, STAGE_W, STAGE_H } from './game.js';
 import { HUD_FONT, TITLE_FONT } from './assets.js';
+import { drawVector } from './vector.js';
 
 const DEG = Math.PI / 180;
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
@@ -22,9 +25,9 @@ export const BUTTONS = {
     { rect: r(229, 320, 120, 25), label: 'Change Truck', action: 'garage' },
     { rect: r(229, 349, 120, 25), label: 'How to Play', action: 'help' },
   ],
-  help: [{ rect: r(229, 386, 120, 25), action: 'menu' }],
+  help: [{ rect: r(229, 386, 120, 25), label: 'Menu', action: 'menu' }],
   garage: [
-    { rect: r(229, 413, 120, 25), action: 'menu' },
+    { rect: r(229, 413, 120, 25), label: 'Menu', action: 'menu' },
     { rect: r(200, 226, 32, 32), action: 'body-1' }, { rect: r(344, 226, 32, 32), action: 'body+1' },
     { rect: r(200, 260, 32, 32), action: 'tyre-1' }, { rect: r(344, 260, 32, 32), action: 'tyre+1' },
     { rect: r(200, 294, 32, 32), action: 'hub-1' }, { rect: r(344, 294, 32, 32), action: 'hub+1' },
@@ -59,6 +62,8 @@ export class Renderer {
     this.offX = 0; this.offY = 0;
     this.hover = null;
     this.touchMode = false;
+    this.tileCache = new Map(); // tile id -> canvas, for the current tile size in device pixels
+    this.tileCacheSize = 0;
   }
 
   /** Fit the 576x448 stage into the canvas element's size, letterboxed. */
@@ -83,17 +88,16 @@ export class Renderer {
 
   // ---- drawing helpers (stage space)
 
-  /** Draw a sprite frame the way Flash places a bitmap in a symbol: top-left at (tx, ty). */
+  /** Draw frame `i` of a vector sprite set at the origin (its registration point). */
   frame(key, i) {
-    const f = this.a.sprites[key][i];
-    const ctx = this.ctx;
+    const f = this.a.art.sprites[key][i];
     if (f.sx !== 1 || f.sy !== 1) {
-      ctx.save();
-      ctx.scale(f.sx, f.sy);
-      ctx.drawImage(f.img, f.tx / f.sx, f.ty / f.sy);
-      ctx.restore();
+      this.ctx.save();
+      this.ctx.scale(f.sx, f.sy);
+      drawVector(this.ctx, f);
+      this.ctx.restore();
     } else {
-      ctx.drawImage(f.img, f.tx, f.ty);
+      drawVector(this.ctx, f);
     }
   }
 
@@ -119,7 +123,8 @@ export class Renderer {
     if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lineWidth; ctx.stroke(); }
   }
 
-  image(name) { this.ctx.drawImage(this.a.images[name], 0, 0); }
+  /** The plain menu backdrop (screen) or the sky behind the course (bg). */
+  backdrop(name) { drawVector(this.ctx, this.a.art[name]); }
 
   buttons(screen) {
     for (const b of BUTTONS[screen] || []) {
@@ -179,6 +184,7 @@ export class Renderer {
     ctx.rect(this.offX, this.offY, Math.round(STAGE_W * this.scale), Math.round(STAGE_H * this.scale));
     ctx.clip();
     const s = this.scale;
+    const size = Math.ceil(TILE * s);
     const tx0 = Math.floor(camX / TILE), ty0 = Math.floor(camY / TILE);
     const edgeX = (gx) => Math.round((gx * TILE - camX) * s) + this.offX;
     const edgeY = (gy) => Math.round((gy * TILE - camY) * s) + this.offY;
@@ -192,16 +198,36 @@ export class Renderer {
         const id = level.tiles[gy][gx];
         if (id === 0) continue; // tile 0 is empty sky
         const x0 = edgeX(gx), x1 = edgeX(gx + 1);
-        ctx.drawImage(this.a.tiles[id], x0, y0, x1 - x0, y1 - y0);
+        const img = this.tileImage(id, size);
+        if (img) ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0);
       }
     }
     ctx.restore();
     this.stageTransform();
   }
 
+  /** A terrain tile rendered from its vector shapes at `size` device pixels (cached). */
+  tileImage(id, size) {
+    if (size !== this.tileCacheSize) { this.tileCache.clear(); this.tileCacheSize = size; }
+    let c = this.tileCache.get(id);
+    if (c === undefined) {
+      const drawing = this.a.art.tiles[id];
+      c = null;
+      if (drawing && drawing.shapes.length) {
+        c = document.createElement('canvas');
+        c.width = c.height = size;
+        const ctx = c.getContext('2d');
+        ctx.scale(size / TILE, size / TILE);
+        drawVector(ctx, drawing);
+      }
+      this.tileCache.set(id, c);
+    }
+    return c;
+  }
+
   world(game, v) {
     const ctx = this.ctx;
-    this.image('bg.jpg');
+    this.backdrop('bg');
     this.tiles(game.levelData, v.camX, v.camY);
     ctx.save();
     ctx.beginPath();
@@ -210,11 +236,13 @@ export class Renderer {
     ctx.translate(-v.camX, -v.camY);
     for (const d of game.dirt) {
       if (d.life === 0) continue;
-      const f = this.a.sprites.dirt[d.frame];
+      ctx.save();
       ctx.globalAlpha = d.alpha;
-      ctx.drawImage(f.img, d.x + f.tx * d.scale, d.y + f.ty * d.scale, f.img.width * d.scale, f.img.height * d.scale);
+      ctx.translate(d.x, d.y);
+      ctx.scale(d.scale, d.scale);
+      this.frame('dirt', d.frame);
+      ctx.restore();
     }
-    ctx.globalAlpha = 1;
     this.truck(v.T, v.rr, v.fr, game.look);
     ctx.restore();
     this.hud(game);
@@ -222,8 +250,8 @@ export class Renderer {
 
   hud(game) { // Symbol 305 / X3323
     const ctx = this.ctx;
-    ctx.save(); ctx.translate(10, 10); this.frame('dmgLabel', 0); ctx.restore();
-    ctx.save(); ctx.translate(530, 13); this.frame('scoreLabel', 0); ctx.restore();
+    this.text('damage', 9.5, 7.5, { size: 15, font: HUD_FONT, weight: '800', align: 'left' });
+    this.text('score', 566.5, 9, { size: 12.5, font: HUD_FONT, weight: '800', align: 'right' });
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.fillRect(13.1, 25, 80, 10);
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
@@ -240,7 +268,7 @@ export class Renderer {
   // ---- screens
 
   title(game, v) {
-    this.image('screen_plain.png');
+    this.backdrop('screen');
     const shadow = 'rgba(38,38,38,0.85)';
     this.text('funky truck', STAGE_W / 2, 18, { size: 62, weight: '900', color: '#f5f5f5', shadow });
     this.text('UTAH', 470, 94, { size: 28, weight: '900', color: '#f5f5f5', shadow, align: 'right' });
@@ -254,6 +282,89 @@ export class Renderer {
       ? 'Use the on-screen pedals and tilt buttons to drive'
       : 'Arrow keys drive and tilt  ·  P pauses  ·  Esc returns to the menu';
     this.text(hint, STAGE_W / 2, 422, { size: 11, weight: '600', color: 'rgba(255,255,255,0.78)' });
+  }
+
+  help() {
+    this.backdrop('screen');
+    const label = { size: 14, weight: '600', align: 'left' };
+    const keys = [['up', 'Forwards'], ['down', 'Reverse'], ['left', 'Tilt Back'], ['right', 'Tilt Forwards']];
+    keys.forEach(([dir, name], i) => {
+      this.keycap(238.5, 54 + i * 29.5, dir);
+      this.text(name, 269, 65 + i * 29.5, label);
+    });
+    const line = { size: 14, weight: '600' };
+    this.text('Press P to Pause', STAGE_W / 2, 202, line);
+    this.text('Your truck is four-wheel drive.', STAGE_W / 2, 262, line);
+    this.text('To climb steep hills, tilt forwards so that your front wheel stays on the ground.', STAGE_W / 2, 296, { ...line, size: 13.5 });
+    this.buttons('help');
+  }
+
+  /** A chunky arrow key, as on the original help screen. (cx, top) is the centre of its top. */
+  keycap(cx, top, dir) {
+    const ctx = this.ctx;
+    // skirt: a trapezoid flaring out below the key face, lit from the left
+    ctx.beginPath();
+    ctx.moveTo(cx - 15, top + 1);
+    ctx.quadraticCurveTo(cx - 20, top + 3, cx - 22, top + 30);
+    ctx.quadraticCurveTo(cx - 22.5, top + 35, cx - 17, top + 36);
+    ctx.lineTo(cx + 17, top + 36);
+    ctx.quadraticCurveTo(cx + 22.5, top + 35, cx + 22, top + 30);
+    ctx.quadraticCurveTo(cx + 20, top + 3, cx + 15, top + 1);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(cx - 22, 0, cx + 22, 0);
+    g.addColorStop(0, '#f1f4ee'); g.addColorStop(0.16, '#bdc6ad'); g.addColorStop(0.78, '#aab493'); g.addColorStop(1, '#7c8766');
+    ctx.fillStyle = g;
+    ctx.fill();
+    this.roundRect(cx - 16.5, top, 33, 21, 5, '#d3dccd');
+    // arrow glyph
+    ctx.save();
+    ctx.translate(cx, top + 10.5);
+    ctx.rotate({ up: 0, right: 90, down: 180, left: 270 }[dir] * DEG);
+    ctx.beginPath();
+    ctx.moveTo(0, -6); ctx.lineTo(5, -0.5); ctx.lineTo(1.8, -0.5); ctx.lineTo(1.8, 5.5);
+    ctx.lineTo(-1.8, 5.5); ctx.lineTo(-1.8, -0.5); ctx.lineTo(-5, -0.5); ctx.closePath();
+    ctx.fillStyle = '#5b644a';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  garage(game, v) {
+    this.backdrop('screen');
+    this.roundRect(10, 10, 556, 25, 3, 'rgba(0,0,0,0.2)');
+    this.text('Your Truck', STAGE_W / 2, 15.5, { size: 14, weight: '700' });
+    this.truck(v.gT, v.grr, v.gfr, game.look);
+    ['Body', 'Tyres', 'Wheels'].forEach((name, i) => {
+      const y = 226 + i * 34;
+      this.text(name, STAGE_W / 2, y + 8, { size: 14, weight: '700' });
+      this.arrowButton(200, y, -1);
+      this.arrowButton(344, y, 1);
+    });
+    this.buttons('garage');
+  }
+
+  arrowButton(x, y, dir) {
+    const ctx = this.ctx;
+    this.roundRect(x, y, 32, 32, 3, 'rgba(0,0,0,0.2)');
+    ctx.save();
+    ctx.translate(x + 16, y + 16);
+    ctx.scale(-dir, 1);
+    ctx.beginPath();
+    ctx.moveTo(6.5, -2.5); ctx.lineTo(-0.5, -2.5); ctx.lineTo(-0.5, -6); ctx.lineTo(-7, 0);
+    ctx.lineTo(-0.5, 6); ctx.lineTo(-0.5, 2.5); ctx.lineTo(6.5, 2.5); ctx.closePath();
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  practiceSelect() {
+    this.backdrop('screen');
+    this.text('Choose a Stage', STAGE_W / 2, 164, { size: 14, weight: '700' });
+    for (let i = 0; i < 9; i++) {
+      const x = 136 + 34 * i;
+      this.roundRect(x, 228, 32, 32, 3, 'rgba(0,0,0,0.2)');
+      this.text(String(i + 1), x + 16, 234.5, { size: 17, weight: '700' });
+    }
+    this.buttons('practiceSelect');
   }
 
   overlayDim(alpha) {
@@ -295,13 +406,9 @@ export class Renderer {
     ctx.clip();
     switch (game.screen) {
       case 'title': this.title(game, v); break;
-      case 'help': this.image('screen_help.png'); this.buttons('help'); break;
-      case 'garage':
-        this.image('screen_garage.png');
-        this.truck(v.gT, v.grr, v.gfr, game.look);
-        this.buttons('garage');
-        break;
-      case 'practiceSelect': this.image('screen_practice.png'); this.buttons('practiceSelect'); break;
+      case 'help': this.help(); break;
+      case 'garage': this.garage(game, v); break;
+      case 'practiceSelect': this.practiceSelect(); break;
       case 'playing': this.world(game, v); break;
       case 'paused': this.world(game, v); this.paused(); break;
       case 'gameOver': this.world(game, v); this.gameOver(game); break;

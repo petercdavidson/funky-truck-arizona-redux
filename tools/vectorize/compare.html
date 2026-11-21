@@ -1,0 +1,57 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Raster vs vector</title>
+<style>
+  body { background: #9aabb8; font: 13px system-ui, sans-serif; margin: 12px; }
+  h2 { margin: 18px 0 6px; font-size: 15px; }
+  canvas { background: #cfdbe4; margin: 2px; vertical-align: top; }
+  .pair { display: inline-block; margin: 0 10px 10px 0; }
+</style>
+<p>Left of each pair: the original raster art (art/raster). Right: assets/vector.json. Zoom: <select id="z"><option>2</option><option selected>4</option><option>8</option></select></p>
+<div id="out"></div>
+<script type="module">
+// Side-by-side check of the traced vector art against the raster originals.
+import { drawVector } from '../../src/vector.js';
+const z = document.getElementById('z'), out = document.getElementById('out');
+const R = '../../art/raster/';
+const img = (f) => new Promise((r) => { const i = new Image(); i.onload = () => r(i); i.src = R + f; });
+const vec = await (await fetch('../../assets/vector.json', { cache: 'no-store' })).json();
+const frames = await (await fetch('../../art/sprites.json')).json();
+async function render() {
+  const Z = Number(z.value);
+  out.innerHTML = '';
+  const section = (t) => { const h = document.createElement('h2'); h.textContent = t; out.appendChild(h); };
+  const pair = (w, h, drawA, drawB, s = Z) => {
+    const d = document.createElement('div'); d.className = 'pair';
+    for (const fn of [drawA, drawB]) {
+      const c = document.createElement('canvas'); c.width = w * s; c.height = h * s;
+      const ctx = c.getContext('2d'); ctx.scale(s, s); fn(ctx); d.appendChild(c);
+    }
+    out.appendChild(d);
+  };
+  for (const key of Object.keys(vec.sprites)) {
+    section(key);
+    for (let i = 0; i < frames[key].length; i++) {
+      const f = frames[key][i], im = await img(f.file), v = vec.sprites[key][i];
+      const w = im.width * f.sx, h = im.height * f.sy;
+      pair(w, h, (c) => { c.drawImage(im, 0, 0, w, h); }, (c) => { c.translate(-f.tx, -f.ty); c.scale(v.sx, v.sy); drawVector(c, v); });
+    }
+  }
+  section('background');
+  const bg = await img('bg.jpg');
+  pair(576, 448, (c) => c.drawImage(bg, 0, 0), (c) => drawVector(c, vec.bg), Math.min(Z, 2) / 2 * 1.4);
+  section('menu screen');
+  const sp = await img('screen_plain.png');
+  pair(576, 448, (c) => c.drawImage(sp, 0, 0), (c) => drawVector(c, vec.screen), 0.5);
+  section('tiles (sheet)');
+  const rgb = await img('tiles_rgb.jpg'), al = await img('tiles_alpha.png');
+  const sheet = document.createElement('canvas'); sheet.width = 640; sheet.height = 1472;
+  { const c = sheet.getContext('2d'); c.drawImage(al, 0, 0); const a = c.getImageData(0, 0, 640, 1472); c.drawImage(rgb, 0, 0); const d = c.getImageData(0, 0, 640, 1472); for (let i = 0; i < d.data.length; i += 4) d.data[i + 3] = a.data[i]; c.putImageData(d, 0, 0); }
+  const TS = Z / 2;
+  pair(640, 1472, (c) => c.drawImage(sheet, 0, 0), (c) => {
+    vec.tiles.forEach((t, id) => { c.save(); c.translate((id % 10) * 64, Math.floor(id / 10) * 64); c.beginPath(); c.rect(0, 0, 64, 64); c.clip(); drawVector(c, t); c.restore(); });
+  }, TS);
+}
+z.onchange = render;
+render();
+</script>

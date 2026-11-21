@@ -19,7 +19,9 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `src/render.js`: canvas drawing, plus `BUTTONS`, the clickable areas for each screen.
 - `src/main.js`: startup, the fixed-step loop, input (keyboard, pointer, on-screen controls,
   gamepad), and `applyTestParams` (`?test=...` URL hooks used for screenshots).
-- `src/assets.js`: image and level loading, tile preparation, font stacks.
+- `src/assets.js`: level and vector-art loading, font stacks.
+- `src/vector.js`: draws vector drawings (`assets/vector.json`) with Path2D. All art is vector;
+  regenerate it with `node tools/vectorize.mjs` from `art/raster/` rather than editing the JSON.
 - `index.html` / `style.css`: page shell, loading screen, touch controls.
 
 ## Rules that keep the game feeling right
