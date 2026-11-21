@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Game, TILE, STUCK_STEPS } from '../src/game.js';
+import { Game, TILE, STUCK_STEPS, CAMERA } from '../src/game.js';
 import { turnOver, memoryStore } from './helpers.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
@@ -174,8 +174,9 @@ test('a taller view keeps the truck centred top to bottom', () => {
   g.viewH = 800;
   settle(g, 300);
   const [, fy] = g.focus;
-  const want = Math.min(fy - 400, g.maxCamY); // centred, unless that would show below the level
-  assert.equal(g.maxCamY, data.levels[0].height * TILE - 800);
+  const want = Math.min(fy - 400 * g.zoom, g.maxCamY); // centred, unless that would show below the level
+  assert.ok(Math.abs(g.zoom - 1) < 0.01, `at rest the camera is close in (${g.zoom.toFixed(3)})`);
+  assert.equal(g.maxCamY, data.levels[0].height * TILE - 800 * g.zoom);
   assert.ok(Math.abs(g.camY - want) < 20, `camera at ${Math.round(g.camY)}, expected about ${Math.round(want)}`);
 });
 
@@ -242,4 +243,47 @@ test('each body keeps its own paint, starting in its own colour, and the choice 
     assert.deepEqual(h.look.paint, [0, 1, 2, 3, 4, 5], `ignored ${JSON.stringify(bad.paint)}`);
     assert.equal(h.look.body, 1);
   }
+});
+
+test('outside Classic the camera pulls back high in the air, keeps the truck in view, and closes in again', () => {
+  const g = new Game(data);
+  g.startCampaign();
+  settle(g, 200);
+  assert.ok(g.zoom < 1.02, `close in at rest (${g.zoom.toFixed(3)})`);
+  const t = g.truck;
+  for (let i = 1; i < 10; i += 2) t.P[i] = t.T[i] + 11; // thrown straight up, about 550 px high
+  let most = 1;
+  for (let i = 0; i < 200; i++) {
+    g.step();
+    most = Math.max(most, g.zoom);
+    const x = (t.T[0] - g.camX) / g.zoom, y = (t.T[1] - g.camY) / g.zoom; // where it shows on screen
+    assert.ok(x > 0 && x < 576 && y > 0 && y < g.viewH, `truck on screen at step ${i} (${x.toFixed(0)}, ${y.toFixed(0)})`);
+  }
+  assert.ok(most > 1.3, `pulled back for the height (${most.toFixed(2)})`);
+  assert.ok(most <= CAMERA.maxZoom);
+  settle(g, 600);
+  assert.ok(g.zoom < 1.05, `closed in again once down (${g.zoom.toFixed(3)})`);
+
+  const c = new Game(data);
+  c.startCampaign(true);
+  settle(c);
+  const ct = c.truck;
+  for (let i = 1; i < 10; i += 2) ct.P[i] = ct.T[i] + 11;
+  for (let i = 0; i < 200; i++) { c.step(); assert.equal(c.zoom, 1, 'Classic keeps the original camera'); }
+});
+
+test('the camera pulls back a little when the truck is going fast', () => {
+  const g = new Game(data);
+  g.practiceDamage = false;
+  g.startPractice(0);
+  g.keys.up = true;
+  let fastest = 0, zoomAtSpeed = 1;
+  for (let i = 0; i < 1500; i++) {
+    g.keys.right = g.truck.bodyRot < -25; g.keys.left = g.truck.bodyRot > 25;
+    g.step();
+    const t = g.truck, v = Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]);
+    if (g.ground < CAMERA.heightFrom && v > fastest) { fastest = v; zoomAtSpeed = g.zoom; }
+  }
+  assert.ok(fastest > CAMERA.speedFrom + 2, `got going (${fastest.toFixed(1)} px/step)`);
+  assert.ok(zoomAtSpeed > 1.03, `pulled back at speed (${zoomAtSpeed.toFixed(3)})`);
 });

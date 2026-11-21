@@ -279,7 +279,8 @@ export class Renderer {
 
   // ---- world
 
-  tiles(level, camX, camY) {
+  /** `zoom` is the dynamic camera's pull-back: the view shows `zoom` times as much of the world. */
+  tiles(level, camX, camY, zoom = 1) {
     // Draw in device pixels with edges snapped to whole pixels so adjacent tiles meet exactly.
     const ctx = this.ctx;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -287,12 +288,13 @@ export class Renderer {
     ctx.beginPath();
     ctx.rect(this.offX, this.offY, Math.round(STAGE_W * this.scale), Math.round(this.viewH * this.scale));
     ctx.clip();
-    const s = this.scale;
+    const s = this.scale / zoom;
     const tx0 = Math.floor(camX / TILE), ty0 = Math.floor(camY / TILE);
     const edgeX = (gx) => Math.round((gx * TILE - camX) * s) + this.offX;
     const edgeY = (gy) => Math.round((gy * TILE - camY) * s) + this.offY;
-    const rows = Math.ceil(this.viewH / TILE) + 1;
-    for (let c = 0; c < 10; c++) {
+    const rows = Math.ceil(this.viewH * zoom / TILE) + 1;
+    const cols = Math.ceil(STAGE_W * zoom / TILE) + 1;
+    for (let c = 0; c < cols; c++) {
       const gx = tx0 + c;
       if (gx < 0 || gx >= level.width) continue;
       const x0 = edgeX(gx), x1 = edgeX(gx + 1);
@@ -320,11 +322,13 @@ export class Renderer {
     // The backdrop is scaled up evenly to cover a taller view, and centred.
     const bg = this.a.images['bg.jpg'], k = Math.max(1, this.viewH / STAGE_H);
     ctx.drawImage(bg, (STAGE_W - STAGE_W * k) / 2, (this.viewH - STAGE_H * k) / 2, STAGE_W * k, STAGE_H * k);
-    this.tiles(game.levelData, v.camX, v.camY);
+    const zoom = game.rules.classic ? 1 : v.zoom || 1;
+    this.tiles(game.levelData, v.camX, v.camY, zoom);
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, STAGE_W, this.viewH);
     ctx.clip();
+    ctx.scale(1 / zoom, 1 / zoom);
     ctx.translate(-v.camX, -v.camY);
     for (const d of game.dirt) {
       if (d.life === 0) continue;

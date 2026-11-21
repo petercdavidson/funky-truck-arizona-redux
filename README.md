@@ -13,10 +13,19 @@ site on GitHub Pages.
 | **Endless** | A course generated as you drive that never ends. No damage: it's free play. **End Run** in the pause menu finishes the run and saves your best distance. |
 | **Practice** | One stage of your choice, played like Play. Options on the stage screen switch **Damage** off and play by **Classic** rules. |
 
-Outside Classic, the driving view fills the window. It always shows the same width of the world
-(the original 576 units), so everyone sees the same distance ahead; a taller window shows more
-sky and ground, a wider one less. The backdrop scales up evenly to cover it. Classic and the menus
-keep the original 576×448 view.
+Outside Classic, the driving view fills the window. Close in, it shows the same width of the
+world (the original 576 units), so everyone sees the same distance ahead; a taller window shows
+more sky and ground, a wider one less. The backdrop scales up evenly to cover it. Classic keeps
+the original 576×448 view. The menus' backdrop fills the window, with the menu centred on it.
+
+**Dynamic camera** (outside Classic): the camera pulls back when the truck is going fast or is
+high above the ground, up to 1.8 times as much of the world. High in the air it also aims below
+the truck, so you can see where you'll land. It closes in again once the truck settles. Classic
+keeps the original fixed camera. The settings are `CAMERA` in `src/game.js`.
+
+**Garage**: choose the truck's body, paint, tyres and wheels. Any body can wear any body's
+colour; each body starts in its own and remembers the paint you give it. Only the look changes:
+every body and tyre drives exactly the same.
 
 Play, Classic and Endless each keep their own best (score, score, distance). A Practice run with
 damage saves to Play's or Classic's best; a damage-free one saves none.
@@ -52,7 +61,9 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Sound on / off | M | Sound switch (title screen or pause menu) | |
 | Full screen | F | | |
 
-The best scores, the options and the truck chosen in the garage are saved in the browser
+**How to Play** is the small button under the controls hint on the title screen.
+
+The best scores, the options and the truck chosen in the garage (with each body's paint) are saved in the browser
 (`localStorage`).
 
 ## Endless Mode
@@ -119,7 +130,7 @@ checks the truck moves, and saves screenshots. Pass a folder as the first argume
 where they go: `node tests/phone-check.mjs /tmp/shots`.
 
 For screenshots of a particular state, the page accepts test parameters, for example
-`?test=play&stage=5&frames=600&touch=1` (add `&classic=1` or `&damage=0` for those Practice options), or `?test=endless&seed=3&frames=600` for Endless Mode. See `applyTestParams` in `src/main.js`. Nothing is
+`?test=play&stage=5&frames=600&touch=1` or `?test=garage&look=3,1,2,0` (body, tyre, wheel, paint) (add `&classic=1` or `&damage=0` for those Practice options), or `?test=endless&seed=3&frames=600` for Endless Mode. See `applyTestParams` in `src/main.js`. Nothing is
 saved to storage while a test parameter is set.
 
 ## Code layout
@@ -134,7 +145,7 @@ saved to storage while a test parameter is set.
 | `src/wreck.js` | The ragdoll wreck: a wrecked truck's loose pieces (outside Classic). |
 | `src/tricks.js` | Spots tricks (flips, airtime, wheelies, clean landings) and scores them in chains. |
 | `src/main.js` | Startup, the fixed 70 steps/second loop with smooth interpolated drawing, and all input. |
-| `src/assets.js` | Loads the images and level data, and prepares the terrain tiles. The game uses fonts already on the device and ships no font files. |
+| `src/assets.js` | Loads the images and level data, prepares the terrain tiles, and repaints each body in every body's colour (leaving the window glass alone). The game uses fonts already on the device and ships no font files. |
 | `index.html`, `style.css` | Page layout, loading screen and the on-screen touch controls. |
 | `assets/levels.json` | The 9 stages (tile grids and start points) and per-tile collision lines. |
 | `assets/sprites.json` | Each sprite frame's image and its offset from the sprite's origin. |

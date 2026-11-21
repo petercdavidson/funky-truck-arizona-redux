@@ -432,6 +432,18 @@ export const RULES = {
   endless: { classic: false, damage: false },
 };
 
+/**
+ * The dynamic camera (outside Classic): it pulls back to show more when the truck is going fast
+ * or is high above the ground, and closes in again when it settles. `zoom` is how many times the
+ * usual view it shows (1 = the original 576 across).
+ */
+export const CAMERA = {
+  maxZoom: 1.8,
+  speedFrom: 4, speedTo: 12, speedZoom: 0.3,       // px per step: no pull-back at 4, full at 12
+  heightFrom: 60, heightTo: 600, heightZoom: 0.65, // px above the ground
+  out: 0.03, in: 0.012,                            // share of the gap closed each step
+};
+
 /** Flip-upright assist: steps of being stuck before the button appears. */
 export const STUCK_STEPS = 140;
 const RIGHTING_STEPS = 80;
@@ -496,6 +508,8 @@ export class Game {
     this.wrecked = false;
     this.finished = false;
     this.camX = 0; this.camY = 0;     // J1Fc4 / k20D4
+    this.zoom = 1;                    // the dynamic camera's pull-back (outside Classic)
+    this.ground = 0;                  // the truck's height above the ground (dynamic camera)
     // How much of the world shows top to bottom. The width is always the original 576; outside
     // Classic the renderer sets the height to fit the window's shape. It only moves the camera.
     this.viewH = STAGE_H;
@@ -516,8 +530,8 @@ export class Game {
   }
 
   get levelData() { return this.mode === 'endless' ? this.course.level : this.data.levels[this.level]; }
-  get maxCamX() { return this.levelData.width * TILE - STAGE_W; }   // N53D4
-  get maxCamY() { return this.levelData.height * TILE - this.viewH; }  // o64D4
+  get maxCamX() { return this.levelData.width * TILE - STAGE_W * this.zoom; }   // N53D4
+  get maxCamY() { return this.levelData.height * TILE - this.viewH * this.zoom; }  // o64D4
 
   saveLook() { this.store.set('truckLook', { ...this.look, paint: this.look.paint.slice() }); }
 
@@ -581,6 +595,7 @@ export class Game {
     const s = this.levelData.start;
     this.truck.reset(s[0], s[1]);
     this.truck.rearWheelRot = 0; this.truck.frontWheelRot = 0;
+    this.zoom = 1; this.ground = 0;
     this.camX = Math.min(Math.max(s[0] - 150, 0), this.maxCamX);       // s4833
     this.camY = Math.min(Math.max(s[1] - this.viewH / 2, 0), this.maxCamY);
     this.updateCamera();
@@ -651,14 +666,43 @@ export class Game {
 
   updateCamera() { // T5933 + w6015
     const [fx, fy] = this.focus;
-    let dx = (fx - 150 - this.camX) * 0.2;
-    let dy = (fy - this.viewH / 2 - this.camY) * 0.2;
+    if (!this.rules.classic) this.updateZoom();
+    const z = this.zoom;
+    // High in the air, the camera aims below the truck so the ground it's coming down on shows.
+    const lower = this.rules.classic ? 0 : Math.min(this.ground, this.viewH * z * 0.6) * 0.5;
+    let dx = (fx - 150 * z - this.camX) * 0.2;
+    let dy = (fy + lower - this.viewH * z / 2 - this.camY) * 0.2;
     dx = Math.max(Math.min(dx, TILE), -TILE);
     dy = Math.max(Math.min(dy, TILE), -TILE);
     // Outside Classic there's no ceiling, so the camera rises to keep a high-flying truck in view.
-    const top = this.rules.classic ? 0 : Math.min(0, fy - 110);
+    const top = this.rules.classic ? 0 : Math.min(0, fy - 110 * z);
     this.camX = Math.min(Math.max(this.camX + dx, 0), this.maxCamX);
     this.camY = Math.min(Math.max(this.camY + dy, top), Math.max(this.maxCamY, top));
+  }
+
+  /** How far below the point (x, y) the ground is (a wheel centre's resting height), up to `max`. */
+  groundBelow(x, y, max = 1000) {
+    const h = this.world.collide(x, y, x, y + max);
+    return h ? Math.max(0, h.y - y) : max;
+  }
+
+  /** The dynamic camera: pull back for speed and for height above the ground. */
+  updateZoom() {
+    const C = CAMERA, t = this.truck;
+    let speed = 0;
+    if (this.wreck) this.ground = 0; // close in on a wreck
+    else {
+      // On the ground (even a steep slope, where straight down can miss it) the height is 0. In
+      // the air, look down from the wheel centres, which are always kept clear of the ground.
+      this.ground = t.rearContact || t.frontContact ? 0
+        : Math.min(this.groundBelow(t.T[2], t.T[3]), this.groundBelow(t.T[4], t.T[5]));
+      speed = Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]);
+    }
+    const ramp = (v, a, b) => Math.max(0, Math.min(1, (v - a) / (b - a)));
+    const target = Math.min(C.maxZoom, 1
+      + ramp(speed, C.speedFrom, C.speedTo) * C.speedZoom
+      + ramp(this.ground, C.heightFrom, C.heightTo) * C.heightZoom);
+    this.zoom += (target - this.zoom) * (target > this.zoom ? C.out : C.in);
   }
 
   spawnDirt(x, y, vx, vy) { // X7381

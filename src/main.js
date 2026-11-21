@@ -241,7 +241,7 @@ function pollGamepads() {
 function snapshot() {
   const t = game.truck, g = game.garageTruck;
   return {
-    T: t.T.slice(), camX: game.camX, camY: game.camY, rr: t.rearWheelRot, fr: t.frontWheelRot,
+    T: t.T.slice(), camX: game.camX, camY: game.camY, zoom: game.zoom, rr: t.rearWheelRot, fr: t.frontWheelRot,
     gT: g.T.slice(), grr: g.rearWheelRot, gfr: g.frontWheelRot,
     W: game.wreck ? game.wreck.T.slice() : null,
   };
@@ -250,7 +250,7 @@ function snapshot() {
 function lerpView(a, b, t) {
   const L = (x, y) => x + (y - x) * t;
   return {
-    T: a.T.map((x, i) => L(x, b.T[i])), camX: L(a.camX, b.camX), camY: L(a.camY, b.camY),
+    T: a.T.map((x, i) => L(x, b.T[i])), camX: L(a.camX, b.camX), camY: L(a.camY, b.camY), zoom: L(a.zoom, b.zoom),
     rr: L(a.rr, b.rr), fr: L(a.fr, b.fr),
     gT: a.gT.map((x, i) => L(x, b.gT[i])), grr: L(a.grr, b.grr), gfr: L(a.gfr, b.gfr),
     W: a.W && b.W && a.W.length === b.W.length ? a.W.map((x, i) => L(x, b.W[i])) : b.W,
