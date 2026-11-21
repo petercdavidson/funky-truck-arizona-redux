@@ -548,7 +548,7 @@ export class Renderer {
   title(game, v) {
     const shadow = 'rgba(38,38,38,0.85)';
     const version = `v${VERSION}${BUILD === 'dev' ? '' : `  ·  ${BUILD}`}`;
-    const small = { size: 9, weight: '600', color: 'rgba(255,255,255,0.5)', align: 'right' };
+    const small = { size: 12, weight: '700', color: 'rgba(255,255,255,0.8)', align: 'right', shadow: 'rgba(38,38,38,0.5)' };
     const hintStyle = { weight: '600', color: 'rgba(255,255,255,0.78)' };
     const best = this.bestsLine(game);
     if (this.tall) {
@@ -559,7 +559,7 @@ export class Renderer {
       this.buttons('title', game);
       if (best) this.fitText(best, cx, 578, 340, { size: 13, weight: '600' });
       this.wrapText(this.controlsHint(game), cx, 600, 330, { size: 12, ...hintStyle }, 15);
-      this.text(version, TALL_W - 8, 674, { ...small, size: 10 });
+      this.text(version, TALL_W - 8, 670, { ...small, size: 14 });
       return;
     }
     this.text('funky truck', STAGE_W / 2, 18, { size: 62, weight: '900', color: '#f5f5f5', shadow });
@@ -568,7 +568,7 @@ export class Renderer {
     this.buttons('title', game);
     if (best) this.text(best, STAGE_W / 2, 393, { size: 14, weight: '600' });
     this.text(this.controlsHint(game), STAGE_W / 2, 410, { size: 11, ...hintStyle });
-    this.text(version, STAGE_W - 8, 432, small);
+    this.text(version, STAGE_W - 8, 430, small);
   }
 
   help() {
