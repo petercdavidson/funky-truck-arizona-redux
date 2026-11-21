@@ -10,8 +10,10 @@
 const GRAVITY = 0.11;     // the truck's gravity per step (Truck.integrate)
 
 // The body sprite's outline in its own frame (origin at the rear body mount, x towards the front
-// mount, 0.7 scale as drawn), shrunk a little so the corners sit on the ground convincingly.
-const BODY_BOX = [[-10, -26], [62, -26], [62, 10], [-10, 10]];
+// mount, 0.7 scale as drawn), shrunk a little so the corners sit on the ground convincingly. The
+// four corners come first; the points after them sit along the long edges, so a bump in the
+// ground can't poke up through the middle of the body.
+const BODY_BOX = [[-10, -26], [62, -26], [62, 10], [-10, 10], [14, -26], [38, -26], [38, 10], [14, 10]];
 
 // Per piece: share of the speed into the ground that bounces back, share of the speed along the
 // ground kept on each contact, and share of the speed kept each step in the air.
@@ -49,7 +51,17 @@ export class Wreck {
     const now = frame(T, T[6], T[7], T[8], T[9]);
     const before = frame(P, P[6], P[7], P[8], P[9]);
     this.body = now.map((p, i) => add(p[0], p[1], before[i][0], before[i][1], true));
-    for (let a = 0; a < 4; a++) for (let b = a + 1; b < 4; b++) stick(this.body[a], this.body[b]);
+    const n = this.body.length;
+    for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) stick(this.body[a], this.body[b]);
+    // A truck is wrecked by scraping its cab, so part of the body box often starts inside the
+    // ground, where the collision test can't see it (it only stops points crossing a surface from
+    // the front). Lift the whole box clear first, or it sinks into the ground.
+    // The wheel centres and the cab's roof probe are kept clear of the ground by the truck's own
+    // collisions, so they are safe places to measure from (the chassis centre is not: it can sit
+    // inside a sharp crest with a wheel either side).
+    const refs = [[T[2], T[3]], [T[4], T[5]]];
+    if (truck.probePrev) refs.push(truck.probePrev.slice());
+    this.liftClear(this.body, refs);
 
     // Wheels, keeping their spin.
     this.wheels = [
@@ -63,15 +75,42 @@ export class Wreck {
       const a = add(cx, cy, P[0], P[1], true);
       const b = add(T[p], T[p + 1], P[p], P[p + 1], true);
       stick(a, b);
+      this.liftClear([a, b], refs);
       return { a, b, frame: frameIndex };
     });
     this.steps = 0;
   }
 
+  /**
+   * Move the points `pts` together (now and a step ago, so their speed is kept) until none of
+   * them is inside the ground. Inside means the straight line out to the point from the nearest
+   * of `refs`, places known to be clear of the ground, crosses a surface.
+   */
+  liftClear(pts, refs) {
+    const T = this.T, P = this.P;
+    for (let tries = 0; tries < 8; tries++) {
+      let best = null, depth = 0;
+      for (const i of pts) {
+        const x = T[i * 2], y = T[i * 2 + 1];
+        let ref = refs[0], rd = Infinity;
+        for (const q of refs) { const d = Math.hypot(q[0] - x, q[1] - y); if (d < rd) { rd = d; ref = q; } }
+        const h = this.thinWorld.collide(ref[0], ref[1], x, y);
+        if (!h) continue;
+        const dx = h.x - T[i * 2], dy = h.y - T[i * 2 + 1], d = Math.hypot(dx, dy);
+        if (d > depth) { depth = d; best = [dx, dy]; }
+      }
+      if (!best) return;
+      for (const i of pts) {
+        T[i * 2] += best[0]; T[i * 2 + 1] += best[1];
+        P[i * 2] += best[0]; P[i * 2 + 1] += best[1];
+      }
+    }
+  }
+
   /** The body's middle, for the camera to follow. */
   get centre() {
     let x = 0, y = 0;
-    for (const i of this.body) { x += this.T[i * 2]; y += this.T[i * 2 + 1]; }
+    for (const i of this.body.slice(0, 4)) { x += this.T[i * 2]; y += this.T[i * 2 + 1]; }
     return [x / 4, y / 4];
   }
 

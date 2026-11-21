@@ -195,3 +195,28 @@ test('wreck wheels keep rolling after the body has stopped', () => {
   assert.ok(wheels > 1, `a wheel is still rolling (${wheels.toFixed(2)} px/step)`);
   assert.ok(body < wheels, `faster than the body (${body.toFixed(2)})`);
 });
+
+test('a wreck that starts with its cab in the ground is lifted clear and never sinks in', () => {
+  // Places where the truck used to wreck with part of its body box already inside the ground,
+  // which then fell through (the body "lost its hitbox").
+  for (const [stage, frames, vy] of [[4, 250, 3], [4, 400, 0], [1, 400, 6], [5, 282, 0], [8, 1059, 4]]) {
+    const g = new Game(data, { random: () => 0.5 });
+    g.startPractice(stage);
+    g.keys.up = true;
+    for (let i = 0; i < frames; i++) { g.keys.right = g.truck.bodyRot < -25; g.keys.left = g.truck.bodyRot > 25; g.step(); }
+    for (let i = 1; i < 10; i += 2) g.truck.P[i] -= vy;
+    g.damage = 1000;
+    g.step();
+    const w = g.wreck;
+    // How far a point is below the surface: sweep down to it from a little above.
+    const depth = (i) => {
+      const world = w.thin[i] ? w.thinWorld : w.wheelWorld, x = w.T[i * 2], y = w.T[i * 2 + 1];
+      const h = world.collide(x, y - 80, x, y);
+      return h ? y - h.y : 0;
+    };
+    for (let s = 0; s < 300; s++) {
+      for (let i = 0; i < w.thin.length; i++) assert.ok(depth(i) < 3, `stage ${stage + 1}: point ${i} is ${depth(i).toFixed(1)} into the ground after ${s} steps`);
+      w.step();
+    }
+  }
+});
