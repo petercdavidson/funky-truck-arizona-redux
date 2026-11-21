@@ -1,4 +1,4 @@
-// assets.js — loads images, level data and the HUD font, and prepares tiles.
+// assets.js — loads images and level data, and prepares tiles.
 
 import { TILE } from './game.js';
 
@@ -62,7 +62,8 @@ function buildTiles(rgb, alpha) {
   return tiles;
 }
 
-export const HUD_FONT = '"Elementary Heavy SF"';
+// Fonts already installed on the player's device, so the game ships no font files.
+export const HUD_FONT = '"Arial Rounded MT Bold", "Varela Round", "Nunito", "Avenir Next", system-ui, sans-serif';
 export const TITLE_FONT = '"Avenir Next", Avenir, "Nunito", "Segoe UI", system-ui, sans-serif';
 
 export async function loadAssets(base = 'assets/', onProgress = () => {}) {
@@ -88,13 +89,6 @@ export async function loadAssets(base = 'assets/', onProgress = () => {}) {
       img: f.mul !== 1 ? tint(images[f.file], f.mul) : images[f.file],
       tx: f.tx, ty: f.ty, sx: f.sx, sy: f.sy,
     }));
-  }
-
-  const font = new FontFace('Elementary Heavy SF', `url(${base}fonts/ElementaryHeavySF.ttf)`);
-  try {
-    document.fonts.add(await font.load());
-  } catch {
-    // Fall back to the title font if the HUD font fails to load.
   }
 
   return { levels, sprites, images, tiles: buildTiles(images['tiles_rgb.jpg'], images['tiles_alpha.png']) };

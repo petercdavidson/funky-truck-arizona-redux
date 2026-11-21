@@ -1,7 +1,7 @@
 {
   "name": "Funky Truck",
   "short_name": "Funky Truck",
-  "description": "Drive a bouncy monster truck across nine stages of Arizona hills.",
+  "description": "Drive a bouncy monster truck across nine stages of Utah hills.",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",

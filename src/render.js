@@ -228,12 +228,12 @@ export class Renderer {
     ctx.fillRect(13.1, 25, 80, 10);
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.fillRect(13.1, 25, 80 * game.damage / 1000, 10);
-    const hud = { size: 12.85, font: HUD_FONT, weight: '400', align: 'right' };
+    const hud = { size: 12.85, font: HUD_FONT, weight: '800', align: 'right' };
     this.text(String(game.score), 566, 22, hud);
     this.text(`+${game.bonus}`, 566, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
     if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, 566, 46, { ...hud, color: 'rgba(255,255,255,0.9)' });
     if (game.tickerTimer > 0 && game.screen !== 'gameOver') {
-      this.text(game.ticker, STAGE_W / 2, 82, { size: 15, font: HUD_FONT, weight: '400' });
+      this.text(game.ticker, STAGE_W / 2, 82, { size: 15, font: HUD_FONT, weight: '800' });
     }
   }
 
@@ -243,7 +243,7 @@ export class Renderer {
     this.image('screen_plain.png');
     const shadow = 'rgba(38,38,38,0.85)';
     this.text('funky truck', STAGE_W / 2, 18, { size: 62, weight: '900', color: '#f5f5f5', shadow });
-    this.text('ARIZONA', STAGE_W / 2 + 78, 94, { size: 28, weight: '900', color: '#f5f5f5', shadow });
+    this.text('UTAH', 470, 94, { size: 28, weight: '900', color: '#f5f5f5', shadow, align: 'right' });
     this.ctx.save();
     this.ctx.translate(0, 48);
     this.truck(v.gT, v.grr, v.gfr, game.look);

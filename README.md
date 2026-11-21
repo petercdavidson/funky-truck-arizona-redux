@@ -1,6 +1,6 @@
 # Funky Truck (web)
 
-A bouncy monster-truck game for the browser: drive across nine stages of Arizona hills without
+A bouncy monster-truck game for the browser: drive across nine stages of Utah hills without
 wrecking your truck. It works with a keyboard, a touchscreen or a gamepad, and runs as a static
 site on GitHub Pages.
 
@@ -55,7 +55,7 @@ saved to storage while a test parameter is set.
 | `src/game.js` | All game logic: truck physics, collisions, scoring, stages and the screen state machine. No DOM access, so tests run it under Node. |
 | `src/render.js` | Draws everything on the canvas, and defines the clickable menu areas. |
 | `src/main.js` | Startup, the fixed 70 steps/second loop with smooth interpolated drawing, and all input. |
-| `src/assets.js` | Loads the images, level data and HUD font, and prepares the terrain tiles. |
+| `src/assets.js` | Loads the images and level data, and prepares the terrain tiles. The game uses fonts already on the device and ships no font files. |
 | `index.html`, `style.css` | Page layout, loading screen and the on-screen touch controls. |
 | `assets/levels.json` | The 9 stages (tile grids and start points) and per-tile collision lines. |
 | `assets/sprites.json` | Each sprite frame's image and its offset from the sprite's origin. |
