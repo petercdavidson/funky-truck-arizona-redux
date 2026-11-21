@@ -1,0 +1,15 @@
+{
+  "name": "funky-truck",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Funky Truck: a bouncy monster-truck game for the browser.",
+  "type": "module",
+  "scripts": {
+    "start": "node tools/serve.mjs",
+    "test": "node --test",
+    "test:phone": "node tests/phone-check.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

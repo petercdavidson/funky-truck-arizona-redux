@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Funky Truck</title>
+  <meta name="description" content="Drive a bouncy monster truck across nine stages of Arizona hills.">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <link rel="icon" type="image/png" href="assets/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/icon-256.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="stage">
+    <canvas id="game" aria-label="Funky Truck game"></canvas>
+    <div id="loading" role="status">
+      <div class="loading-title">funky truck</div>
+      <div class="loading-track"><div id="loading-bar"></div></div>
+    </div>
+  </main>
+
+  <div id="touch" aria-hidden="true">
+    <div class="pad pad-left">
+      <button class="ctl" data-key="left" aria-label="Tilt back">
+        <svg viewBox="0 0 24 24"><path d="M7 7a8 8 0 1 1-2 6" /><path d="M7 2v5h5" /></svg>
+      </button>
+      <button class="ctl" data-key="right" aria-label="Tilt forwards">
+        <svg viewBox="0 0 24 24"><path d="M17 7a8 8 0 1 0 2 6" /><path d="M17 2v5h-5" /></svg>
+      </button>
+    </div>
+    <div class="pad pad-right">
+      <button class="ctl" data-key="down" aria-label="Reverse">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14" /><path d="M6 13l6 6 6-6" /></svg>
+      </button>
+      <button class="ctl gas" data-key="up" aria-label="Forwards">
+        <svg viewBox="0 0 24 24"><path d="M12 19V5" /><path d="M6 11l6-6 6 6" /></svg>
+      </button>
+    </div>
+    <div id="rotate-tip">Tip: turn your phone sideways for a bigger view</div>
+    <button id="touch-pause" aria-label="Pause">
+      <svg viewBox="0 0 24 24"><path d="M9 6v12" /><path d="M15 6v12" /></svg>
+    </button>
+  </div>
+
+  <noscript>Funky Truck needs JavaScript to run.</noscript>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
