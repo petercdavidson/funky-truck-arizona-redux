@@ -458,7 +458,9 @@ export class Game {
     this.world = null;
     this.truck = new Truck();
     this.garageTruck = new Truck();
-    this.look = { body: 0, tyre: 0, hub: 0 }; // y66D2
+    // y66D2. `paint` holds each body's paint: the index of the body whose colour it wears.
+    // Every body starts in its own colour.
+    this.look = { body: 0, tyre: 0, hub: 0, paint: [0, 1, 2, 3, 4, 5] };
     this.score = 0;                   // D9522
     this.bonus = 0;                   // Z3F62
     this.flipBonus = 0;               // a4072 (now: the last trick chain's payout)
@@ -506,7 +508,9 @@ export class Game {
     this.teleportCount = 0;           // bumped when things jump, so the renderer won't interpolate
     const look = this.store.get('truckLook');
     if (look && typeof look === 'object') {
-      for (const k of ['body', 'tyre', 'hub']) if (Number.isInteger(look[k]) && look[k] >= 0 && look[k] < 6) this.look[k] = look[k];
+      const ok = (v) => Number.isInteger(v) && v >= 0 && v < 6;
+      for (const k of ['body', 'tyre', 'hub']) if (ok(look[k])) this.look[k] = look[k];
+      if (Array.isArray(look.paint) && look.paint.length === 6 && look.paint.every(ok)) this.look.paint = look.paint.slice();
     }
     this.garageTruck.reset(STAGE_W / 2, 120);
   }
@@ -515,10 +519,13 @@ export class Game {
   get maxCamX() { return this.levelData.width * TILE - STAGE_W; }   // N53D4
   get maxCamY() { return this.levelData.height * TILE - this.viewH; }  // o64D4
 
-  saveLook() { this.store.set('truckLook', { ...this.look }); }
+  saveLook() { this.store.set('truckLook', { ...this.look, paint: this.look.paint.slice() }); }
 
+  /** Step 'body', 'tyre', 'hub' or 'paint' (the current body's colour) by `delta`. */
   cycleLook(part, delta) {
-    this.look[part] = (this.look[part] + delta + 6) % 6;
+    const L = this.look;
+    if (part === 'paint') L.paint[L.body] = (L.paint[L.body] + delta + 6) % 6;
+    else L[part] = (L[part] + delta + 6) % 6;
     this.saveLook();
   }
 

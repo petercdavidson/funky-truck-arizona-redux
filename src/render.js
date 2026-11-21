@@ -37,9 +37,10 @@ export const BUTTONS = {
   help: [{ rect: r(229, 386, 120, 25), label: 'Menu', action: 'menu' }],
   garage: [
     { rect: r(229, 413, 120, 25), label: 'Menu', action: 'menu' },
-    { rect: r(200, 226, 32, 32), action: 'body-1' }, { rect: r(344, 226, 32, 32), action: 'body+1' },
-    { rect: r(200, 260, 32, 32), action: 'tyre-1' }, { rect: r(344, 260, 32, 32), action: 'tyre+1' },
-    { rect: r(200, 294, 32, 32), action: 'hub-1' }, { rect: r(344, 294, 32, 32), action: 'hub+1' },
+    ...['body', 'paint', 'tyre', 'hub'].flatMap((part, i) => [
+      { rect: r(200, 226 + 34 * i, 32, 32), action: `${part}-1` },
+      { rect: r(344, 226 + 34 * i, 32, 32), action: `${part}+1` },
+    ]),
   ],
   practiceSelect: [
     ...Array.from({ length: 9 }, (_, i) => ({ rect: r(136 + 34 * i, 228.05, 32, 32), action: `stage${i}` })),
@@ -134,8 +135,7 @@ export class Renderer {
   // ---- drawing helpers (stage space)
 
   /** Draw a sprite frame the way Flash places a bitmap in a symbol: top-left at (tx, ty). */
-  frame(key, i) {
-    const f = this.a.sprites[key][i];
+  frame(key, i, f = this.a.sprites[key][i]) {
     const ctx = this.ctx;
     if (f.sx !== 1 || f.sy !== 1) {
       ctx.save();
@@ -222,7 +222,7 @@ export class Renderer {
     ctx.translate(T[6], T[7]);
     ctx.rotate(Math.atan2(T[9] - T[7], T[8] - T[6]));
     ctx.scale(0.7, 0.7);
-    this.frame('body', look.body);
+    this.body(look);
     ctx.restore();
     for (const [p, rot] of [[2, rearRot], [4, frontRot]]) {
       ctx.save();
@@ -233,6 +233,11 @@ export class Renderer {
       this.frame('hub', look.hub);
       ctx.restore();
     }
+  }
+
+  /** The truck's body in its paint. */
+  body(look) {
+    this.frame('body', look.body, this.a.paints[look.body][look.paint[look.body]]);
   }
 
   /** A suspension bar from point (ax, ay) to (bx, by), drawn as in truck(). */
@@ -259,7 +264,7 @@ export class Renderer {
     ctx.translate(pose.x, pose.y);
     ctx.rotate(pose.ang);
     ctx.scale(0.7, 0.7);
-    this.frame('body', look.body);
+    this.body(look);
     ctx.restore();
     for (const w of wreck.wheels) {
       ctx.save();
@@ -430,10 +435,11 @@ export class Renderer {
     this.box('screen_garage.png', 10, 10, 556, 25, 10, 10, 556, 25, 12); // title bar
     this.text('Your Truck', STAGE_W / 2, 15.5, { size: 14, weight: '700' });
     this.truck(v.gT, v.grr, v.gfr, game.look);
-    ['Body', 'Tyres', 'Wheels'].forEach((name, i) => {
+    ['Body', 'Paint', 'Tyres', 'Wheels'].forEach((name, i) => {
       const y = 226 + i * 34;
-      this.piece('screen_garage.png', 200, y, 32, 32); // arrow buttons
-      this.piece('screen_garage.png', 344, y, 32, 32);
+      // The arrow buttons, from the original art's first row (it only had three rows).
+      this.piece('screen_garage.png', 200, 226, 32, 32, 200, y);
+      this.piece('screen_garage.png', 344, 226, 32, 32, 344, y);
       this.text(name, STAGE_W / 2, y + 8, { size: 14, weight: '700' });
     });
     this.buttons('garage');

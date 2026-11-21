@@ -119,7 +119,7 @@ function doAction(a) {
   else if (a === 'resume') game.togglePause();
   else if (a.startsWith('stage')) game.startPractice(Number(a.slice(5)));
   else {
-    const m = /^(body|tyre|hub)([+-]1)$/.exec(a);
+    const m = /^(body|paint|tyre|hub)([+-]1)$/.exec(a);
     if (m) game.cycleLook(m[1], Number(m[2]));
   }
   renderer.hover = null;
@@ -324,7 +324,7 @@ function fit() {
  *   test   = title | garage | help | practice | play | endless | paused | gameover
  *   stage  = stage index for play (0-8), frames = steps to simulate with the gas held
  *   seed   = for endless: a number, so the same course comes up every time
- *   look   = body,tyre,hub (e.g. 3,2,4), touch = 1 to show the touch controls
+ *   look   = body,tyre,hub[,paint] (e.g. 3,2,4,0), touch = 1 to show the touch controls
  * Nothing is saved to storage while this is active.
  */
 function applyTestParams() {
@@ -334,8 +334,9 @@ function applyTestParams() {
   game.store = { get: () => null, set: () => {} };
   if (q.get('touch') === '1') setTouchMode(true);
   if (q.get('look')) {
-    const [body, tyre, hub] = q.get('look').split(',').map(Number);
+    const [body, tyre, hub, paint] = q.get('look').split(',').map(Number);
     Object.assign(game.look, { body, tyre, hub });
+    if (Number.isInteger(paint)) game.look.paint[body] = paint;
   }
   const frames = Number(q.get('frames')) || 0;
   const screens = { garage: 'garage', help: 'help', practice: 'practiceSelect', title: 'title' };

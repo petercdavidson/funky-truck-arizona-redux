@@ -65,6 +65,94 @@ function buildTiles(rgb, alpha) {
   return tiles;
 }
 
+// ---- body paint
+//
+// Each body sprite is one paint colour, shaded, plus a window. These are the colour clusters of
+// each body's pixels (found once with k-means): the window's glass first, then three shades of
+// paint. A pixel is glass when the glass colour is the nearest of the four.
+const BODY_COLOURS = [
+  [[126, 139, 70], [183, 161, 55], [206, 186, 92], [201, 197, 149]],
+  [[108, 129, 65], [192, 83, 54], [210, 116, 86], [217, 130, 102]],
+  [[120, 142, 69], [150, 185, 63], [166, 200, 83], [179, 210, 105]],
+  [[58, 136, 102], [73, 178, 189], [101, 197, 208], [122, 210, 219]],
+  [[132, 139, 126], [192, 213, 215], [216, 233, 235], [228, 241, 242]],
+  [[105, 123, 90], [122, 144, 104], [143, 165, 125], [157, 178, 141]],
+];
+
+function toHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  if (mx === mn) return [0, 0, l];
+  const d = mx - mn, s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  let h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s, l];
+}
+
+function fromHsl(h, s, l) {
+  const c = (1 - Math.abs(2 * l - 1)) * s, hp = (((h % 360) + 360) % 360) / 60;
+  const x = c * (1 - Math.abs((hp % 2) - 1)), m = l - c / 2;
+  const [r, g, b] = hp < 1 ? [c, x, 0] : hp < 2 ? [x, c, 0] : hp < 3 ? [0, c, x] : hp < 4 ? [0, x, c] : hp < 5 ? [x, 0, c] : [c, 0, x];
+  return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+}
+
+/** How much of a pixel is glass (0 to 1), softened at the window's edge. */
+function glassShare(k, r, g, b) {
+  const dist = (c) => Math.hypot(r - c[0], g - c[1], b - c[2]);
+  const [glass, ...paint] = BODY_COLOURS[k];
+  const dg = dist(glass), dp = Math.min(...paint.map(dist));
+  return Math.max(0, Math.min(1, 0.5 + (dp - dg) / 16));
+}
+
+/** A body's paint colour (hue, saturation, lightness), averaged over its painted pixels. */
+function paintOf(k, img) {
+  const d = img.getContext('2d').getImageData(0, 0, img.width, img.height).data;
+  let hx = 0, hy = 0, s = 0, l = 0, n = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 128 || glassShare(k, d[i], d[i + 1], d[i + 2]) > 0) continue;
+    const [ph, ps, pl] = toHsl(d[i], d[i + 1], d[i + 2]);
+    hx += Math.cos(ph * Math.PI / 180) * ps; hy += Math.sin(ph * Math.PI / 180) * ps;
+    s += ps; l += pl; n++;
+  }
+  return [Math.atan2(hy, hx) * 180 / Math.PI, s / n, l / n];
+}
+
+/**
+ * Body `k` repainted in colour `to` (a paint from paintOf): each painted pixel's hue moves by
+ * the difference between the two paints, its saturation scales, and its lightness is remapped so
+ * the old paint's lightness becomes the new one's (keeping black and white where they are).
+ * The window is left alone.
+ */
+function repaint(k, img, from, to) {
+  const c = makeCanvas(img.width, img.height);
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+  const id = ctx.getImageData(0, 0, c.width, c.height), d = id.data;
+  const [fh, fs, fl] = from, [th, ts, tl] = to;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] === 0) continue;
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    const w = 1 - glassShare(k, r, g, b);
+    if (w === 0) continue;
+    const [h, s, l] = toHsl(r, g, b);
+    const nl = l <= fl ? l / fl * tl : tl + (l - fl) / (1 - fl) * (1 - tl);
+    const [nr, ng, nb] = fromHsl(h + th - fh, Math.min(1, s * ts / fs), nl);
+    d[i] = r + (nr - r) * w; d[i + 1] = g + (ng - g) * w; d[i + 2] = b + (nb - b) * w;
+  }
+  ctx.putImageData(id, 0, 0);
+  return c;
+}
+
+/** paints[body][colour]: a sprite frame of each body in each body's paint. */
+function buildPaints(bodies) {
+  const imgs = bodies.map((f) => {
+    const c = makeCanvas(f.img.width, f.img.height);
+    c.getContext('2d', { willReadFrequently: true }).drawImage(f.img, 0, 0);
+    return c;
+  });
+  const colours = imgs.map((img, k) => paintOf(k, img));
+  return bodies.map((f, k) => colours.map((to, j) => (j === k ? f : { ...f, img: repaint(k, imgs[k], colours[k], to) })));
+}
+
 // Fonts already installed on the player's device, so the game ships no font files.
 export const HUD_FONT = '"Arial Rounded MT Bold", "Varela Round", "Nunito", "Avenir Next", system-ui, sans-serif';
 export const TITLE_FONT = '"Avenir Next", Avenir, "Nunito", "Segoe UI", system-ui, sans-serif';
@@ -94,5 +182,9 @@ export async function loadAssets(base = 'assets/', onProgress = () => {}) {
     }));
   }
 
-  return { levels, sprites, images, tiles: buildTiles(images['tiles_rgb.jpg'], images['tiles_alpha.png']) };
+  return {
+    levels, sprites, images,
+    tiles: buildTiles(images['tiles_rgb.jpg'], images['tiles_alpha.png']),
+    paints: buildPaints(sprites.body),
+  };
 }
