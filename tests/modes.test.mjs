@@ -14,9 +14,15 @@ function launch(g, speed = 10) {
   const dy = 140 - t.T[1];
   for (let i = 1; i < 10; i += 2) { t.T[i] += dy; t.P[i] = t.T[i] + speed; }
   t.probePrev = null;
-  let top = Infinity, cam = Infinity;
-  for (let i = 0; i < 120; i++) { g.step(); top = Math.min(top, t.T[1]); cam = Math.min(cam, g.camY); }
-  return { top, cam };
+  g.camY = t.T[1] - g.viewH / 2; g.camVY = 0; // the truck was moved, so start the camera on it
+  let top = Infinity, cam = Infinity, onScreen = 0;
+  for (let i = 0; i < 120; i++) {
+    g.step();
+    // onScreen: how far down the view the truck shows at the top of its flight
+    if (t.T[1] < top) onScreen = (t.T[1] - g.camY) / g.zoom;
+    top = Math.min(top, t.T[1]); cam = Math.min(cam, g.camY);
+  }
+  return { top, cam, onScreen };
 }
 
 test('Classic keeps the ceiling and the camera at the top; Play lets the truck fly above it', () => {
@@ -26,12 +32,14 @@ test('Classic keeps the ceiling and the camera at the top; Play lets the truck f
   const classic = launch(g);
   assert.ok(classic.top > 0, `Classic: stopped by the ceiling (${classic.top.toFixed(1)})`);
   assert.ok(classic.cam >= 0);
+  g.dynamicCamera = false; // the plain camera, which keeps the truck in the middle
   g.startCampaign();
   settle(g);
   const play = launch(g);
   assert.ok(play.top < -100, `Play: flew above the top of the stage (${play.top.toFixed(1)})`);
   assert.ok(play.cam < 0, 'the camera rose to follow');
-  assert.ok(play.top - play.cam > 60, 'and kept the truck on screen');
+  // The original camera only kept a truck above the stage 110 down from the top edge; now it follows.
+  assert.ok(play.onScreen > 160 && play.onScreen < 300, `and kept the truck well inside the view (${play.onScreen.toFixed(0)} down)`);
 });
 
 test('Classic scores a landed flip at once, as the original did, and has no trick chain', () => {
@@ -168,16 +176,33 @@ test('stuck on its roof in a damage-free run, the truck can be flipped back onto
   assert.equal(p.canUpright, false, 'not offered when damage is on');
 });
 
-test('a taller view keeps the truck centred top to bottom', () => {
+test('a taller view keeps the truck centred top to bottom, even down at the bottom of the level', () => {
   const g = new Game(data);
   g.startCampaign();
   g.viewH = 800;
   settle(g, 300);
   const [, fy] = g.focus;
-  const want = Math.min(fy - 400 * g.zoom, g.maxCamY); // centred, unless that would show below the level
   assert.ok(Math.abs(g.zoom - 1) < 0.01, `at rest the camera is close in (${g.zoom.toFixed(3)})`);
-  assert.equal(g.maxCamY, data.levels[0].height * TILE - 800 * g.zoom);
-  assert.ok(Math.abs(g.camY - want) < 20, `camera at ${Math.round(g.camY)}, expected about ${Math.round(want)}`);
+  assert.ok(fy - 400 > g.maxCamY, 'the truck is low enough that the old camera would have stopped at the level\'s bottom');
+  assert.ok(Math.abs(g.camY - (fy - 400)) < 20, `camera at ${Math.round(g.camY)}, expected about ${Math.round(fy - 400)}`);
+});
+
+test('outside Classic the camera follows a big jump up and back down; Classic stays inside the level', () => {
+  for (const classic of [false, true]) {
+    const g = new Game(data);
+    g.dynamicCamera = false; // the plain camera, so the truck should sit at the middle
+    g.startCampaign(classic);
+    settle(g);
+    const t = g.truck;
+    for (let i = 1; i < 10; i += 2) t.P[i] = t.T[i] + 16; // a huge jump, about 1000 px up
+    let worst = 0;
+    for (let i = 0; i < 300; i++) {
+      g.step();
+      if (!classic) worst = Math.max(worst, Math.abs((t.T[1] - g.camY) - g.viewH / 2));
+      else assert.ok(g.camY >= 0 && g.camY <= g.maxCamY, 'Classic keeps the camera inside the level');
+    }
+    if (!classic) assert.ok(worst < g.viewH * 0.3, `the truck stayed near the middle of the view (off by up to ${worst.toFixed(0)})`);
+  }
 });
 
 test('wreck wheels keep rolling after the body has stopped', () => {

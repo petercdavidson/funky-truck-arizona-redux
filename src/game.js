@@ -619,7 +619,8 @@ export class Game {
     this.truck.rearWheelRot = 0; this.truck.frontWheelRot = 0;
     this.zoom = 1; this.ground = 0; this.camSpeed = 0; this.camVX = 0; this.camVY = 0;
     this.camX = Math.min(Math.max(s[0] - 150, 0), this.maxCamX);       // s4833
-    this.camY = Math.min(Math.max(s[1] - this.viewH / 2, 0), this.maxCamY);
+    this.camY = s[1] - this.viewH / 2;
+    if (this.rules.classic) this.camY = Math.min(Math.max(this.camY, 0), this.maxCamY);
     this.updateCamera();
     this.ticker = STAGE_NAMES[this.level]; this.tickerTimer = 140;      // m2813
     this.endTimer = 0;
@@ -692,12 +693,14 @@ export class Game {
     if (dyn) this.updateZoom();
     else this.zoom = 1;
     const z = this.zoom;
-    // High in the air, the camera aims below the truck so the ground it's coming down on shows.
-    const lower = dyn ? Math.min(this.ground, this.viewH * z * 0.6) * 0.5 : 0;
-    // Outside Classic there's no ceiling, so the camera rises to keep a high-flying truck in view.
-    const top = this.rules.classic ? 0 : Math.min(0, fy - 110 * z);
+    // High in the air, the camera aims below the truck so the ground it's coming down on shows,
+    // by up to a fifth of the view (so the truck stays at least 30% of the way down it).
+    const lower = dyn ? Math.min(this.ground * 0.5, this.viewH * z * 0.2) : 0;
+    // Classic keeps the original camera, which stays inside the level. Outside Classic the camera
+    // follows the truck up and down wherever it goes: above the level there's sky, and below it
+    // the renderer keeps drawing dirt (every column of every stage ends in solid dirt).
     const clampX = (x) => Math.min(Math.max(x, 0), this.maxCamX);
-    const clampY = (y) => Math.min(Math.max(y, top), Math.max(this.maxCamY, top));
+    const clampY = this.rules.classic ? (y) => Math.min(Math.max(y, 0), this.maxCamY) : (y) => y;
     let wantX = fx - 150 * z, wantY = fy + lower - this.viewH * z / 2;
     // The dynamic camera aims inside the level's edges, so it slows to a stop at one rather than hitting it.
     if (dyn) { wantX = clampX(wantX); wantY = clampY(wantY); }

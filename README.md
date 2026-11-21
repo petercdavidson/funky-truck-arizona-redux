@@ -8,7 +8,7 @@ site on GitHub Pages.
 
 | Mode | What it is |
 | --- | --- |
-| **Play** | The nine stages, with tricks, a ragdoll wreck, and no invisible ceiling (the camera rises to follow a big jump). |
+| **Play** | The nine stages, with tricks, a ragdoll wreck, and no invisible ceiling. The camera follows the truck up and down anywhere, even above or below the stage. |
 | **Classic** | The nine stages as the original game played: the original flip bonus, the ceiling, the original controls, and a wrecked truck stays in one piece. Only display fixes (live text, alignment) and the pause button are new. |
 | **Endless** | A course generated as you drive that never ends. No damage: it's free play. **End Run** in the pause menu finishes the run and saves your best distance. |
 | **Practice** | One stage of your choice, played like Play. Options on the stage screen switch **Damage** off and play by **Classic** rules. |
@@ -24,7 +24,7 @@ everything scaled up to fill the width, so the buttons are much bigger.
 
 **Dynamic camera** (outside Classic; a switch on the title screen turns it off): the camera pulls
 back when the truck keeps up a good speed or has been high in the air for a while, up to 1.8 times
-as much of the world. High up it also aims below the truck, so you can see where you'll land. It
+as much of the world. High up it also aims a little below the truck (by up to a fifth of the view), so you can see where you'll land. It
 reacts only to smoothed speed and height (height counts after half a second in the air), eases
 in and out slowly, ignores small changes, and is limited in how quickly it can speed up or slow
 down, so bumps and short hops don't move it. Classic keeps the original fixed camera. The
