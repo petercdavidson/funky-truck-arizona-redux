@@ -10,6 +10,9 @@ const IMAGE_FILES = [
 function loadImage(url) {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    // Lets the game read the tile pixels when the images come from another origin (a CDN, or a
+    // preview service such as raw.githack.com). Harmless when they come from the same site.
+    img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error(`Could not load ${url}`));
     img.src = url;
