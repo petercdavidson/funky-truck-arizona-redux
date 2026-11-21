@@ -13,7 +13,8 @@ site on GitHub Pages.
 | **Endless** | A course generated as you drive that never ends. No damage: it's free play. **End Run** in the pause menu finishes the run and saves your best distance. |
 | **Practice** | One stage of your choice, played like Play. Options on the stage screen switch **Damage** off and play by **Classic** rules. |
 
-Outside Classic, the driving view fills the window. Close in, it shows the same width of the
+Outside Classic, the driving view fills the window, on a phone held either way up (the
+on-screen controls sit over the bottom of it). Close in, it shows the same width of the
 world (the original 576 units), so everyone sees the same distance ahead; a taller window shows
 more sky and ground, a wider one less. The backdrop scales up evenly to cover it. Classic keeps
 the original 576×448 view. The menus' backdrop fills the window, with the menu centred on it.
@@ -64,7 +65,12 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Sound on / off | M | Sound switch (title screen or pause menu) | |
 | Full screen | F | | |
 
-**How to Play** is the small button under the controls hint on the title screen.
+**How to Play** is the small button under the controls hint on the title screen. The game's
+version is in the title screen's bottom-right corner; on the live site it's followed by the
+commit it was built from.
+
+The pause screen names the run (mode and stage, or distance in Endless) and has switches for
+sound and, outside Classic, the controls (Standard or One Button).
 
 The best scores, the options and the truck chosen in the garage (with each body's paint) are saved in the browser
 (`localStorage`).
@@ -147,6 +153,7 @@ saved to storage while a test parameter is set.
 | `sounds.html` | A page for hearing every sound. |
 | `src/wreck.js` | The ragdoll wreck: a wrecked truck's loose pieces (outside Classic). |
 | `src/tricks.js` | Spots tricks (flips, airtime, wheelies, clean landings) and scores them in chains. |
+| `src/version.js` | The version shown on the title screen (keep it in step with `package.json`). |
 | `src/main.js` | Startup, the fixed 70 steps/second loop with smooth interpolated drawing, and all input. |
 | `src/assets.js` | Loads the images and level data, prepares the terrain tiles, and repaints each body in every body's colour (leaving the window glass alone). The game uses fonts already on the device and ships no font files. |
 | `index.html`, `style.css` | Page layout, loading screen and the on-screen touch controls. |

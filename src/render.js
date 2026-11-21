@@ -3,9 +3,10 @@
 // All drawing uses the original 576x448 stage coordinates (y down, clockwise rotation), scaled to
 // the canvas. Tiles are drawn in device pixels with snapped edges so they never show seams.
 
-import { TILE, STAGE_W, STAGE_H } from './game.js';
+import { TILE, STAGE_W, STAGE_H, STAGE_NAMES } from './game.js';
 import { HUD_FONT, TITLE_FONT } from './assets.js';
 import { TRICK } from './tricks.js';
+import { VERSION, BUILD } from './version.js';
 import { Wreck } from './wreck.js';
 
 const DEG = Math.PI / 180;
@@ -53,16 +54,27 @@ export const BUTTONS = {
     { rect: r(229, 250, 120, 25), label: 'Play Again', action: 'again' },
     { rect: r(229, 281, 120, 25), label: 'Menu', action: 'menu' },
   ],
-  paused: [
-    { rect: r(229, 262, 120, 25), label: 'Resume', action: 'resume' },
-    { rect: r(229, 293, 120, 25), label: 'End Run', action: 'endRun', show: (g) => g.mode === 'endless' },
-    ...[0, 1].map((endless) => [
-      { rect: r(229, 293 + 31 * endless, 120, 25), label: 'Quit to Menu', action: 'menu', show: (g) => (g.mode === 'endless') === !!endless },
-      { rect: r(229, 324 + 31 * endless, 120, 25), label: (g) => `Sound: ${onOff(g.soundOn)}`, action: 'sound', show: (g) => (g.mode === 'endless') === !!endless },
-    ]).flat(),
-  ],
+  // Each kind of run gets its own column of buttons: Endless can end the run, and Classic has no
+  // controls switch (it always uses the original controls).
+  paused: [['endless', (g) => g.mode === 'endless'], ['classic', (g) => g.mode !== 'endless' && g.rules.classic],
+    ['other', (g) => g.mode !== 'endless' && !g.rules.classic]].flatMap(([kind, when]) => [
+    { label: 'Resume', action: 'resume' },
+    kind === 'endless' && { label: 'End Run', action: 'endRun' },
+    { label: 'Quit to Menu', action: 'menu' },
+    { label: (g) => `Sound: ${onOff(g.soundOn)}`, action: 'sound' },
+    kind !== 'classic' && { label: (g) => `Controls: ${g.oneButton ? 'One Button' : 'Standard'}`, action: 'oneButton' },
+  ].filter(Boolean).map((b, i) => ({ ...b, rect: r(213, 250 + 31 * i, 150, 25), show: when }))),
   playing: [],
 };
+
+/** Which run this is, for the pause screen: "Play  ·  Stage Three", "Endless  ·  420 m", ... */
+export function runName(game) {
+  if (game.mode === 'endless') return `Endless  ·  ${game.metres} m`;
+  const stage = STAGE_NAMES[game.level];
+  if (game.mode === 'campaign') return `${game.rules.classic ? 'Classic' : 'Play'}  ·  ${stage}`;
+  const rules = [game.rules.classic && 'Classic rules', !game.rules.damage && 'no damage'].filter(Boolean);
+  return `Practice  ·  ${stage}${rules.length ? `  (${rules.join(', ')})` : ''}`;
+}
 
 export function hitButton(screen, x, y, game) {
   return (BUTTONS[screen] || []).find((b) => (!b.show || b.show(game))
@@ -421,6 +433,8 @@ export class Renderer {
     if (game.oneButton) hint = this.touchMode ? 'Hold anywhere to drive, and to tilt back in the air' : 'Hold Space to drive, and to tilt back in the air  ·  P pauses  ·  Esc returns to the menu';
     else hint = this.touchMode ? 'Use the on-screen pedals and tilt buttons to drive' : 'Arrow keys drive and tilt  ·  P pauses  ·  M sound  ·  Esc returns to the menu';
     this.text(hint, STAGE_W / 2, 410, { size: 11, weight: '600', color: 'rgba(255,255,255,0.78)' });
+    const build = BUILD === 'dev' ? '' : `  ·  ${BUILD}`;
+    this.text(`v${VERSION}${build}`, STAGE_W - 8, 432, { size: 9, weight: '600', color: 'rgba(255,255,255,0.5)', align: 'right' });
   }
 
   // The menu screens were bitmaps with their text baked in. They are now drawn from the plain
@@ -490,8 +504,9 @@ export class Renderer {
 
   paused(game) {
     this.overlayDim(0.3);
-    this.text('Paused', STAGE_W / 2, 180, { size: 36, weight: '900', shadow: 'rgba(38,38,38,0.85)' });
-    this.text(this.touchMode ? '' : 'Press P to resume play', STAGE_W / 2, 230, { size: 14, weight: '600' });
+    this.text(runName(game), STAGE_W / 2, 132, { size: 15, weight: '700', color: 'rgba(255,255,255,0.9)', shadow: 'rgba(38,38,38,0.7)' });
+    this.text('Paused', STAGE_W / 2, 158, { size: 36, weight: '900', shadow: 'rgba(38,38,38,0.85)' });
+    this.text(this.touchMode ? '' : 'Press P to resume play', STAGE_W / 2, 210, { size: 14, weight: '600' });
     this.buttons('paused', game);
   }
 

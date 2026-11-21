@@ -60,5 +60,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 
 - Use a branch and pull request per feature. CI runs the tests on PRs, and merging to `main`
   deploys.
+- Bump `VERSION` in `src/version.js` and `version` in `package.json` (a test checks they match)
+  with every push, so the version on the title screen tells you which build you have.
 - Before finishing: run `npm test`, check the change in a browser (desktop and phone sizes), and
   update README.md if controls or features change.

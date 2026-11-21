@@ -339,3 +339,24 @@ test('in a tall window the camera starts steady, and a resize part-way through c
     }
   }
 });
+
+test('the pause screen names the run, and offers the controls switch outside Classic', async () => {
+  const { runName, BUTTONS } = await import('../src/render.js');
+  const actions = (g) => BUTTONS.paused.filter((b) => b.show(g)).map((b) => b.action);
+  const g = new Game(data, { random: () => 0.4 });
+  g.startCampaign();
+  assert.equal(runName(g), 'Play  ·  Stage One');
+  assert.deepEqual(actions(g), ['resume', 'menu', 'sound', 'oneButton']);
+  g.startCampaign(true);
+  assert.equal(runName(g), 'Classic  ·  Stage One');
+  assert.deepEqual(actions(g), ['resume', 'menu', 'sound'], 'Classic keeps the original controls');
+  g.practiceDamage = false;
+  g.startPractice(3);
+  assert.equal(runName(g), 'Practice  ·  Stage Four  (no damage)');
+  g.practiceClassic = true; g.practiceDamage = true;
+  g.startPractice(8);
+  assert.equal(runName(g), 'Practice  ·  Stage Nine  (Classic rules)');
+  g.startEndless();
+  assert.equal(runName(g), 'Endless  ·  0 m');
+  assert.deepEqual(actions(g), ['resume', 'endRun', 'menu', 'sound', 'oneButton']);
+});

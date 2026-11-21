@@ -40,6 +40,8 @@ jobs:
         run: |
           mkdir _site
           cp -R index.html sounds.html style.css manifest.webmanifest .nojekyll src assets _site/
+      - name: Stamp the build with its commit (shown after the version on the title screen)
+        run: sed -i "s/^export const BUILD = 'dev';/export const BUILD = '${GITHUB_SHA::7}';/" _site/src/version.js && grep BUILD _site/src/version.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

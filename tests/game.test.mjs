@@ -157,3 +157,11 @@ test('garage cycles parts with wrap-around and the idle truck settles', () => {
   assert.equal(g.garageTruck.T[3], 170);
   assert.ok(Math.abs(g.garageTruck.T[0] - STAGE_W / 2) < 5);
 });
+
+test('the version shown in the game matches package.json, and the deploy can stamp its build', async () => {
+  const { VERSION } = await import('../src/version.js');
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
+  assert.equal(VERSION, pkg.version);
+  const src = readFileSync(new URL('../src/version.js', import.meta.url), 'utf8');
+  assert.match(src, /^export const BUILD = 'dev';$/m, 'the line the Pages workflow replaces');
+});

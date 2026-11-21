@@ -92,8 +92,10 @@ try {
     await shot('phone-portrait-driving');
     const layout = await evaluate(`(() => { const s = document.getElementById('stage').getBoundingClientRect(), c = document.getElementById('game').getBoundingClientRect(),
       { renderer } = window.__funkyTruck; return { stageTop: s.top, stageH: s.height, canvasTop: c.top, canvasH: c.height, bufH: renderer.canvas.height, offY: renderer.offY, screen: document.body.dataset.screen }; })()`);
-    const gameTop = layout.canvasTop + layout.offY / 2;
-    check(gameTop < 120, `game sits near the top in portrait (top at ${Math.round(gameTop)}px; ${JSON.stringify(layout)})`);
+    const winH = await evaluate('window.innerHeight');
+    check(layout.canvasTop <= 1 && layout.canvasH >= winH - 1 && layout.offY === 0,
+      `game fills the screen in portrait (${JSON.stringify(layout)}, window ${winH}px high)`);
+    check(!(await evaluate('!!document.getElementById("rotate-tip")')), 'no tip to turn the phone sideways');
     await touch('touchEnd', []);
     const x1 = await evaluate('window.__funkyTruck.game.truck.T[0]');
     check(held, 'holding the gas pedal presses "up"');

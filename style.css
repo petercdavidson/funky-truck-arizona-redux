@@ -29,24 +29,14 @@ html, body {
   place-items: center;
 }
 
-/* The canvas fills the viewport; the renderer letterboxes the 576x448 stage inside it. */
+/* The canvas fills the viewport, held either way up. Outside Classic the driving view fills it
+   too (the on-screen controls sit over the bottom of it); Classic letterboxes the 576x448 stage. */
 #game {
   position: absolute;
   inset: 0;
   display: block;
   width: 100%;
   height: 100%;
-}
-
-/* On a touch device held upright, put the game near the top and
-   leave the lower part of the screen for the controls. */
-@media (orientation: portrait) {
-  body.touch-mode[data-screen="playing"] #stage,
-  body.touch-mode[data-screen="paused"] #stage {
-    top: calc(env(safe-area-inset-top) + 12px);
-    bottom: auto;
-    height: calc(100vw * 448 / 576);
-  }
 }
 
 #loading {
@@ -159,18 +149,3 @@ body[data-upright="1"] #upright-button { display: grid !important; }
 #tap { display: none; position: fixed; inset: 0; z-index: 2; touch-action: none; }
 body.touch-mode[data-onebutton="1"][data-screen="playing"] #tap { display: block; }
 body[data-onebutton="1"] #touch .pad { visibility: hidden; }
-
-#rotate-tip {
-  display: none;
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: calc(env(safe-area-inset-top) + 12px + 100vw * 448 / 576 + 20px);
-  text-align: center;
-  font-size: 14px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.6);
-}
-@media (orientation: portrait) {
-  body.touch-mode[data-screen="playing"] #rotate-tip { display: block; }
-}
