@@ -3,19 +3,12 @@
 // Cues:
 //   engine            a continuous voice driven by { throttle, speed, airborne } (each 0..1),
 //                     with a quiet hiss of tyres on the ground while the truck is rolling
-//   scrape            a continuous voice while the cab drags along the ground (see SCRAPES)
+//   scrape            a run of hard hits while the cab drags along the ground
 //   start, land, bump, flip, trick, stage, win, wreck, click     one-shot sounds
 // SoundWatcher (sound-events.js) decides when cues happen; this file decides how they sound.
 
 export const CUES = ['start', 'land', 'bump', 'flip', 'trick', 'stage', 'win', 'wreck', 'click'];
 
-/** Scrape sounds to choose between (sounds.html plays them; ?scrape=N picks one in the game). */
-export const SCRAPES = {
-  1: { name: 'Crunch', blurb: 'Hard hits, one after another while the cab drags: each a sharp crack with a thud under it.' },
-  2: { name: 'Grate', blurb: 'Starts with a hit, then a harsh metal grating that cuts in at once and stops just as fast.' },
-  3: { name: 'Crash & Drag', blurb: 'A heavy crash as the cab hits, then a rough, rattling drag along the ground.' },
-};
-export const DEFAULT_SCRAPE = 1;
 
 const note = (n) => 440 * Math.pow(2, (n - 69) / 12); // MIDI note number -> Hz
 
@@ -116,7 +109,7 @@ const SET = {
     const a = voice(k, { type: 'triangle', dest: lp }), b = voice(k, { type: 'sawtooth', dest: lp });
     // tyres on the ground: a quiet band of noise that grows with speed
     const grit = ctx.createBufferSource(); grit.buffer = k.noise; grit.loop = true;
-    const gf = ctx.createBiquadFilter(); gf.type = 'bandpass'; gf.frequency.value = 450; gf.Q.value = 0.8;
+    const gf = ctx.createBiquadFilter(); gf.type = 'bandpass'; gf.frequency.value = 260; gf.Q.value = 0.7;
     const gg = ctx.createGain(); gg.gain.value = 0;
     grit.connect(gf).connect(gg).connect(out); grit.start();
     return engineShell(k, [a.o, b.o, grit], out, ({ throttle, speed, airborne }) => {
@@ -124,8 +117,8 @@ const SET = {
       smooth(a.o.frequency, f, k, 0.08); smooth(b.o.frequency, f / 2, k, 0.08);
       smooth(a.g.gain, 0.10 + throttle * 0.08, k); smooth(b.g.gain, 0.035 + throttle * 0.04, k);
       smooth(lp.frequency, 500 + throttle * 600 + speed * 400, k, 0.1);
-      smooth(gf.frequency, 330 + speed * 260, k, 0.1);
-      smooth(gg.gain, airborne ? 0 : speed * 0.016, k, 0.06);
+      smooth(gf.frequency, 190 + speed * 170, k, 0.1);
+      smooth(gg.gain, airborne ? 0 : speed * 0.02, k, 0.06);
     });
   },
   start(k) { bell(k, note(72), 0, 0.12, 0.5); bell(k, note(79), 0.12, 0.12, 0.7); },
@@ -159,82 +152,31 @@ const SET = {
   click(k) { tone(k, { f: 1800, f2: 1200, dur: 0.035, gain: 0.08 }); },
 };
 
-/** A soft-clipping curve, for a harsher, overdriven sound. */
-function drive(ctx, amount) {
-  const ws = ctx.createWaveShaper();
-  const n = 1024, curve = new Float32Array(n);
-  for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; curve[i] = Math.tanh(x * amount); }
-  ws.curve = curve;
-  return ws;
-}
-
 const semis = (n) => Math.pow(2, n / 12);
 
 /** One hard hit of the cab on the ground: a crack of noise with a thud under it. */
-function hit(k, { pitch = 1, force = 0.6, heavy = false } = {}) {
-  noise(k, { dur: heavy ? 0.22 : 0.11, gain: (heavy ? 0.5 : 0.32) + force * 0.3, type: 'bandpass', f: (heavy ? 650 : 1100) * pitch, f2: (heavy ? 260 : 500) * pitch, Q: 1.4, attack: 0.002 });
-  noise(k, { dur: 0.04, gain: 0.12 + force * 0.1, type: 'highpass', f: 3500 * pitch, attack: 0.001 });
-  tone(k, { f: (heavy ? 110 : 150) * pitch, f2: 50, dur: heavy ? 0.26 : 0.12, gain: (heavy ? 0.35 : 0.18) + force * 0.15, attack: 0.002 });
+function hit(k, { pitch = 1, force = 0.6 } = {}) {
+  noise(k, { dur: 0.13, gain: 0.34 + force * 0.3, type: 'bandpass', f: 720 * pitch, f2: 320 * pitch, Q: 1.4, attack: 0.002 });
+  noise(k, { dur: 0.04, gain: 0.1 + force * 0.08, type: 'bandpass', f: 2000 * pitch, Q: 0.8, attack: 0.001 });
+  tone(k, { f: 105 * pitch, f2: 40, dur: 0.15, gain: 0.2 + force * 0.15, attack: 0.002 });
 }
 
 /**
- * The scrape voices. Each one starts hard, so it's clear something has gone wrong, and each new
- * scrape (and each hit in a run of them) picks a slightly different pitch so it never sounds the
- * same twice. update({ on, speed, pitch }) is called every frame.
+ * The scrape: hard hits, one after another while the cab drags, each at a slightly different
+ * pitch so a run of them never sounds the same. update({ on, speed }) is called every frame.
  */
-const SCRAPE_VOICES = {
-  1(k) { // Crunch: repeated hits
-    const g = k.ctx.createGain();
-    let next = 0;
-    return { nodes: [], g, update: ({ on, speed, pitch }) => {
+function scrapeVoice(k) {
+  let next = 0;
+  return {
+    update({ on, speed }) {
       const now = k.ctx.currentTime;
       if (!on) { next = 0; return; }
-      if (now >= next) {
-        hit(k, { pitch: pitch * semis(Math.random() * 4 - 2), force: 0.4 + speed * 0.6 });
-        next = now + 0.16 - speed * 0.07 + Math.random() * 0.04;
-      }
-    } };
-  },
-  2(k) { // Grate: a hit, then harsh metal held while it drags
-    const { ctx } = k;
-    const src = ctx.createBufferSource(); src.buffer = k.noise; src.loop = true;
-    const pre = ctx.createBiquadFilter(); pre.type = 'bandpass'; pre.frequency.value = 1500; pre.Q.value = 0.7;
-    const sh = drive(ctx, 6);
-    const r1 = ctx.createBiquadFilter(); r1.type = 'peaking'; r1.frequency.value = 1150; r1.Q.value = 9; r1.gain.value = 14;
-    const r2 = ctx.createBiquadFilter(); r2.type = 'peaking'; r2.frequency.value = 2700; r2.Q.value = 11; r2.gain.value = 12;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5000;
-    const g = ctx.createGain(); g.gain.value = 0;
-    src.connect(pre).connect(sh).connect(r1).connect(r2).connect(lp).connect(g).connect(k.out); src.start();
-    let was = false;
-    return { nodes: [src], g, update: ({ on, speed, pitch }) => {
-      if (on && !was) hit(k, { pitch, force: 0.5 + speed * 0.5 });
-      was = on;
-      smooth(r1.frequency, 1150 * pitch, k, 0.02);
-      smooth(r2.frequency, 2700 * pitch * (0.95 + speed * 0.1), k, 0.02);
-      smooth(pre.frequency, (1200 + speed * 800) * pitch, k, 0.03);
-      smooth(g.gain, on ? 0.05 + speed * 0.09 : 0, k, on ? 0.006 : 0.035);
-    } };
-  },
-  3(k) { // Crash & Drag: a heavy hit, then a rough rattling drag
-    const { ctx } = k;
-    const src = ctx.createBufferSource(); src.buffer = k.noise; src.loop = true;
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 600; bp.Q.value = 1.8;
-    const sh = drive(ctx, 3);
-    const rattle = ctx.createGain(); rattle.gain.value = 0.5;
-    const lfo = ctx.createOscillator(), la = ctx.createGain(); lfo.type = 'square'; lfo.frequency.value = 24; la.gain.value = 0.5;
-    lfo.connect(la).connect(rattle.gain); lfo.start();
-    const g = ctx.createGain(); g.gain.value = 0;
-    src.connect(bp).connect(sh).connect(rattle).connect(g).connect(k.out); src.start();
-    let was = false;
-    return { nodes: [src, lfo], g, update: ({ on, speed, pitch }) => {
-      if (on && !was) hit(k, { pitch, force: 0.6 + speed * 0.4, heavy: true });
-      was = on;
-      smooth(bp.frequency, (480 + speed * 500) * pitch, k, 0.03);
-      smooth(lfo.frequency, (16 + speed * 22) * pitch, k, 0.05);
-      smooth(g.gain, on ? 0.12 + speed * 0.2 : 0, k, on ? 0.008 : 0.04);
-    } };
-  },
-};
+      if (now < next) return;
+      hit(k, { pitch: semis(Math.random() * 6 - 3), force: 0.4 + speed * 0.6 });
+      next = now + 0.16 - speed * 0.07 + Math.random() * 0.04;
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------------------------
 
@@ -243,10 +185,7 @@ export class Sound {
     this.ctx = null;
     this.enabled = false;
     this.engine = null;
-    this.scrapeStyle = DEFAULT_SCRAPE;
     this.scrape = null;          // the live scrape voice
-    this.scrapeOn = false;
-    this.pitch = 1;              // the current scrape's pitch
     this.volume = 0.8;
   }
 
@@ -277,12 +216,6 @@ export class Sound {
     if (!this.enabled) { this.stopEngine(); this.stopScrape(); }
   }
 
-  setScrapeStyle(n) {
-    if (!SCRAPES[n] || n === this.scrapeStyle) return;
-    this.stopScrape();
-    this.scrapeStyle = n;
-  }
-
   /** Play a one-shot cue. `force` plays it even with sound switched off (for the preview page). */
   play(cue, opts = {}, force = false) {
     if ((!this.enabled && !force) || !this.ready) return;
@@ -301,25 +234,14 @@ export class Sound {
     if (this.engine) { this.engine.stop(); this.engine = null; }
   }
 
-  /** Keep the scrape voice in step with the cab: { on, speed } (speed 0..1). */
+  /** Keep the scrape in step with the cab: { on, speed } (speed 0..1). */
   updateScrape(state, force = false) {
     if ((!this.enabled && !force) || !this.ready) { this.stopScrape(); return; }
-    if (!this.scrape) {
-      if (!state.on) return;
-      this.scrape = SCRAPE_VOICES[this.scrapeStyle](this.kit);
-    }
-    if (state.on && !this.scrapeOn) this.pitch = Math.pow(2, (Math.random() * 8 - 4) / 12); // ±4 semitones
-    this.scrapeOn = state.on;
-    this.scrape.update({ on: state.on, speed: state.speed, pitch: this.pitch });
+    if (!this.scrape) this.scrape = scrapeVoice(this.kit);
+    this.scrape.update(state);
   }
 
-  stopScrape() {
-    const v = this.scrape;
-    if (!v) return;
-    this.scrape = null; this.scrapeOn = false;
-    v.g.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
-    setTimeout(() => { for (const n of v.nodes) { try { n.stop(); } catch { /* already stopped */ } } v.g.disconnect(); v.extra?.disconnect(); }, 400);
-  }
+  stopScrape() { this.scrape = null; }
 
   /** Pause or resume all sound (when the page is hidden, say). */
   suspend(on) {

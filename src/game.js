@@ -494,6 +494,9 @@ export class Game {
     this.wrecked = false;
     this.finished = false;
     this.camX = 0; this.camY = 0;     // J1Fc4 / k20D4
+    // How much of the world shows top to bottom. The width is always the original 576; outside
+    // Classic the renderer sets the height to fit the window's shape. It only moves the camera.
+    this.viewH = STAGE_H;
     this.dirt = [];                   // Z5D11
     for (let i = 0; i < 16; i++) this.dirt.push({ life: 0, x: 0, y: 0, vx: 0, vy: 0, frame: 0, scale: 1, alpha: 1 });
     this.dirtCooldown = 0;            // y4c11
@@ -510,7 +513,7 @@ export class Game {
 
   get levelData() { return this.mode === 'endless' ? this.course.level : this.data.levels[this.level]; }
   get maxCamX() { return this.levelData.width * TILE - STAGE_W; }   // N53D4
-  get maxCamY() { return this.levelData.height * TILE - STAGE_H; }  // o64D4
+  get maxCamY() { return this.levelData.height * TILE - this.viewH; }  // o64D4
 
   saveLook() { this.store.set('truckLook', { ...this.look }); }
 
@@ -572,7 +575,7 @@ export class Game {
     this.truck.reset(s[0], s[1]);
     this.truck.rearWheelRot = 0; this.truck.frontWheelRot = 0;
     this.camX = Math.min(Math.max(s[0] - 150, 0), this.maxCamX);       // s4833
-    this.camY = Math.min(Math.max(s[1] - STAGE_H / 2, 0), this.maxCamY);
+    this.camY = Math.min(Math.max(s[1] - this.viewH / 2, 0), this.maxCamY);
     this.updateCamera();
     this.ticker = STAGE_NAMES[this.level]; this.tickerTimer = 140;      // m2813
     this.endTimer = 0;
@@ -642,7 +645,7 @@ export class Game {
   updateCamera() { // T5933 + w6015
     const [fx, fy] = this.focus;
     let dx = (fx - 150 - this.camX) * 0.2;
-    let dy = (fy - STAGE_H / 2 - this.camY) * 0.2;
+    let dy = (fy - this.viewH / 2 - this.camY) * 0.2;
     dx = Math.max(Math.min(dx, TILE), -TILE);
     dy = Math.max(Math.min(dy, TILE), -TILE);
     // Outside Classic there's no ceiling, so the camera rises to keep a high-flying truck in view.
@@ -863,6 +866,8 @@ export class Game {
         this.garageTruck.garageStep();
         break;
       case 'gameOver':
+        // A wrecked truck's pieces keep tumbling behind the game-over box.
+        if (this.wreck) { this.wreck.step(); this.updateCamera(); }
         if (!this.keys.restart) this.restartLatch = false;
         else if (!this.restartLatch) this.restart();
         break;

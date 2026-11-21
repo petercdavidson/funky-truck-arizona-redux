@@ -13,6 +13,11 @@ site on GitHub Pages.
 | **Endless** | A course generated as you drive that never ends. No damage: it's free play. **End Run** in the pause menu finishes the run and saves your best distance. |
 | **Practice** | One stage of your choice, played like Play. Options on the stage screen switch **Damage** off and play by **Classic** rules. |
 
+Outside Classic, the driving view fills the window. It always shows the same width of the world
+(the original 576 units), so everyone sees the same distance ahead; a taller window shows more
+sky and ground, a wider one less. The backdrop scales up evenly to cover it. Classic and the menus
+keep the original 576×448 view.
+
 Play, Classic and Endless each keep their own best (score, score, distance). A Practice run with
 damage saves to Play's or Classic's best; a damage-free one saves none.
 
@@ -70,11 +75,9 @@ distance in metres.
 All sound is synthesised live with the Web Audio API, so the game ships no sound files. Sound is
 off until you switch it on. There's a soft engine hum with a quiet hiss of tyres on the ground,
 thumps for landings, and bells for tricks, which ring as each trick is done. Scraping the cab
-sounds hard and sudden, with a slightly different pitch each time.
+is a run of hard hits, each at a slightly different pitch.
 
-There are three scrape sounds to choose from. The page `sounds.html` (at `/sounds.html` on the
-site) plays them side by side, and `?scrape=1`, `2` or `3` on the game's address tries one in
-the game.
+The page `sounds.html` (at `/sounds.html` on the site) plays every sound.
 
 The game logic knows nothing about sound: `src/sound-events.js` watches the game after every step
 and turns what happened (a landing, a trick, a finished stage) into cues, and `src/audio.js`
@@ -127,7 +130,7 @@ saved to storage while a test parameter is set.
 | `src/render.js` | Draws everything on the canvas, and defines the clickable menu areas. |
 | `src/endless.js` | Endless Mode's course generator. |
 | `src/audio.js`, `src/sound-events.js` | Synthesised sound, and the watcher that turns game events into sound cues. |
-| `sounds.html` | A page for comparing the scrape sounds and hearing the other cues. |
+| `sounds.html` | A page for hearing every sound. |
 | `src/wreck.js` | The ragdoll wreck: a wrecked truck's loose pieces (outside Classic). |
 | `src/tricks.js` | Spots tricks (flips, airtime, wheelies, clean landings) and scores them in chains. |
 | `src/main.js` | Startup, the fixed 70 steps/second loop with smooth interpolated drawing, and all input. |

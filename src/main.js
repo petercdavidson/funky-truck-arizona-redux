@@ -4,7 +4,7 @@
 import { Game, STEP_HZ, emptyKeys } from './game.js';
 import { loadAssets } from './assets.js';
 import { Renderer, hitButton } from './render.js';
-import { Sound, SCRAPES } from './audio.js';
+import { Sound } from './audio.js';
 import { SoundWatcher } from './sound-events.js';
 
 const DT = 1000 / STEP_HZ;
@@ -26,8 +26,6 @@ const touchUI = document.getElementById('touch');
 
 let game, renderer;
 const sound = new Sound();
-// ?scrape=1|2|3 picks one of the scrape sounds to try in the game (sounds.html compares them).
-{ const n = Number(new URLSearchParams(location.search).get('scrape')); if (SCRAPES[n]) sound.setScrapeStyle(n); }
 const watcher = new SoundWatcher();
 let engineState = { on: false };
 let scrapeState = { on: false, speed: 0 };

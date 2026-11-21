@@ -9,6 +9,7 @@ import { TRICK } from './tricks.js';
 import { Wreck } from './wreck.js';
 
 const DEG = Math.PI / 180;
+const FILL_SCREENS = new Set(['playing', 'paused', 'gameOver']);
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
 
 // ---------------------------------------------------------------------------------------------
@@ -77,20 +78,51 @@ export class Renderer {
     this.touchMode = false;
   }
 
-  /** Fit the 576x448 stage into the canvas element's size, letterboxed. */
   resize(cssW, cssH, dpr) {
     this.canvas.width = Math.round(cssW * dpr);
     this.canvas.height = Math.round(cssH * dpr);
-    this.scale = Math.min(this.canvas.width / STAGE_W, this.canvas.height / STAGE_H);
-    this.offX = Math.round((this.canvas.width - STAGE_W * this.scale) / 2);
-    this.offY = Math.round((this.canvas.height - STAGE_H * this.scale) / 2);
     this.cssPerDevice = 1 / dpr;
+    this.layout(null);
   }
 
-  /** Convert a point in canvas CSS pixels to stage coordinates. */
+  /**
+   * Work out how the view fits the canvas. Menus, and everything in Classic, show the original
+   * 576x448 stage, letterboxed. Outside Classic the driving view fills the window: it always
+   * shows the same 576 units across (what matters for seeing the terrain ahead), and as much
+   * height as the window's shape gives. Sets game.viewH so the camera knows.
+   */
+  layout(game) {
+    const W = this.canvas.width, H = this.canvas.height;
+    const fill = !!game && !game.rules.classic && FILL_SCREENS.has(game.screen);
+    if (fill) {
+      this.scale = W / STAGE_W;
+      this.viewH = H / this.scale;
+      this.offX = 0; this.offY = 0;
+    } else {
+      this.scale = Math.min(W / STAGE_W, H / STAGE_H);
+      this.viewH = STAGE_H;
+      this.offX = Math.round((W - STAGE_W * this.scale) / 2);
+      this.offY = Math.round((H - STAGE_H * this.scale) / 2);
+    }
+    // The pause and game-over boxes stay centred, and shrink to fit a short view.
+    this.menuK = Math.min(1, this.viewH / STAGE_H);
+    if (game) game.viewH = this.viewH;
+  }
+
+  /** Convert a point in canvas CSS pixels to stage (menu) coordinates. */
   toStage(cssX, cssY) {
     const dx = cssX / this.cssPerDevice, dy = cssY / this.cssPerDevice;
-    return [(dx - this.offX) / this.scale, (dy - this.offY) / this.scale];
+    const x = (dx - this.offX) / this.scale, y = (dy - this.offY) / this.scale;
+    const k = this.menuK;
+    return [(x - STAGE_W / 2) / k + STAGE_W / 2, (y - this.viewH / 2) / k + STAGE_H / 2];
+  }
+
+  /** Switch to menu coordinates: the 576x448 stage, centred (and shrunk if need be) in the view. */
+  menuTransform() {
+    const ctx = this.ctx, k = this.menuK;
+    ctx.translate(STAGE_W / 2, this.viewH / 2);
+    ctx.scale(k, k);
+    ctx.translate(-STAGE_W / 2, -STAGE_H / 2);
   }
 
   stageTransform() {
@@ -246,13 +278,14 @@ export class Renderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.save();
     ctx.beginPath();
-    ctx.rect(this.offX, this.offY, Math.round(STAGE_W * this.scale), Math.round(STAGE_H * this.scale));
+    ctx.rect(this.offX, this.offY, Math.round(STAGE_W * this.scale), Math.round(this.viewH * this.scale));
     ctx.clip();
     const s = this.scale;
     const tx0 = Math.floor(camX / TILE), ty0 = Math.floor(camY / TILE);
     const edgeX = (gx) => Math.round((gx * TILE - camX) * s) + this.offX;
     const edgeY = (gy) => Math.round((gy * TILE - camY) * s) + this.offY;
-    for (let r = 0; r < 8; r++) {
+    const rows = Math.ceil(this.viewH / TILE) + 1;
+    for (let r = 0; r < rows; r++) {
       const gy = ty0 + r;
       if (gy < 0 || gy >= level.height) continue;
       const y0 = edgeY(gy), y1 = edgeY(gy + 1);
@@ -271,11 +304,13 @@ export class Renderer {
 
   world(game, v) {
     const ctx = this.ctx;
-    this.image('bg.jpg');
+    // The backdrop is scaled up evenly to cover a taller view, and centred.
+    const bg = this.a.images['bg.jpg'], k = Math.max(1, this.viewH / STAGE_H);
+    ctx.drawImage(bg, (STAGE_W - STAGE_W * k) / 2, (this.viewH - STAGE_H * k) / 2, STAGE_W * k, STAGE_H * k);
     this.tiles(game.levelData, v.camX, v.camY);
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, STAGE_W, STAGE_H);
+    ctx.rect(0, 0, STAGE_W, this.viewH);
     ctx.clip();
     ctx.translate(-v.camX, -v.camY);
     for (const d of game.dirt) {
@@ -412,7 +447,10 @@ export class Renderer {
 
   overlayDim(alpha) {
     this.ctx.fillStyle = `rgba(0,0,0,${alpha})`;
-    this.ctx.fillRect(0, 0, STAGE_W, STAGE_H);
+    this.ctx.save();
+    this.stageTransform();
+    this.ctx.fillRect(0, 0, STAGE_W, this.viewH);
+    this.ctx.restore();
   }
 
   gameOver(game) {
@@ -443,6 +481,7 @@ export class Renderer {
   /** Draw a full frame. `v` holds interpolated positions. */
   draw(game, v) {
     const ctx = this.ctx;
+    this.layout(game);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -451,7 +490,7 @@ export class Renderer {
     this.stageTransform();
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, STAGE_W, STAGE_H);
+    ctx.rect(0, 0, STAGE_W, this.viewH);
     ctx.clip();
     switch (game.screen) {
       case 'title': this.title(game, v); break;
@@ -459,8 +498,8 @@ export class Renderer {
       case 'garage': this.garage(game, v); break;
       case 'practiceSelect': this.practiceSelect(game); break;
       case 'playing': this.world(game, v); break;
-      case 'paused': this.world(game, v); this.paused(game); break;
-      case 'gameOver': this.world(game, v); this.gameOver(game); break;
+      case 'paused': this.world(game, v); this.menuTransform(); this.paused(game); break;
+      case 'gameOver': this.world(game, v); this.menuTransform(); this.gameOver(game); break;
     }
     ctx.restore();
   }

@@ -167,3 +167,31 @@ test('stuck on its roof in a damage-free run, the truck can be flipped back onto
   for (let i = 0; i < STUCK_STEPS * 2; i++) p.step();
   assert.equal(p.canUpright, false, 'not offered when damage is on');
 });
+
+test('a taller view keeps the truck centred top to bottom', () => {
+  const g = new Game(data);
+  g.startCampaign();
+  g.viewH = 800;
+  settle(g, 300);
+  const [, fy] = g.focus;
+  const want = Math.min(fy - 400, g.maxCamY); // centred, unless that would show below the level
+  assert.equal(g.maxCamY, data.levels[0].height * TILE - 800);
+  assert.ok(Math.abs(g.camY - want) < 20, `camera at ${Math.round(g.camY)}, expected about ${Math.round(want)}`);
+});
+
+test('wreck wheels keep rolling after the body has stopped', () => {
+  const g = new Game(data);
+  g.startCampaign();
+  g.keys.up = true;
+  settle(g, 300);
+  g.keys.up = false;
+  g.damage = 1000;
+  g.step();
+  const w = g.wreck;
+  for (let i = 0; i < 140; i++) w.step();
+  const speed = (i) => Math.hypot(w.T[i * 2] - w.P[i * 2], w.T[i * 2 + 1] - w.P[i * 2 + 1]);
+  const wheels = Math.max(...w.wheels.map((x) => speed(x.p)));
+  const body = Math.max(...w.body.map(speed));
+  assert.ok(wheels > 1, `a wheel is still rolling (${wheels.toFixed(2)} px/step)`);
+  assert.ok(body < wheels, `faster than the body (${body.toFixed(2)})`);
+});

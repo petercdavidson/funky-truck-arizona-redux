@@ -26,7 +26,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `src/assets.js`: image and level loading, tile preparation, font stacks.
 - `index.html` / `style.css`: page shell, loading screen, touch controls.
 - `src/sound-events.js` (no DOM) turns game state into sound cues; `src/audio.js` synthesises them
-  with Web Audio (sound is on/off, off by default). `sounds.html` compares the scrape sounds. No
+  with Web Audio (sound is on/off, off by default). `sounds.html` plays every sound. No
   sound files.
 - `src/wreck.js` (no DOM): the ragdoll wreck, a wrecked truck's loose pieces.
 

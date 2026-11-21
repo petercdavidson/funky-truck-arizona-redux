@@ -40,17 +40,13 @@
 <body>
 <main>
   <h1>funky truck sounds</h1>
-  <p class="lede">Scrape sounds to choose from. Each one starts hard, so it's clear something has gone wrong,
-    follows how fast the cab is sliding, and changes pitch a little each time so a run of scrapes doesn't sound the
-    same. <b>Try in game</b> opens the game with that scrape. Each card plays a short slide, three in a row, or a
-    slide with the engine running.</p>
-  <div class="grid" id="sets"></div>
-  <h2 style="margin-top:28px">Everything else</h2>
+  <p class="lede">Every sound in the game, synthesised live in the browser (no sound files). Try the cab scrape
+    on its own or with the engine running, and the rest of the cues below.</p>
   <div class="card"><div class="cues" id="cues"></div></div>
   <a class="back" href="./">← Back to the game</a>
 </main>
 <script type="module">
-import { Sound, SCRAPES, DEFAULT_SCRAPE } from './src/audio.js';
+import { Sound } from './src/audio.js';
 
 const sound = new Sound();
 let scrape = { on: false, speed: 0 };
@@ -69,7 +65,7 @@ function el(tag, props = {}, ...kids) {
   return n;
 }
 
-/** One slide: ease in, hold while slowing down, then lift off. */
+/** One slide: the cab drags, slowing down, then lifts off. */
 function slide(at = 0, ms = 1100) {
   setTimeout(() => {
     const t0 = performance.now();
@@ -83,33 +79,24 @@ function slide(at = 0, ms = 1100) {
   }, at);
 }
 
-const root = document.getElementById('sets');
-for (const [n, s] of Object.entries(SCRAPES)) {
-  const card = el('section', { className: 'card' + (Number(n) === DEFAULT_SCRAPE ? ' current' : '') });
-  card.append(el('h2', { textContent: `${n}. ${s.name}` }), el('p', { textContent: s.blurb }));
-  const go = (f) => () => { sound.unlock(); sound.setScrapeStyle(Number(n)); f(); };
-  card.append(el('div', { className: 'cues' },
-    el('button', { textContent: 'Slide', onclick: go(() => slide()) }),
-    el('button', { textContent: 'Three slides', onclick: go(() => { slide(0, 700); slide(900, 600); slide(1700, 900); }) }),
-    el('button', { textContent: 'With engine', onclick: go(() => {
-      engine = { on: true, throttle: 1, speed: 0.6, airborne: false };
-      slide(400, 1300);
-      setTimeout(() => { engine = { on: false }; }, 2200);
-    }) })));
-  card.append(el('a', { className: 'button-link', href: `./?scrape=${n}`, textContent: 'Try in game →' }));
-  root.append(card);
-}
-
 const cues = document.getElementById('cues');
-const cue = (label, name, opts) => cues.append(el('button', { textContent: label, onclick: () => { sound.unlock(); sound.play(name, opts, true); } }));
+const button = (label, f) => cues.append(el('button', { textContent: label, onclick: () => { sound.unlock(); f(); } }));
+const cue = (label, name, opts) => button(label, () => sound.play(name, opts, true));
+button('Scrape', () => slide());
+button('Three scrapes', () => { slide(0, 700); slide(900, 600); slide(1700, 900); });
+button('Scrape with engine', () => {
+  engine = { on: true, throttle: 1, speed: 0.6, airborne: false };
+  slide(400, 1300);
+  setTimeout(() => { engine = { on: false }; }, 2200);
+});
+button('Rolling (tyres on ground)', () => {
+  engine = { on: true, throttle: 0, speed: 0.9, airborne: false };
+  setTimeout(() => { engine = { on: false }; }, 2500);
+});
 cue('Start', 'start'); cue('Bump', 'bump', { force: 0.6 }); cue('Land', 'land', { force: 0.8 });
 cue('Flip', 'trick', { names: ['Backflip'] }); cue('Double flip', 'trick', { names: ['Double Backflip'] });
 cue('Big Air', 'trick', { names: ['Big Air'] }); cue('Clean', 'trick', { names: ['Clean'] });
 cue('Stage done', 'stage'); cue('Win', 'win'); cue('Wreck', 'wreck'); cue('Click', 'click');
-cues.append(el('button', { textContent: 'Rolling (tyres on ground)', onclick: () => {
-  sound.unlock(); engine = { on: true, throttle: 0, speed: 0.9, airborne: false };
-  setTimeout(() => { engine = { on: false }; }, 2500);
-} }));
 </script>
 </body>
 </html>

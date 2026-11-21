@@ -13,9 +13,11 @@ const GRAVITY = 0.11;     // the truck's gravity per step (Truck.integrate)
 // mount, 0.7 scale as drawn), shrunk a little so the corners sit on the ground convincingly.
 const BODY_BOX = [[-10, -26], [62, -26], [62, 10], [-10, 10]];
 
+// Per piece: share of the speed into the ground that bounces back, share of the speed along the
+// ground kept on each contact, and share of the speed kept each step in the air.
 export const WRECK = {
-  bounce: 0.3,           // share of the speed into the ground that bounces back
-  friction: 0.86,        // share of the speed along the ground kept on each contact
+  part: { bounce: 0.3, friction: 0.86, air: 0.998 },     // the body and bars scrape to a halt
+  wheel: { bounce: 0.5, friction: 0.997, air: 0.9998 },  // the wheels roll on and bounce
 };
 
 export class Wreck {
@@ -77,8 +79,9 @@ export class Wreck {
     const T = this.T, P = this.P;
     for (let i = 0; i < T.length; i += 2) {
       const x = T[i], y = T[i + 1];
-      T[i] += (x - P[i]) * 0.998;
-      T[i + 1] += (y - P[i + 1]) * 0.998 + GRAVITY;
+      const air = (this.thin[i >> 1] ? WRECK.part : WRECK.wheel).air;
+      T[i] += (x - P[i]) * air;
+      T[i + 1] += (y - P[i + 1]) * air + GRAVITY;
       P[i] = x; P[i + 1] = y;
     }
     // P now holds where each point was at the start of the step: sweep collisions from there.
@@ -106,9 +109,10 @@ export class Wreck {
       const vx = T[i * 2] - from[i * 2], vy = T[i * 2 + 1] - from[i * 2 + 1];
       const vn = vx * h.nx + vy * h.ny;
       const tx = vx - vn * h.nx, ty = vy - vn * h.ny;
-      const out = vn < 0 ? -vn * WRECK.bounce : vn;
-      P[i * 2] = T[i * 2] - (tx * WRECK.friction + h.nx * out);
-      P[i * 2 + 1] = T[i * 2 + 1] - (ty * WRECK.friction + h.ny * out);
+      const m = this.thin[i] ? WRECK.part : WRECK.wheel;
+      const out = vn < 0 ? -vn * m.bounce : vn;
+      P[i * 2] = T[i * 2] - (tx * m.friction + h.nx * out);
+      P[i * 2 + 1] = T[i * 2 + 1] - (ty * m.friction + h.ny * out);
     }
     // Wheels roll on the ground and keep spinning in the air.
     for (const w of this.wheels) {
@@ -116,7 +120,7 @@ export class Wreck {
       if (h) {
         const vx = T[w.p * 2] - P[w.p * 2], vy = T[w.p * 2 + 1] - P[w.p * 2 + 1];
         w.spin = (h.ny * vx - h.nx * vy) / this.circumference * -360;
-      } else w.spin *= 0.995;
+      }
       w.rot += w.spin;
     }
     this.steps++;
