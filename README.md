@@ -43,7 +43,7 @@ by the stage they came from, so a course starts like Stage One and drifts toward
 the further you get. The course lives in a window of 128 columns that scrolls as you drive
 (`src/endless.js`).
 
-Score: 10 points for every new tile of ground, plus flip bonuses as usual. The HUD shows the
+Score: 10 points for every new tile of ground, plus tricks as usual. The HUD shows the
 distance in metres.
 
 ## Sound
@@ -57,6 +57,21 @@ each engine with sliders, play a short demo run, and choose the set the game use
 The game logic knows nothing about sound: `src/sound-events.js` watches the game after every step
 and turns what happened (a landing, a cab scrape, a flip, a finished stage) into cues, and
 `src/audio.js` plays them in the chosen set.
+
+## Tricks
+
+| Trick | How | Points |
+| --- | --- | --- |
+| Backflip / Frontflip | Turn over in the air and land (Double, Triple… for more turns) | the degrees turned, as in the original |
+| Big Air / Huge Air | 1 s / 2 s with no wheel on the ground | 3 per 1/70 s past half a second |
+| Wheelie / Nose Wheelie | Drive along on the back / front wheel for ¾ s or more | 2 per 1/70 s |
+| Clean | Land a jump on both wheels at once without scraping the cab | half the jump's points |
+
+Tricks done close together make a chain. The chain pays out about 1½ s after its last trick, worth
+its points times the number of tricks in it (up to ×5). While a chain is open, its running total and
+multiplier show under the score. Scraping the cab is a **Bail**: the chain pays out at once, without
+the multiplier. A chain still open at the finish line is paid out there. The trick tracker
+(`src/tricks.js`) only watches the truck; the physics is unchanged.
 
 ## Publish on GitHub Pages
 
@@ -90,6 +105,7 @@ saved to storage while a test parameter is set.
 | `src/endless.js` | Endless Mode's course generator. |
 | `src/audio.js`, `src/sound-events.js` | Synthesised sound sets, and the watcher that turns game events into sound cues. |
 | `sounds.html` | A page for trying out and choosing the sound sets. |
+| `src/tricks.js` | Spots tricks (flips, airtime, wheelies, clean landings) and scores them in chains. |
 | `src/main.js` | Startup, the fixed 70 steps/second loop with smooth interpolated drawing, and all input. |
 | `src/assets.js` | Loads the images and level data, and prepares the terrain tiles. The game uses fonts already on the device and ships no font files. |
 | `index.html`, `style.css` | Page layout, loading screen and the on-screen touch controls. |

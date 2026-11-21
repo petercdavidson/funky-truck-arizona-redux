@@ -18,6 +18,8 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   `opts.random`).
 - `src/endless.js`: Endless Mode's course generator (learns tile joins from `levels.json`). Also
   free of DOM APIs. The game scrolls the world left as the course moves (`Game.scrollWorld`).
+- `src/tricks.js`: trick detection and chain scoring (no DOM). It reads the truck and never
+  changes it; flips still come from `Truck.trackFlip`.
 - `src/render.js`: canvas drawing, plus `BUTTONS`, the clickable areas for each screen.
 - `src/main.js`: startup, the fixed-step loop, input (keyboard, pointer, on-screen controls,
   gamepad), and `applyTestParams` (`?test=...` URL hooks used for screenshots).
