@@ -524,9 +524,10 @@ export class Game {
     this.ground = 0;                  // dynamic camera: smoothed height above the ground
     this.camSpeed = 0;                // dynamic camera: smoothed speed
     this.camVX = 0; this.camVY = 0;   // dynamic camera: the camera's own speed
-    // How much of the world shows top to bottom. The width is always the original 576; outside
-    // Classic the renderer sets the height to fit the window's shape. It only moves the camera.
-    this.viewH = STAGE_H;
+    // How much of the world the driving view shows top to bottom (at zoom 1) when it fills the
+    // window: the renderer keeps it up to date with the window's shape, even on the menus, so a
+    // stage starts with its camera in the right place. Classic always shows 448 (see viewH).
+    this.fillViewH = STAGE_H;
     this.dirt = [];                   // Z5D11
     for (let i = 0; i < 16; i++) this.dirt.push({ life: 0, x: 0, y: 0, vx: 0, vy: 0, frame: 0, scale: 1, alpha: 1 });
     this.dirtCooldown = 0;            // y4c11
@@ -542,6 +543,10 @@ export class Game {
     }
     this.garageTruck.reset(STAGE_W / 2, 120);
   }
+
+  /** How much of the world shows top to bottom at zoom 1. It only moves the camera. */
+  get viewH() { return this.rules.classic ? STAGE_H : this.fillViewH; }
+  set viewH(h) { this.fillViewH = h; }
 
   get levelData() { return this.mode === 'endless' ? this.course.level : this.data.levels[this.level]; }
   get maxCamX() { return this.levelData.width * TILE - STAGE_W * this.zoom; }   // N53D4
@@ -696,16 +701,29 @@ export class Game {
     let wantX = fx - 150 * z, wantY = fy + lower - this.viewH * z / 2;
     // The dynamic camera aims inside the level's edges, so it slows to a stop at one rather than hitting it.
     if (dyn) { wantX = clampX(wantX); wantY = clampY(wantY); }
+    if (dyn && Math.hypot(wantX - this.camX, wantY - this.camY) > 2 * this.viewH * z) {
+      // Too far to pan to (the truck was moved, not driven): cut straight there.
+      this.camX = wantX; this.camY = wantY; this.camVX = 0; this.camVY = 0;
+      return;
+    }
     let dx = Math.max(Math.min((wantX - this.camX) * 0.2, TILE), -TILE);
     let dy = Math.max(Math.min((wantY - this.camY) * 0.2, TILE), -TILE);
     if (dyn) {
-      // Ease the camera's own speed towards the move it wants, so it never lurches.
+      // Ease the camera's own speed towards the move it wants, so it never lurches. It never goes
+      // faster than it could stop from before reaching where it's heading, so it can't overshoot.
       const A = CAMERA.accel, lim = (v) => Math.max(-A, Math.min(A, v));
-      this.camVX += lim(dx - this.camVX); this.camVY += lim(dy - this.camVY);
+      const brake = (d, gap) => Math.sign(d) * Math.min(Math.abs(d), Math.sqrt(2 * A * Math.abs(gap)));
+      this.camVX += lim(brake(dx, wantX - this.camX) - this.camVX);
+      this.camVY += lim(brake(dy, wantY - this.camY) - this.camVY);
       dx = this.camVX; dy = this.camVY;
     }
     const x = clampX(this.camX + dx), y = clampY(this.camY + dy);
-    if (dyn) { this.camVX = x - this.camX; this.camVY = y - this.camY; } // stopped by an edge
+    if (dyn) {
+      // An edge can stop the camera, or push it when the view grows: neither is the camera's own
+      // speed, so keep only the part of the move it meant to make.
+      const keep = (moved, meant) => (Math.sign(moved) === Math.sign(meant) ? Math.sign(meant) * Math.min(Math.abs(moved), Math.abs(meant)) : 0);
+      this.camVX = keep(x - this.camX, dx); this.camVY = keep(y - this.camY, dy);
+    }
     this.camX = x; this.camY = y;
   }
 

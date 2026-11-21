@@ -320,3 +320,22 @@ test('the dynamic camera is steady: it rarely changes direction and never lurche
     assert.ok(worstAccel <= 3, `stage ${stage + 1}: camera speed changed by ${worstAccel.toFixed(1)} px/step in one step`);
   }
 });
+
+test('in a tall window the camera starts steady, and a resize part-way through causes no runaway', () => {
+  for (const stage of [0, 3, 5]) {
+    for (const resized of [false, true]) {
+      const g = new Game(data);
+      g.viewH = resized ? 448 : 1100; // the renderer keeps this up to date, even on the menus
+      g.startPractice(stage);
+      g.viewH = 1100;
+      let prev = [g.camX, g.camY], fastest = 0;
+      for (let i = 0; i < 280; i++) {
+        g.step();
+        // A resize can push the camera off the level's edge for a single step; after that it must be calm.
+        if (!resized || i > 0) fastest = Math.max(fastest, Math.hypot(g.camX - prev[0], g.camY - prev[1]));
+        prev = [g.camX, g.camY];
+      }
+      assert.ok(fastest < 30, `stage ${stage + 1}${resized ? ', resized' : ''}: the camera moved ${fastest.toFixed(0)} px in one step`);
+    }
+  }
+});

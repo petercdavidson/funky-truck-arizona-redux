@@ -110,7 +110,9 @@ export class Renderer {
     }
     // The pause and game-over boxes stay centred, and shrink to fit a short view.
     this.menuK = Math.min(1, this.viewH / STAGE_H);
-    if (game) game.viewH = this.viewH;
+    // The camera always knows the filled view's height (Classic uses 448 regardless), so a stage
+    // started from a menu begins with its camera in the right place.
+    if (game) game.viewH = H * STAGE_W / W;
   }
 
   /** Convert a point in canvas CSS pixels to stage (menu) coordinates. */
