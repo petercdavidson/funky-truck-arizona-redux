@@ -6,7 +6,13 @@
   --edge-b: max(16px, env(safe-area-inset-bottom));
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+  /* No text selection, magnifier or long-press callout anywhere (iOS Safari especially). */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
 
 html, body {
   margin: 0;

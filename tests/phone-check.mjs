@@ -73,9 +73,9 @@ try {
   check(await evaluate('document.body.classList.contains("touch-mode")'), 'touch mode is detected');
   await shot('phone-portrait-title');
 
-  // Tap PLAY on the canvas (stage 289,274 -> CSS pixels via the renderer's mapping).
-  const playAt = await evaluate(`(() => { const { renderer } = window.__funkyTruck; const r = document.getElementById('game').getBoundingClientRect();
-    const dpr = 1 / renderer.cssPerDevice; return [r.x + (renderer.offX + 289 * renderer.scale) / dpr, r.y + (renderer.offY + 274 * renderer.scale) / dpr]; })()`);
+  // Tap PLAY on the canvas, wherever the current menu layout puts it.
+  const playAt = await evaluate(`(() => { const { renderer, game } = window.__funkyTruck; const r = document.getElementById('game').getBoundingClientRect();
+    const [x, y] = renderer.buttonCentre('title', 'play', game); return [r.x + x, r.y + y]; })()`);
   await touch('touchStart', [playAt]); await touch('touchEnd', []);
   await sleep(300);
   check(await evaluate('window.__funkyTruck.game.screen') === 'playing', 'tapping PLAY starts the game');

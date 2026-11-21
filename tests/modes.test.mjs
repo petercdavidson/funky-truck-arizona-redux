@@ -360,3 +360,31 @@ test('the pause screen names the run, and offers the controls switch outside Cla
   assert.equal(runName(g), 'Endless  ·  0 m');
   assert.deepEqual(actions(g), ['resume', 'endRun', 'menu', 'sound', 'oneButton']);
 });
+
+test('the tall menu layouts keep every button on the page, apart from the others, and big enough to tap', async () => {
+  const { TALL_BUTTONS, TALL_W, TALL_H, BUTTONS, hitButton } = await import('../src/render.js');
+  const g = new Game(data);
+  for (const [screen, list] of Object.entries(TALL_BUTTONS)) {
+    if (!list.length) continue;
+    for (const kind of [null, (b) => b.show({ mode: 'endless', rules: {} })]) {
+      const shown = list.filter((b) => !b.show || !kind || kind(b));
+      shown.forEach((b, i) => {
+        const { x, y, w, h } = b.rect;
+        assert.ok(x >= 0 && y >= 0 && x + w <= TALL_W && y + h <= TALL_H[screen], `${screen} ${b.action} is on the page`);
+        assert.ok(h >= 26, `${screen} ${b.action} is ${h} high`);
+        for (const o of shown.slice(i + 1)) {
+          if (b.show && o.show && b.show !== o.show) continue; // never shown together
+          const apart = x + w <= o.rect.x || o.rect.x + o.rect.w <= x || y + h <= o.rect.y || o.rect.y + o.rect.h <= y;
+          assert.ok(apart, `${screen}: ${b.action} and ${o.action} overlap`);
+        }
+      });
+    }
+  }
+  // Every action on the usual layout can be reached on the tall one too.
+  for (const screen of Object.keys(BUTTONS)) {
+    const actions = (l) => new Set(l.map((b) => b.action));
+    assert.deepEqual(actions(TALL_BUTTONS[screen]), actions(BUTTONS[screen]), screen);
+  }
+  const practice = TALL_BUTTONS.title.find((b) => b.action === 'practice').rect;
+  assert.equal(hitButton('title', practice.x + 5, practice.y + 5, g, true).action, 'practice');
+});

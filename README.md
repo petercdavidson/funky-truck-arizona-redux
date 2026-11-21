@@ -17,7 +17,10 @@ Outside Classic, the driving view fills the window, on a phone held either way u
 on-screen controls sit over the bottom of it). Close in, it shows the same width of the
 world (the original 576 units), so everyone sees the same distance ahead; a taller window shows
 more sky and ground, a wider one less. The backdrop scales up evenly to cover it. Classic keeps
-the original 576×448 view. The menus' backdrop fills the window, with the menu centred on it.
+the original 576×448 view. The menus' backdrop fills the window, with the menu centred on it. In a window at least as
+tall as it is wide (a phone held upright, say), every menu switches to a tall layout: one column,
+with the title screen's options under the game modes, Practice's stages in a 3×3 grid, and
+everything scaled up to fill the width, so the buttons are much bigger.
 
 **Dynamic camera** (outside Classic; a switch on the title screen turns it off): the camera pulls
 back when the truck keeps up a good speed or has been high in the air for a while, up to 1.8 times

@@ -128,20 +128,20 @@ function doAction(a) {
 
 function stagePoint(e) {
   const rect = canvas.getBoundingClientRect();
-  return renderer.toStage(e.clientX - rect.left, e.clientY - rect.top);
+  return renderer.toMenu(e.clientX - rect.left, e.clientY - rect.top);
 }
 
 canvas.addEventListener('pointerdown', (e) => {
   setTouchMode(e.pointerType === 'touch');
   const [x, y] = stagePoint(e);
-  const b = hitButton(game.screen, x, y, game);
+  const b = hitButton(game.screen, x, y, game, renderer.tall);
   if (b) { e.preventDefault(); doAction(b.action); }
 });
 
 canvas.addEventListener('pointermove', (e) => {
   if (e.pointerType === 'touch') return;
   const [x, y] = stagePoint(e);
-  const b = hitButton(game.screen, x, y, game);
+  const b = hitButton(game.screen, x, y, game, renderer.tall);
   renderer.hover = b;
   canvas.style.cursor = b ? 'pointer' : '';
 });
@@ -202,6 +202,12 @@ document.getElementById('upright-button').addEventListener('pointerdown', (e) =>
 // Stop long-press menus and double-tap zoom from getting in the way on phones.
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 document.addEventListener('dblclick', (e) => e.preventDefault());
+// iOS Safari takes a double tap then a hold as selecting text, and pops up its magnifier.
+// Cancelling the touch's default action stops that (and any other selection or zoom gesture);
+// the game's own controls use pointer events, which still arrive.
+for (const ev of ['touchstart', 'touchend']) {
+  document.addEventListener(ev, (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+}
 
 // ---- gamepads
 
