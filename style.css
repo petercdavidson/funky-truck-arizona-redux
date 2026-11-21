@@ -99,7 +99,7 @@ body.touch-mode[data-screen="paused"] #touch .pad { visibility: hidden; }
   .pad { flex-direction: row; }
 }
 
-.ctl, #touch-pause {
+.ctl, #corner button {
   display: grid;
   place-items: center;
   border: 2px solid rgba(255, 255, 255, 0.55);
@@ -122,7 +122,7 @@ body.touch-mode[data-screen="paused"] #touch .pad { visibility: hidden; }
   background: rgba(255, 255, 255, 0.35);
   border-color: #fff;
 }
-.ctl svg, #touch-pause svg {
+.ctl svg, #corner svg {
   width: 52%;
   height: 52%;
   fill: none;
@@ -132,16 +132,32 @@ body.touch-mode[data-screen="paused"] #touch .pad { visibility: hidden; }
   stroke-linejoin: round;
 }
 
-#touch-pause {
+/* Pause (all devices) and flip-upright buttons, top centre while driving. */
+#corner {
+  display: none;
   position: fixed;
-  top: max(12px, env(safe-area-inset-top));
+  top: max(10px, env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
+  gap: 10px;
+  z-index: 3;
 }
-body[data-screen="paused"] #touch-pause { display: none; }
+body[data-screen="playing"] #corner { display: flex; }
+#corner button {
+  height: 40px;
+  min-width: 40px;
+  border-radius: 20px;
+  cursor: pointer;
+}
+#corner button:hover { background: rgba(110, 76, 64, 0.7); }
+#upright-button { display: none !important; grid-auto-flow: column; gap: 4px; padding: 0 14px 0 10px; font: inherit; font-weight: 800; font-size: 13px; text-transform: uppercase; }
+#upright-button svg { width: 20px; height: 20px; }
+body[data-upright="1"] #upright-button { display: grid !important; }
+
+/* One-button controls on a touch screen: hide the pedals, and the whole screen is the button. */
+#tap { display: none; position: fixed; inset: 0; z-index: 2; touch-action: none; }
+body.touch-mode[data-onebutton="1"][data-screen="playing"] #tap { display: block; }
+body[data-onebutton="1"] #touch .pad { visibility: hidden; }
 
 #rotate-tip {
   display: none;

@@ -5,26 +5,31 @@
 
 import { TILE, STAGE_W, STAGE_H } from './game.js';
 import { HUD_FONT, TITLE_FONT } from './assets.js';
-import { SOUND_NAMES } from './audio.js';
 import { TRICK } from './tricks.js';
+import { Wreck } from './wreck.js';
 
 const DEG = Math.PI / 180;
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
 
 // ---------------------------------------------------------------------------------------------
 // Clickable areas per screen. `label` buttons are drawn by us; the rest are hotspots over the
-// original art. Actions are handled in main.js.
+// original art. `show(game)` hides a button when it returns false. Actions are handled in main.js.
+// Options are small on/off switches down the right-hand side of a screen.
 
 const r = (x, y, w, h) => ({ x, y, w, h });
+const onOff = (v) => (v ? 'On' : 'Off');
+const option = (y, label, action) => ({ rect: r(428, y, 132, 20), label, action, small: true });
 
 export const BUTTONS = {
   title: [
     { rect: r(229, 250, 120, 25), label: 'Play', action: 'play' },
-    { rect: r(229, 278, 120, 25), label: 'Endless', action: 'endless' },
-    { rect: r(229, 306, 120, 25), label: 'Practice', action: 'practice' },
-    { rect: r(229, 334, 120, 25), label: 'Change Truck', action: 'garage' },
-    { rect: r(229, 362, 120, 25), label: 'How to Play', action: 'help' },
-    { rect: r(490, 8, 78, 20), label: (g) => `♪ ${SOUND_NAMES[g.soundSet]}`, action: 'sound', small: true },
+    { rect: r(229, 278, 120, 25), label: 'Classic', action: 'classic' },
+    { rect: r(229, 306, 120, 25), label: 'Endless', action: 'endless' },
+    { rect: r(229, 334, 120, 25), label: 'Practice', action: 'practice' },
+    { rect: r(163, 362, 122, 25), label: 'Change Truck', action: 'garage' },
+    { rect: r(291, 362, 122, 25), label: 'How to Play', action: 'help' },
+    option(252, (g) => `♪ Sound: ${onOff(g.soundOn)}`, 'sound'),
+    option(276, (g) => `One Button: ${onOff(g.oneButton)}`, 'oneButton'),
   ],
   help: [{ rect: r(229, 386, 120, 25), label: 'Menu', action: 'menu' }],
   garage: [
@@ -36,6 +41,8 @@ export const BUTTONS = {
   practiceSelect: [
     ...Array.from({ length: 9 }, (_, i) => ({ rect: r(136 + 34 * i, 228.05, 32, 32), action: `stage${i}` })),
     { rect: r(229, 413, 120, 25), label: 'Menu', action: 'menu' },
+    option(290, (g) => `Damage: ${onOff(g.practiceDamage)}`, 'practiceDamage'),
+    option(314, (g) => `Classic: ${onOff(g.practiceClassic)}`, 'practiceClassic'),
   ],
   gameOver: [
     { rect: r(229, 250, 120, 25), label: 'Play Again', action: 'again' },
@@ -43,14 +50,18 @@ export const BUTTONS = {
   ],
   paused: [
     { rect: r(229, 262, 120, 25), label: 'Resume', action: 'resume' },
-    { rect: r(229, 293, 120, 25), label: 'Quit to Menu', action: 'menu' },
-    { rect: r(229, 324, 120, 25), label: (g) => `Sound: ${SOUND_NAMES[g.soundSet]}`, action: 'sound' },
+    { rect: r(229, 293, 120, 25), label: 'End Run', action: 'endRun', show: (g) => g.mode === 'endless' },
+    ...[0, 1].map((endless) => [
+      { rect: r(229, 293 + 31 * endless, 120, 25), label: 'Quit to Menu', action: 'menu', show: (g) => (g.mode === 'endless') === !!endless },
+      { rect: r(229, 324 + 31 * endless, 120, 25), label: (g) => `Sound: ${onOff(g.soundOn)}`, action: 'sound', show: (g) => (g.mode === 'endless') === !!endless },
+    ]).flat(),
   ],
   playing: [],
 };
 
-export function hitButton(screen, x, y) {
-  return (BUTTONS[screen] || []).find((b) => x >= b.rect.x && x < b.rect.x + b.rect.w && y >= b.rect.y && y < b.rect.y + b.rect.h) || null;
+export function hitButton(screen, x, y, game) {
+  return (BUTTONS[screen] || []).find((b) => (!b.show || b.show(game))
+    && x >= b.rect.x && x < b.rect.x + b.rect.w && y >= b.rect.y && y < b.rect.y + b.rect.h) || null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -143,6 +154,7 @@ export class Renderer {
 
   buttons(screen, game) {
     for (const b of BUTTONS[screen] || []) {
+      if (b.show && !b.show(game)) continue;
       const { x, y, w, h } = b.rect;
       if (b.label) {
         const label = typeof b.label === 'function' ? b.label(game) : b.label;
@@ -182,6 +194,43 @@ export class Renderer {
       ctx.save();
       ctx.translate(T[p], T[p + 1]);
       ctx.rotate(rot * DEG);
+      ctx.scale(45 / 72, 45 / 72);
+      this.frame('tyre', look.tyre);
+      this.frame('hub', look.hub);
+      ctx.restore();
+    }
+  }
+
+  /** A suspension bar from point (ax, ay) to (bx, by), drawn as in truck(). */
+  bar(ax, ay, bx, by, fr) {
+    const ctx = this.ctx;
+    const dx = bx - ax, dy = by - ay;
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.rotate(Math.atan2(dy, dx));
+    const s = Math.sqrt(dx * dx + dy * dy) / 64;
+    ctx.scale(s, s);
+    ctx.translate(68, -8);
+    ctx.scale(-1, 1);
+    this.frame('bar', fr);
+    ctx.restore();
+  }
+
+  /** A wrecked truck's loose pieces. W holds the (interpolated) points of game.wreck. */
+  wreck(wreck, W, look) {
+    const ctx = this.ctx;
+    for (const b of wreck.bars) this.bar(W[b.a * 2], W[b.a * 2 + 1], W[b.b * 2], W[b.b * 2 + 1], b.frame);
+    const pose = Wreck.bodyPose(W, wreck.body);
+    ctx.save();
+    ctx.translate(pose.x, pose.y);
+    ctx.rotate(pose.ang);
+    ctx.scale(0.7, 0.7);
+    this.frame('body', look.body);
+    ctx.restore();
+    for (const w of wreck.wheels) {
+      ctx.save();
+      ctx.translate(W[w.p * 2], W[w.p * 2 + 1]);
+      ctx.rotate(w.rot * DEG);
       ctx.scale(45 / 72, 45 / 72);
       this.frame('tyre', look.tyre);
       this.frame('hub', look.hub);
@@ -236,29 +285,38 @@ export class Renderer {
       ctx.drawImage(f.img, d.x + f.tx * d.scale, d.y + f.ty * d.scale, f.img.width * d.scale, f.img.height * d.scale);
     }
     ctx.globalAlpha = 1;
-    this.truck(v.T, v.rr, v.fr, game.look);
+    if (game.wreck && v.W) this.wreck(game.wreck, v.W, game.look);
+    else this.truck(v.T, v.rr, v.fr, game.look);
     ctx.restore();
     this.hud(game);
   }
 
   hud(game) { // Symbol 305 / X3323
     const ctx = this.ctx;
-    this.text('damage', 9.5, 7.5, { size: 15, font: HUD_FONT, weight: '800', align: 'left' });
+    if (game.rules.damage) {
+      // The label's left edge lines up with the damage bar's.
+      const label = { size: 15, font: HUD_FONT, weight: '800', align: 'left' };
+      ctx.font = `${label.weight} ${label.size}px ${label.font}`;
+      ctx.textAlign = 'left';
+      this.text('damage', 13.1 + ctx.measureText('damage').actualBoundingBoxLeft, 7.5, label);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(13.1, 25, 80, 10);
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.fillRect(13.1, 25, 80 * game.damage / 1000, 10);
+    }
     this.text('score', 566.5, 9, { size: 12.5, font: HUD_FONT, weight: '800', align: 'right' });
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.fillRect(13.1, 25, 80, 10);
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    ctx.fillRect(13.1, 25, 80 * game.damage / 1000, 10);
     const hud = { size: 12.85, font: HUD_FONT, weight: '800', align: 'right' };
     this.text(String(game.score), 566, 22, hud);
     if (game.mode === 'endless') this.text(`${game.metres} m`, 566, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
     else this.text(`+${game.bonus}`, 566, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
     const chain = game.tricks.chain;
-    if (chain.length && game.screen !== 'gameOver') {
+    if (game.rules.classic) {
+      if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, 566, 46, { ...hud, color: 'rgba(255,255,255,0.9)' });
+    } else if (chain.length && game.screen !== 'gameOver') {
       const m = game.tricks.multiplier;
       this.text(`+${game.tricks.chainPoints}${m > 1 ? `  x${m}` : ''}`, 566, 46, { ...hud, color: 'rgba(255,255,255,0.6)' });
     } else if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, 566, 46, { ...hud, color: 'rgba(255,255,255,0.9)' });
-    this.trickNames(game);
+    if (!game.rules.classic) this.trickNames(game);
     if (game.tickerTimer > 0 && game.screen !== 'gameOver') {
       this.text(game.ticker, STAGE_W / 2, 82, { size: 15, font: HUD_FONT, weight: '800' });
     }
@@ -292,12 +350,13 @@ export class Renderer {
     this.ctx.restore();
     this.buttons('title', game);
     const bests = [];
-    if (game.best > 0) bests.push(`Best score: ${game.best}`);
+    if (game.bestPlay > 0) bests.push(`Play: ${game.bestPlay}`);
+    if (game.best > 0) bests.push(`Classic: ${game.best}`);
     if (game.bestEndless > 0) bests.push(`Endless: ${game.bestEndless} m`);
-    if (bests.length) this.text(bests.join('   ·   '), STAGE_W / 2, 396, { size: 14, weight: '600' });
-    const hint = this.touchMode
-      ? 'Use the on-screen pedals and tilt buttons to drive'
-      : 'Arrow keys drive and tilt  ·  P pauses  ·  M changes the sound  ·  Esc returns to the menu';
+    if (bests.length) this.text(`Best  ·  ${bests.join('   ·   ')}`, STAGE_W / 2, 396, { size: 14, weight: '600' });
+    let hint;
+    if (game.oneButton) hint = this.touchMode ? 'Hold anywhere to drive, and to tilt back in the air' : 'Hold Space to drive, and to tilt back in the air  ·  P pauses  ·  Esc returns to the menu';
+    else hint = this.touchMode ? 'Use the on-screen pedals and tilt buttons to drive' : 'Arrow keys drive and tilt  ·  P pauses  ·  M sound  ·  Esc returns to the menu';
     this.text(hint, STAGE_W / 2, 422, { size: 11, weight: '600', color: 'rgba(255,255,255,0.78)' });
   }
 
@@ -313,6 +372,7 @@ export class Renderer {
     this.text('Press P to Pause', STAGE_W / 2, 202, line);
     this.text('Your truck is four-wheel drive.', STAGE_W / 2, 262, line);
     this.text('To climb steep hills, tilt forwards so that your front wheel stays on the ground.', STAGE_W / 2, 296, { ...line, size: 13.5 });
+    this.text('One Button: hold Space (or the screen) to drive, and to tilt back in the air.', STAGE_W / 2, 330, { ...line, size: 13.5 });
     this.buttons('help');
   }
 
@@ -330,7 +390,7 @@ export class Renderer {
     this.buttons('garage');
   }
 
-  practiceSelect() {
+  practiceSelect(game) {
     this.image('screen_plain.png');
     this.text('Choose a Stage', STAGE_W / 2, 164, { size: 14, weight: '700' });
     for (let i = 0; i < 9; i++) {
@@ -338,7 +398,7 @@ export class Renderer {
       this.box('screen_practice.png', 136, 228, 32, 32, x, 228, 32, 32);
       this.text(String(i + 1), x + 16, 234.5, { size: 17, weight: '700' });
     }
-    this.buttons('practiceSelect');
+    this.buttons('practiceSelect', game);
   }
 
   overlayDim(alpha) {
@@ -349,14 +409,15 @@ export class Renderer {
   gameOver(game) {
     this.overlayDim(0.45);
     this.roundRect(158, 112, 260, 232, 10, 'rgba(140,97,79,0.96)', 'rgba(255,255,255,0.6)');
-    const title = game.wrecked ? 'Truck Wrecked' : (game.finished && game.mode === 'campaign' ? 'Well Driven!' : 'Game Over');
+    let title = game.wrecked ? 'Truck Wrecked' : (game.finished && game.mode === 'campaign' ? 'Well Driven!' : 'Game Over');
+    if (game.mode === 'endless') title = 'Nice Run!';
     this.text(title, STAGE_W / 2, 128, { size: 30, weight: '900' });
     if (game.mode === 'endless') {
       this.text(`${game.metres} m  ·  ${game.lastScore}`, STAGE_W / 2, 182, { size: 17, weight: '600' });
       this.text(`Best: ${game.bestEndless} m`, STAGE_W / 2, 206, { size: 17, weight: '600' });
     } else {
       this.text(`Score: ${game.lastScore}`, STAGE_W / 2, 182, { size: 17, weight: '600' });
-      this.text(`Best: ${game.best}`, STAGE_W / 2, 206, { size: 17, weight: '600' });
+      if (game.rules.damage) this.text(`Best: ${game.bestForRules}`, STAGE_W / 2, 206, { size: 17, weight: '600' });
     }
     this.buttons('gameOver');
     const hint = this.touchMode ? '' : 'or press Space / Ctrl';
@@ -387,7 +448,7 @@ export class Renderer {
       case 'title': this.title(game, v); break;
       case 'help': this.help(); break;
       case 'garage': this.garage(game, v); break;
-      case 'practiceSelect': this.practiceSelect(); break;
+      case 'practiceSelect': this.practiceSelect(game); break;
       case 'playing': this.world(game, v); break;
       case 'paused': this.world(game, v); this.paused(game); break;
       case 'gameOver': this.world(game, v); this.gameOver(game); break;

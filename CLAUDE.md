@@ -26,7 +26,18 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `src/assets.js`: image and level loading, tile preparation, font stacks.
 - `index.html` / `style.css`: page shell, loading screen, touch controls.
 - `src/sound-events.js` (no DOM) turns game state into sound cues; `src/audio.js` synthesises them
-  with Web Audio in the chosen set. `sounds.html` previews the sets. No sound files.
+  with Web Audio (sound is on/off, off by default). `sounds.html` compares the scrape sounds. No
+  sound files.
+- `src/wreck.js` (no DOM): the ragdoll wreck, a wrecked truck's loose pieces.
+
+## Modes and rules
+
+- "Classic" means the original gameplay, before the added features. A run's rules are
+  `game.rules = { classic, damage }`. Play, Endless and Practice share the new features; Classic
+  has none of them (no tricks, ragdoll, one-button controls or flip-upright, and it keeps the
+  ceiling and the original flip bonus). Display fixes and quality-of-life touches are fine in Classic.
+- New features go in every mode except Classic unless the user says otherwise, and new options go
+  in the small on/off switches at the side of a screen (`option()` in `render.js`).
 
 ## Rules that keep the game feeling right
 

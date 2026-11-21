@@ -4,8 +4,25 @@ A bouncy monster-truck game for the browser: drive across nine stages of Utah hi
 wrecking your truck. It works with a keyboard, a touchscreen or a gamepad, and runs as a static
 site on GitHub Pages.
 
-There's also **Endless Mode**: a course that is generated as you drive and never ends. It runs
-until your truck is wrecked, and your best distance is saved.
+## Modes
+
+| Mode | What it is |
+| --- | --- |
+| **Play** | The nine stages, with tricks, a ragdoll wreck, and no invisible ceiling (the camera rises to follow a big jump). |
+| **Classic** | The nine stages as the original game played: the original flip bonus, the ceiling, the original controls, and a wrecked truck stays in one piece. Only display fixes (live text, alignment) and the pause button are new. |
+| **Endless** | A course generated as you drive that never ends. No damage: it's free play. **End Run** in the pause menu finishes the run and saves your best distance. |
+| **Practice** | One stage of your choice, played like Play. Options on the stage screen switch **Damage** off and play by **Classic** rules. |
+
+Play, Classic and Endless each keep their own best (score, score, distance). A Practice run with
+damage saves to Play's or Classic's best; a damage-free one saves none.
+
+In damage-free runs outside Classic (Endless, and Practice with damage off), a **Flip** button
+appears at the top of the screen when the truck has been stuck on its roof or side for two seconds.
+It hops the truck up and turns it back onto its wheels.
+
+**One-button controls** (an option on the title screen) use a single button: Space on a keyboard,
+or holding anywhere on a touchscreen. On the ground it drives; in the air it tilts the truck back.
+Classic always uses the original controls.
 
 It's plain JavaScript (ES modules) and a 2D canvas, with no build step and no npm dependencies.
 
@@ -22,14 +39,16 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | --- | --- | --- | --- |
 | Forwards / reverse | ↑ / ↓ (or W / S) | right-hand pedals | A or RT / B or LT |
 | Tilt back / forwards | ← / → (or A / D) | left-hand buttons | stick or d-pad |
+| One-button controls | Space | hold anywhere | A |
 | Pause | P | ⏸ button | Start |
+| Flip upright (when offered) | R | Flip button | Y |
 | Play again (game over) | Space, Enter or Ctrl | Play Again button | A |
 | Back to menu | Esc | Menu button | |
-| Change sound | M | ♪ button (title screen) or Sound (pause menu) | |
+| Sound on / off | M | Sound switch (title screen or pause menu) | |
 | Full screen | F | | |
 
-The best score, the best Endless distance, the sound set and the truck chosen in the garage are
-saved in the browser (`localStorage`).
+The best scores, the options and the truck chosen in the garage are saved in the browser
+(`localStorage`).
 
 ## Endless Mode
 
@@ -48,15 +67,18 @@ distance in metres.
 
 ## Sound
 
-All sound is synthesised live with the Web Audio API, so the game ships no sound files. There are
-four sound sets to choose from: **Classic** (soft and warm), **Chiptune** (8-bit), **Rumble** (a
-gritty V8 with gravel and an air horn) and **Toybox** (boings and slide whistles), or **Off**.
-The page `sounds.html` (at `/sounds.html` on the site) lets you try every cue in every set, rev
-each engine with sliders, play a short demo run, and choose the set the game uses.
+All sound is synthesised live with the Web Audio API, so the game ships no sound files. Sound is
+off until you switch it on. There's a soft engine hum with a quiet hiss of tyres on the ground,
+thumps for landings, and bells for tricks, which ring as each trick is done. Scraping the cab
+is a held sound that fades in and out, with a slightly different pitch each time.
+
+There are three scrape sounds to choose from. The page `sounds.html` (at `/sounds.html` on the
+site) plays them side by side, and `?scrape=1`, `2` or `3` on the game's address tries one in
+the game.
 
 The game logic knows nothing about sound: `src/sound-events.js` watches the game after every step
-and turns what happened (a landing, a cab scrape, a flip, a finished stage) into cues, and
-`src/audio.js` plays them in the chosen set.
+and turns what happened (a landing, a trick, a finished stage) into cues, and `src/audio.js`
+plays them.
 
 ## Tricks
 
@@ -67,10 +89,11 @@ and turns what happened (a landing, a cab scrape, a flip, a finished stage) into
 | Wheelie / Nose Wheelie | Drive along on the back / front wheel for ¾ s or more | 2 per 1/70 s |
 | Clean | Land a jump on both wheels at once without scraping the cab | half the jump's points |
 
-Tricks done close together make a chain. The chain pays out about 1½ s after its last trick, worth
+Tricks score in Play, Endless and Practice (not Classic). Tricks done close together make a chain. The chain pays out about 1½ s after its last trick, worth
 its points times the number of tricks in it (up to ×5). While a chain is open, its running total and
 multiplier show under the score. Scraping the cab is a **Bail**: the chain pays out at once, without
-the multiplier. A chain still open at the finish line is paid out there. The trick tracker
+the multiplier. A chain still open at the finish line is paid out there. Each trick name stays on
+screen long enough to read; one that comes too soon waits its turn. The trick tracker
 (`src/tricks.js`) only watches the truck; the physics is unchanged.
 
 ## Publish on GitHub Pages
@@ -93,7 +116,7 @@ checks the truck moves, and saves screenshots. Pass a folder as the first argume
 where they go: `node tests/phone-check.mjs /tmp/shots`.
 
 For screenshots of a particular state, the page accepts test parameters, for example
-`?test=play&stage=5&frames=600&touch=1`, or `?test=endless&seed=3&frames=600` for Endless Mode. See `applyTestParams` in `src/main.js`. Nothing is
+`?test=play&stage=5&frames=600&touch=1` (add `&classic=1` or `&damage=0` for those Practice options), or `?test=endless&seed=3&frames=600` for Endless Mode. See `applyTestParams` in `src/main.js`. Nothing is
 saved to storage while a test parameter is set.
 
 ## Code layout
@@ -103,8 +126,9 @@ saved to storage while a test parameter is set.
 | `src/game.js` | All game logic: truck physics, collisions, scoring, stages and the screen state machine. No DOM access, so tests run it under Node. |
 | `src/render.js` | Draws everything on the canvas, and defines the clickable menu areas. |
 | `src/endless.js` | Endless Mode's course generator. |
-| `src/audio.js`, `src/sound-events.js` | Synthesised sound sets, and the watcher that turns game events into sound cues. |
-| `sounds.html` | A page for trying out and choosing the sound sets. |
+| `src/audio.js`, `src/sound-events.js` | Synthesised sound, and the watcher that turns game events into sound cues. |
+| `sounds.html` | A page for comparing the scrape sounds and hearing the other cues. |
+| `src/wreck.js` | The ragdoll wreck: a wrecked truck's loose pieces (outside Classic). |
 | `src/tricks.js` | Spots tricks (flips, airtime, wheelies, clean landings) and scores them in chains. |
 | `src/main.js` | Startup, the fixed 70 steps/second loop with smooth interpolated drawing, and all input. |
 | `src/assets.js` | Loads the images and level data, and prepares the terrain tiles. The game uses fonts already on the device and ships no font files. |

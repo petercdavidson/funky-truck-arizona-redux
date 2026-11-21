@@ -23,6 +23,7 @@ export const TRICK = {
   chainGap: 105,         // steps on the ground with no trick before the chain is paid out
   maxMultiplier: 5,
   showFor: 90,           // steps a trick's name stays on screen
+  readFor: 55,           // ...and at least this long before the next trick's name replaces it
 };
 
 const COUNT = ['', '', 'Double ', 'Triple ', 'Quadruple ', 'Quintuple '];
@@ -49,6 +50,9 @@ export class TrickTracker {
     this.firstTouch = -1;      // step (of `since`) the first wheel touched down
     this.banked = null;        // last payout: { points, multiplier, bailed }
     this.show = null;          // what the HUD shows: { names, timer }
+    this.queue = [];           // names waiting their turn on screen
+    this.done = 0;             // bumped each time tricks are performed (for the sound)
+    this.fresh = [];           // the tricks just performed
   }
 
   get multiplier() { return Math.min(TRICK.maxMultiplier, Math.max(1, this.chain.length)); }
@@ -59,9 +63,30 @@ export class TrickTracker {
     this.idle = 0;
   }
 
-  announce(names) {
+  /**
+   * Put trick names on screen. `fresh` are the tricks just performed (the sound plays for them at
+   * once); `names` is what to show. A name still being read isn't replaced straight away: the new
+   * one waits its turn, unless it only adds to what's showing (a Clean on the same landing).
+   */
+  announce(names, fresh = names) {
     if (!names.length) return;
-    this.show = { names, timer: TRICK.showFor };
+    this.done++;
+    this.fresh = fresh;
+    const s = this.show;
+    const adds = s && names.length > s.names.length && s.names.every((n, i) => n === names[i]);
+    if (adds) { s.names = names; return; }
+    if (s && TRICK.showFor - s.timer < TRICK.readFor) this.queue.push(names);
+    else this.show = { names, timer: TRICK.showFor };
+  }
+
+  /** Count down the name on screen, and bring on the next one when its turn comes. */
+  tickShow() {
+    const s = this.show;
+    if (s) {
+      s.timer--;
+      if (this.queue.length && TRICK.showFor - s.timer >= TRICK.readFor) this.show = { names: this.queue.shift(), timer: TRICK.showFor };
+      else if (s.timer <= 0) this.show = null;
+    } else if (this.queue.length) this.show = { names: this.queue.shift(), timer: TRICK.showFor };
   }
 
   /**
@@ -73,7 +98,7 @@ export class TrickTracker {
    * @returns points to add to the score this step (0 unless a chain was paid out)
    */
   step(truck, flip, scraped, scoring) {
-    if (this.show && --this.show.timer <= 0) this.show = null;
+    this.tickShow();
     if (!scoring) { this.chain = []; this.jump = null; this.wheelie = null; this.air = 0; return 0; }
     const rear = truck.rearContact, front = truck.frontContact;
     const forward = truck.T[0] - truck.P[0];
@@ -114,7 +139,9 @@ export class TrickTracker {
       else if (rear && front && this.since <= TRICK.cleanWindow) {
         if (this.jump.points > 0) {
           this.add('Clean', this.jump.points * TRICK.cleanBonus);
-          this.announce([...(this.show?.names || []), 'Clean']);
+          const last = this.queue.length ? this.queue[this.queue.length - 1] : this.show?.names || [];
+          if (this.queue.length) { this.queue[this.queue.length - 1] = [...last, 'Clean']; this.done++; this.fresh = ['Clean']; }
+          else this.announce([...last, 'Clean'], ['Clean']);
         }
         this.jump = null;
       } else if (this.since > TRICK.cleanWindow) this.jump = null;
@@ -152,7 +179,7 @@ export class TrickTracker {
     const mult = bailed ? 1 : this.multiplier;
     const points = this.chainPoints * mult;
     this.banked = { points, multiplier: mult, bailed };
-    if (bailed && this.chain.length > 1) this.announce(['Bail']);
+    if (bailed && this.chain.length > 1) { this.announce(['Bail']); this.done--; } // no sound for a bail
     this.chain = [];
     this.idle = 0;
     return points;

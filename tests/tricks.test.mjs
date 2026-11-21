@@ -83,7 +83,26 @@ test('scraping the cab bails the chain: its tricks pay, but with no multiplier',
   const paid = run(tr, ft, 1, { scraped: true });
   assert.equal(paid, points);
   assert.equal(tr.banked.bailed, true);
+  // "Bail" waits until the tricks' names have been up long enough to read.
+  assert.deepEqual(tr.show.names, ['Frontflip', 'Huge Air']);
+  run(tr, ft, TRICK.readFor, { scraped: false });
   assert.deepEqual(tr.show.names, ['Bail']);
+});
+
+test('a trick name stays up long enough to read before the next one replaces it', () => {
+  const tr = new TrickTracker();
+  tr.announce(['Backflip']);
+  const done = tr.done;
+  tr.announce(['Big Air']);
+  assert.equal(tr.done, done + 1, 'the second trick counts (and sounds) at once');
+  assert.deepEqual(tr.fresh, ['Big Air']);
+  assert.deepEqual(tr.show.names, ['Backflip']);
+  for (let i = 0; i < TRICK.readFor - 1; i++) tr.tickShow();
+  assert.deepEqual(tr.show.names, ['Backflip']);
+  tr.tickShow();
+  assert.deepEqual(tr.show.names, ['Big Air']);
+  tr.announce(['Big Air', 'Clean'], ['Clean']);
+  assert.deepEqual(tr.show.names, ['Big Air', 'Clean'], 'a Clean joins the name already showing');
 });
 
 test('nothing scores when scoring is off', () => {

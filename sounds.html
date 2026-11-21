@@ -34,32 +34,30 @@
     input[type=range] { width: 100%; accent-color: #fff; }
     a { color: #fff; }
     .back { display: inline-block; margin-top: 18px; font-weight: 700; }
+    .button-link { font-weight: 800; font-size: 13px; }
   </style>
 </head>
 <body>
 <main>
   <h1>funky truck sounds</h1>
-  <p class="lede">Four sound sets to compare. Each one is synthesised live in the browser (no sound files). Try the
-    cues, rev the engine with the sliders, or play a short demo run. <b>Use in game</b> makes it the set the
-    game starts with (in this browser). In the game, the ♪ button on the title screen, the pause menu or the
-    M key switches sets too.</p>
+  <p class="lede">Scrape sounds to choose from. Each one fades in and out instead of hitting, follows how fast the
+    cab is sliding, and starts at a slightly different pitch each time so a run of scrapes doesn't sound the same.
+    <b>Try in game</b> opens the game with that scrape. Each card also plays a short slide, or three in a row.</p>
   <div class="grid" id="sets"></div>
+  <h2 style="margin-top:28px">Everything else</h2>
+  <div class="card"><div class="cues" id="cues"></div></div>
   <a class="back" href="./">← Back to the game</a>
 </main>
 <script type="module">
-import { Sound, SOUND_SETS, SOUND_NAMES, SOUND_BLURBS } from './src/audio.js';
+import { Sound, SCRAPES, DEFAULT_SCRAPE } from './src/audio.js';
 
 const sound = new Sound();
-const KEY = 'funkytruck.soundSet';
-const saved = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } };
-let current = SOUND_SETS.includes(saved()) ? saved() : SOUND_SETS[0];
-const LABELS = { start: 'Start', land: 'Land', bump: 'Bump', scrape: 'Scrape', flip: 'Flip', stage: 'Stage done', win: 'Win', wreck: 'Wreck', click: 'Click' };
-const engines = {};   // set -> { throttle, speed, airborne, on }
-let playingEngine = null;
+let scrape = { on: false, speed: 0 };
+let engine = { on: false };
 
 function tick() {
-  const e = playingEngine && engines[playingEngine];
-  sound.updateEngine(e ? { on: true, throttle: e.throttle, speed: e.speed, airborne: e.airborne } : { on: false }, playingEngine || 'off');
+  sound.updateScrape(scrape, true);
+  sound.updateEngine(engine, true);
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
@@ -70,67 +68,47 @@ function el(tag, props = {}, ...kids) {
   return n;
 }
 
-function render() {
-  const root = document.getElementById('sets');
-  root.innerHTML = '';
-  for (const set of SOUND_SETS.filter((s) => s !== 'off')) {
-    engines[set] ||= { throttle: 0, speed: 0.3, airborne: false };
-    const card = el('section', { className: 'card' + (set === current ? ' current' : '') });
-    card.append(el('h2', { textContent: SOUND_NAMES[set] }), el('p', { textContent: SOUND_BLURBS[set] }));
-    const cues = el('div', { className: 'cues' });
-    const cue = (name, opts, label) => cues.append(el('button', { textContent: label, onclick: () => { sound.unlock(); sound.play(name, opts, set); } }));
-    cue('start', {}, LABELS.start);
-    cue('bump', { force: 0.6 }, LABELS.bump);
-    cue('land', { force: 0.3 }, 'Soft land');
-    cue('land', { force: 1 }, 'Hard land');
-    cue('scrape', {}, LABELS.scrape);
-    cue('flip', { degrees: 360 }, 'Flip');
-    cue('flip', { degrees: 720 }, 'Double flip');
-    for (const n of ['stage', 'win', 'wreck', 'click']) cue(n, {}, LABELS[n]);
-    card.append(cues);
-    const eng = engines[set];
-    const toggle = el('button', { className: 'wide' + (playingEngine === set ? ' on' : ''), textContent: playingEngine === set ? 'Stop engine' : 'Start engine' });
-    toggle.onclick = () => { sound.unlock(); playingEngine = playingEngine === set ? null : set; render(); };
-    const slider = (key, label) => {
-      const input = el('input', { type: 'range', min: 0, max: 1, step: 0.01, value: eng[key] });
-      input.oninput = () => { eng[key] = Number(input.value); };
-      return el('label', {}, el('span', { textContent: label }), input);
+/** One slide: ease in, hold while slowing down, then lift off. */
+function slide(at = 0, ms = 1100) {
+  setTimeout(() => {
+    const t0 = performance.now();
+    const step = () => {
+      const t = (performance.now() - t0) / ms;
+      if (t >= 1) { scrape = { on: false, speed: 0 }; return; }
+      scrape = { on: true, speed: 0.9 * (1 - t) + 0.1 };
+      requestAnimationFrame(step);
     };
-    const air = el('input', { type: 'checkbox', checked: eng.airborne });
-    air.onchange = () => { eng.airborne = air.checked; };
-    card.append(el('div', { className: 'engine' }, toggle, slider('throttle', 'Throttle'), slider('speed', 'Speed'), el('label', {}, el('span', { textContent: 'In the air' }), air)));
-    card.append(el('button', { className: 'wide', textContent: 'Demo run', onclick: () => demo(set) }));
-    const use = el('button', { className: 'wide' + (set === current ? ' on' : ''), textContent: set === current ? 'Used in game ✓' : 'Use in game' });
-    use.onclick = () => { current = set; try { localStorage.setItem(KEY, JSON.stringify(set)); } catch { /* storage blocked */ } render(); };
-    card.append(use);
-    root.append(card);
-  }
+    step();
+  }, at);
 }
 
-/** A few seconds of driving: rev up, a bump, a jump with a flip, a landing, a scrape, the finish. */
-function demo(set) {
-  sound.unlock();
-  const e = engines[set];
-  playingEngine = set;
-  render();
-  const steps = [
-    [0, () => { sound.play('start', {}, set); Object.assign(e, { throttle: 0, speed: 0.05, airborne: false }); }],
-    [400, () => Object.assign(e, { throttle: 1, speed: 0.2 })],
-    [900, () => Object.assign(e, { speed: 0.5 })],
-    [1400, () => sound.play('bump', { force: 0.5 }, set)],
-    [1700, () => Object.assign(e, { speed: 0.8 })],
-    [2300, () => Object.assign(e, { airborne: true })],
-    [3200, () => { Object.assign(e, { airborne: false, speed: 0.6 }); sound.play('land', { force: 0.9 }, set); }],
-    [3220, () => sound.play('flip', { degrees: 380 }, set)],
-    [3900, () => sound.play('scrape', {}, set)],
-    [4300, () => Object.assign(e, { throttle: 0, speed: 0.3 })],
-    [4600, () => sound.play('stage', {}, set)],
-    [6200, () => { playingEngine = null; render(); }],
-  ];
-  for (const [t, f] of steps) setTimeout(f, t);
+const root = document.getElementById('sets');
+for (const [n, s] of Object.entries(SCRAPES)) {
+  const card = el('section', { className: 'card' + (Number(n) === DEFAULT_SCRAPE ? ' current' : '') });
+  card.append(el('h2', { textContent: `${n}. ${s.name}` }), el('p', { textContent: s.blurb }));
+  const go = (f) => () => { sound.unlock(); sound.setScrapeStyle(Number(n)); f(); };
+  card.append(el('div', { className: 'cues' },
+    el('button', { textContent: 'Slide', onclick: go(() => slide()) }),
+    el('button', { textContent: 'Three slides', onclick: go(() => { slide(0, 700); slide(900, 600); slide(1700, 900); }) }),
+    el('button', { textContent: 'With engine', onclick: go(() => {
+      engine = { on: true, throttle: 1, speed: 0.6, airborne: false };
+      slide(400, 1300);
+      setTimeout(() => { engine = { on: false }; }, 2200);
+    }) })));
+  card.append(el('a', { className: 'button-link', href: `./?scrape=${n}`, textContent: 'Try in game →' }));
+  root.append(card);
 }
 
-render();
+const cues = document.getElementById('cues');
+const cue = (label, name, opts) => cues.append(el('button', { textContent: label, onclick: () => { sound.unlock(); sound.play(name, opts, true); } }));
+cue('Start', 'start'); cue('Bump', 'bump', { force: 0.6 }); cue('Land', 'land', { force: 0.8 });
+cue('Flip', 'trick', { names: ['Backflip'] }); cue('Double flip', 'trick', { names: ['Double Backflip'] });
+cue('Big Air', 'trick', { names: ['Big Air'] }); cue('Clean', 'trick', { names: ['Clean'] });
+cue('Stage done', 'stage'); cue('Win', 'win'); cue('Wreck', 'wreck'); cue('Click', 'click');
+cues.append(el('button', { textContent: 'Rolling (tyres on ground)', onclick: () => {
+  sound.unlock(); engine = { on: true, throttle: 0, speed: 0.9, airborne: false };
+  setTimeout(() => { engine = { on: false }; }, 2500);
+} }));
 </script>
 </body>
 </html>

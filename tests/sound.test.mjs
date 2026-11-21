@@ -2,8 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Game, SOUND_SETS, TILE } from '../src/game.js';
+import { Game, TILE } from '../src/game.js';
 import { SoundWatcher } from '../src/sound-events.js';
+import { turnOver } from './helpers.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
 function memoryStore() {
@@ -49,15 +50,12 @@ test('the engine follows the throttle and goes quiet when paused', () => {
   assert.equal(r.engine.on, false);
 });
 
-test('scraping the cab, landing a flip, finishing and wrecking all make cues', () => {
+test('Classic: landing a flip, finishing and wrecking all make cues', () => {
   const g = new Game(data), w = new SoundWatcher();
-  g.startCampaign();
+  g.startCampaign(true);
   listen(g, w, 100);
-  g.damage = 10; // as if the cab scraped
-  let heard = listen(g, w, 2);
-  assert.ok(heard.includes('scrape'));
   g.flipBonus = 400; g.flipBonusTimer = 70; // as if a flip just landed
-  heard = listen(g, w, 1);
+  let heard = listen(g, w, 1);
   assert.ok(heard.includes('flip'));
   // Over the finish line.
   const dx = (data.levels[0].width - 9) * TILE + 1 - g.truck.T[0];
@@ -71,16 +69,36 @@ test('scraping the cab, landing a flip, finishing and wrecking all make cues', (
   assert.ok(heard.includes('wreck'), `heard ${heard}`);
 });
 
-test('the sound set is saved, cycles through every set, and a bad saved value is ignored', () => {
+test('outside Classic a trick sounds when it is done, and paying out its points is silent', () => {
+  const g = new Game(data), w = new SoundWatcher();
+  g.startCampaign();
+  listen(g, w, 100);
+  g.tricks.announce(['Big Air']);
+  let r = (g.step(), w.observe(g));
+  assert.deepEqual(r.events.filter((e) => e.type === 'trick').map((e) => e.names), [['Big Air']]);
+  g.payTricks(500);
+  r = (g.step(), w.observe(g));
+  assert.equal(r.events.filter((e) => e.type === 'trick' || e.type === 'flip').length, 0);
+});
+
+test('the scrape is a held sound that follows the cab touching the ground', () => {
+  const g = new Game(data), w = new SoundWatcher();
+  g.startPractice(0);
+  listen(g, w, 50);
+  turnOver(g.truck);
+  let on = 0;
+  for (let i = 0; i < 140; i++) { g.step(); if (w.observe(g).scrape.on) on++; }
+  assert.ok(on > 60, `scraping for ${on} of 140 steps`);
+  g.togglePause(); g.step();
+  assert.equal(w.observe(g).scrape.on, false);
+});
+
+test('sound is off by default, and the on/off setting is saved and validated', () => {
   const store = memoryStore();
   const g = new Game(data, { store });
-  assert.equal(g.soundSet, 'classic');
-  const seen = [];
-  for (let i = 0; i < SOUND_SETS.length; i++) { g.cycleSound(); seen.push(g.soundSet); }
-  assert.deepEqual([...seen].sort(), [...SOUND_SETS].sort());
-  assert.equal(g.soundSet, 'classic');
-  g.cycleSound();
-  assert.equal(new Game(data, { store }).soundSet, g.soundSet);
-  store.set('soundSet', 'kazoo');
-  assert.equal(new Game(data, { store }).soundSet, 'classic');
+  assert.equal(g.soundOn, false);
+  g.toggle('soundOn');
+  assert.equal(new Game(data, { store }).soundOn, true);
+  store.set('sound', 'loud');
+  assert.equal(new Game(data, { store }).soundOn, false);
 });

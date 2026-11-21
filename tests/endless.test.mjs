@@ -73,15 +73,16 @@ test('an endless run scrolls the world, keeps scoring distance, and never hits a
   assert.ok(g.score >= g.distance * 10 - 50, `score ${g.score} counts distance ${g.distance}`);
 });
 
-test('wrecking ends an endless run and saves the best distance; quitting saves it too', () => {
+test('Endless has no damage; End Run finishes it and saves the best distance; quitting saves it too', () => {
   const store = memoryStore();
   const g = new Game(data, { random: seeded(5), store });
   g.startEndless();
+  assert.equal(g.rules.damage, false);
   g.distance = 120;
-  g.damage = 1000;
-  for (let i = 0; i < 300 && g.screen === 'playing'; i++) g.step();
+  g.togglePause();
+  g.endRun();
   assert.equal(g.screen, 'gameOver');
-  assert.equal(g.wrecked, true);
+  assert.equal(g.wrecked, false);
   assert.equal(store.get('bestEndless'), 300);
   assert.equal(store.get('bestScore'), null, 'endless runs keep their own best');
   g.restart();
