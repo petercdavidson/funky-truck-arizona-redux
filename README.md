@@ -4,6 +4,9 @@ A bouncy monster-truck game for the browser: drive across nine stages of Utah hi
 wrecking your truck. It works with a keyboard, a touchscreen or a gamepad, and runs as a static
 site on GitHub Pages.
 
+There's also **Endless Mode**: a course that is generated as you drive and never ends. It runs
+until your truck is wrecked, and your best distance is saved.
+
 It's plain JavaScript (ES modules) and a 2D canvas, with no build step and no npm dependencies.
 
 ## Run it locally
@@ -24,7 +27,23 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Back to menu | Esc | Menu button | |
 | Full screen | F | | |
 
-The best score and the truck chosen in the garage are saved in the browser (`localStorage`).
+The best score, the best Endless distance and the truck chosen in the garage are saved in the
+browser (`localStorage`).
+
+## Endless Mode
+
+Endless courses are built from the original nine stages' own building blocks. Every column of
+tiles in the stages is reduced to its shape, and the generator records every place one shape
+follows another (with how far the ground steps up or down). It then strings columns together using
+only those joins. Usually it matches the last two or three columns, so whole hills and ramps come
+out as they were designed; now and then it matches only the last one, which is where the course
+turns into something new. The ground is kept inside a fixed height band, and the joins are weighted
+by the stage they came from, so a course starts like Stage One and drifts towards the later stages
+the further you get. The course lives in a window of 128 columns that scrolls as you drive
+(`src/endless.js`).
+
+Score: 10 points for every new tile of ground, plus flip bonuses as usual. The HUD shows the
+distance in metres.
 
 ## Publish on GitHub Pages
 
@@ -45,7 +64,7 @@ checks the truck moves, and saves screenshots. Pass a folder as the first argume
 where they go: `node tests/phone-check.mjs /tmp/shots`.
 
 For screenshots of a particular state, the page accepts test parameters, for example
-`?test=play&stage=5&frames=600&touch=1`. See `applyTestParams` in `src/main.js`. Nothing is
+`?test=play&stage=5&frames=600&touch=1`, or `?test=endless&seed=3&frames=600` for Endless Mode. See `applyTestParams` in `src/main.js`. Nothing is
 saved to storage while a test parameter is set.
 
 ## Code layout
@@ -54,6 +73,7 @@ saved to storage while a test parameter is set.
 | --- | --- |
 | `src/game.js` | All game logic: truck physics, collisions, scoring, stages and the screen state machine. No DOM access, so tests run it under Node. |
 | `src/render.js` | Draws everything on the canvas, and defines the clickable menu areas. |
+| `src/endless.js` | Endless Mode's course generator. |
 | `src/main.js` | Startup, the fixed 70 steps/second loop with smooth interpolated drawing, and all input. |
 | `src/assets.js` | Loads the images and level data, and prepares the terrain tiles. The game uses fonts already on the device and ships no font files. |
 | `index.html`, `style.css` | Page layout, loading screen and the on-screen touch controls. |

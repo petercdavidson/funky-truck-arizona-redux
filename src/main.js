@@ -88,6 +88,7 @@ function goMenu() { game.showMenu('title'); }
 
 function doAction(a) {
   if (a === 'play') game.startCampaign();
+  else if (a === 'endless') game.startEndless();
   else if (a === 'practice') game.showMenu('practiceSelect');
   else if (a === 'garage') game.showMenu('garage');
   else if (a === 'help') game.showMenu('help');
@@ -206,7 +207,7 @@ function lerpView(a, b, t) {
   };
 }
 
-let last = 0, acc = 0, prev = null, seenTeleport = -1;
+let last = 0, acc = 0, prev = null, seenTeleport = -1, seenShift = 0;
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -219,6 +220,12 @@ function frame(now) {
   while (acc >= DT && steps < 8) {
     prev = snapshot();
     game.step();
+    if (game.shiftCount !== seenShift) {
+      // Endless Mode scrolled the world left; move the previous frame with it.
+      seenShift = game.shiftCount;
+      for (let i = 0; i < 10; i += 2) prev.T[i] -= game.lastShift;
+      prev.camX -= game.lastShift;
+    }
     acc -= DT;
     steps++;
     if (game.screen !== before) break;
@@ -239,8 +246,9 @@ function fit() {
 
 /**
  * Test hook for automated screenshots, e.g. ?test=play&stage=5&frames=400&touch=1
- *   test   = title | garage | help | practice | play | paused | gameover
+ *   test   = title | garage | help | practice | play | endless | paused | gameover
  *   stage  = stage index for play (0-8), frames = steps to simulate with the gas held
+ *   seed   = for endless: a number, so the same course comes up every time
  *   look   = body,tyre,hub (e.g. 3,2,4), touch = 1 to show the touch controls
  * Nothing is saved to storage while this is active.
  */
@@ -261,7 +269,11 @@ function applyTestParams() {
     for (let i = 0; i < 300; i++) game.step();
     return;
   }
-  game.startPractice(Number(q.get('stage')) || 0);
+  if (test === 'endless') {
+    let s = Number(q.get('seed')) || 1;
+    game.random = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    game.startEndless();
+  } else game.startPractice(Number(q.get('stage')) || 0);
   game.keys.up = true;
   for (let i = 0; i < frames && game.screen === 'playing'; i++) {
     game.keys.right = game.truck.bodyRot < -25; game.keys.left = game.truck.bodyRot > 25;

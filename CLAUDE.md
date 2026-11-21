@@ -16,6 +16,8 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `src/game.js`: all game logic and state (`Game`, `Truck`, `CollisionWorld`). Must stay free of
   DOM/browser APIs so it runs under Node. Storage and randomness are injected (`opts.store`,
   `opts.random`).
+- `src/endless.js`: Endless Mode's course generator (learns tile joins from `levels.json`). Also
+  free of DOM APIs. The game scrolls the world left as the course moves (`Game.scrollWorld`).
 - `src/render.js`: canvas drawing, plus `BUTTONS`, the clickable areas for each screen.
 - `src/main.js`: startup, the fixed-step loop, input (keyboard, pointer, on-screen controls,
   gamepad), and `applyTestParams` (`?test=...` URL hooks used for screenshots).
