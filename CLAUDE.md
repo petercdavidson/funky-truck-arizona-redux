@@ -16,6 +16,8 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `src/game.js`: all game logic and state (`Game`, `Truck`, `CollisionWorld`). Must stay free of
   DOM/browser APIs so it runs under Node. Storage and randomness are injected (`opts.store`,
   `opts.random`).
+- `src/tricks.js`: trick detection and chain scoring (no DOM). It reads the truck and never
+  changes it; flips still come from `Truck.trackFlip`.
 - `src/render.js`: canvas drawing, plus `BUTTONS`, the clickable areas for each screen.
 - `src/main.js`: startup, the fixed-step loop, input (keyboard, pointer, on-screen controls,
   gamepad), and `applyTestParams` (`?test=...` URL hooks used for screenshots).

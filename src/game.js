@@ -4,6 +4,8 @@
 // a line-for-line port of the original Flash ActionScript. Comments name the original obfuscated
 // identifiers where that helps cross-checking. Everything runs at the original 70 steps/second.
 
+import { TrickTracker } from './tricks.js';
+
 export const TILE = 64;          // s4c2
 export const STAGE_W = 576;      // Z7552
 export const STAGE_H = 448;      // B9752
@@ -412,8 +414,9 @@ export class Game {
     this.look = { body: 0, tyre: 0, hub: 0 }; // y66D2
     this.score = 0;                   // D9522
     this.bonus = 0;                   // Z3F62
-    this.flipBonus = 0;               // a4072
+    this.flipBonus = 0;               // a4072 (now: the last trick chain's payout)
     this.flipBonusTimer = 0;          // B5172
+    this.tricks = new TrickTracker();
     this.damage = 0;                  // X5B4 (0..1000)
     this.endTimer = 0;                // L5B72
     this.tickerTimer = 0;             // e8472
@@ -474,6 +477,7 @@ export class Game {
     this.score += this.bonus;
     this.bonus = (this.level + 1) * 10000;
     this.flipBonusTimer = 0;
+    this.tricks.reset();
     for (const d of this.dirt) d.life = 0;
     this.teleportCount++;
     this.screen = 'playing';
@@ -487,6 +491,11 @@ export class Game {
     if (screen === 'title' || screen === 'garage') this.garageTruck.reset(STAGE_W / 2, 120);
     this.screen = screen;
     this.teleportCount++;
+  }
+
+  bankTricks() {
+    const paid = this.tricks.bank();
+    if (paid > 0) this.payTricks(paid);
   }
 
   updateCamera() { // T5933 + w6015
@@ -544,13 +553,19 @@ export class Game {
     if (t.frontContact) this.kickDirt(t.frontSpin, 2, t.frontN);
     t.tilt(this.keys);
     const type = t.probeBody(w);
-    if (type !== null && this.endTimer === 0 && type !== 1) this.damage = Math.min(1000, this.damage + 6);
+    const scraped = type !== null && this.endTimer === 0 && type !== 1;
+    if (scraped) this.damage = Math.min(1000, this.damage + 6);
+    // Flips and the other tricks are scored in chains by TrickTracker. The original game paid a
+    // flip's degrees as soon as it landed; a flip still pays those points, as part of its chain.
     const flip = t.trackFlip();
-    if (flip !== null && this.bonus !== 0) {
-      this.flipBonus = flip; this.flipBonusTimer = 70;
-      this.score += flip;
-    }
     t.updateBodyRot();
+    const paid = this.tricks.step(t, flip, scraped, this.bonus !== 0 && this.endTimer === 0);
+    if (paid > 0) this.payTricks(paid);
+  }
+
+  payTricks(points) {
+    this.flipBonus = points; this.flipBonusTimer = 105;
+    this.score += points;
   }
 
   checkStageEnd() { // P5B13
@@ -561,6 +576,7 @@ export class Game {
     }
     if (this.truck.T[0] >= (this.levelData.width - 9) * TILE) {
       this.ticker = 'Stage Complete !'; this.tickerTimer = 140; this.endTimer = 210;
+      this.bankTricks(); // a chain still going at the finish line is paid out
     }
     if (this.damage === 1000) {
       this.ticker = 'Your truck is wrecked - Game over !'; this.tickerTimer = 140; this.endTimer = 210;

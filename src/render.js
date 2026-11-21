@@ -5,6 +5,7 @@
 
 import { TILE, STAGE_W, STAGE_H } from './game.js';
 import { HUD_FONT, TITLE_FONT } from './assets.js';
+import { TRICK } from './tricks.js';
 
 const DEG = Math.PI / 180;
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
@@ -231,10 +232,30 @@ export class Renderer {
     const hud = { size: 12.85, font: HUD_FONT, weight: '800', align: 'right' };
     this.text(String(game.score), 566, 22, hud);
     this.text(`+${game.bonus}`, 566, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
-    if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, 566, 46, { ...hud, color: 'rgba(255,255,255,0.9)' });
+    const chain = game.tricks.chain;
+    if (chain.length && game.screen !== 'gameOver') {
+      const m = game.tricks.multiplier;
+      this.text(`+${game.tricks.chainPoints}${m > 1 ? `  x${m}` : ''}`, 566, 46, { ...hud, color: 'rgba(255,255,255,0.6)' });
+    } else if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, 566, 46, { ...hud, color: 'rgba(255,255,255,0.9)' });
+    this.trickNames(game);
     if (game.tickerTimer > 0 && game.screen !== 'gameOver') {
       this.text(game.ticker, STAGE_W / 2, 82, { size: 15, font: HUD_FONT, weight: '800' });
     }
+  }
+
+  /** The name of the trick just done, popping in under the ticker and fading out. */
+  trickNames(game) {
+    const show = game.tricks.show;
+    if (!show || game.screen === 'gameOver') return;
+    const ctx = this.ctx;
+    const age = TRICK.showFor - show.timer;
+    const pop = 1 + 0.3 * Math.max(0, 1 - age / 7) ** 2;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, show.timer / 20, age / 3 + 0.3);
+    ctx.translate(STAGE_W / 2, 112);
+    ctx.scale(pop, pop);
+    this.text(show.names.join('  +  '), 0, -9, { size: 17, font: HUD_FONT, weight: '800', shadow: 'rgba(38,38,38,0.55)' });
+    ctx.restore();
   }
 
   // ---- screens
