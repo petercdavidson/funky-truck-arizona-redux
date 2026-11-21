@@ -22,9 +22,9 @@ export const BUTTONS = {
     { rect: r(229, 320, 120, 25), label: 'Change Truck', action: 'garage' },
     { rect: r(229, 349, 120, 25), label: 'How to Play', action: 'help' },
   ],
-  help: [{ rect: r(229, 386, 120, 25), action: 'menu' }],
+  help: [{ rect: r(229, 386, 120, 25), label: 'Menu', action: 'menu' }],
   garage: [
-    { rect: r(229, 413, 120, 25), action: 'menu' },
+    { rect: r(229, 413, 120, 25), label: 'Menu', action: 'menu' },
     { rect: r(200, 226, 32, 32), action: 'body-1' }, { rect: r(344, 226, 32, 32), action: 'body+1' },
     { rect: r(200, 260, 32, 32), action: 'tyre-1' }, { rect: r(344, 260, 32, 32), action: 'tyre+1' },
     { rect: r(200, 294, 32, 32), action: 'hub-1' }, { rect: r(344, 294, 32, 32), action: 'hub+1' },
@@ -120,6 +120,21 @@ export class Renderer {
   }
 
   image(name) { this.ctx.drawImage(this.a.images[name], 0, 0); }
+
+  /** Copy part of an image (stage pixels) to the same place, or to a new rect. */
+  piece(name, sx, sy, sw, sh, dx = sx, dy = sy, dw = sw, dh = sh) {
+    this.ctx.drawImage(this.a.images[name], sx, sy, sw, sh, dx, dy, dw, dh);
+  }
+
+  /**
+   * A box from the original art, stretched to (x, y, w, h) without its contents: the left and
+   * right ends are copied as they are, and a plain slice just inside the left end fills the middle.
+   */
+  box(name, sx, sy, sw, sh, x, y, w, h, end = 8) {
+    this.piece(name, sx, sy, end, sh, x, y, end, h);
+    this.piece(name, sx + end - 2, sy, 2, sh, x + end, y, w - 2 * end, h);
+    this.piece(name, sx + sw - end, sy, end, sh, x + w - end, y, end, h);
+  }
 
   buttons(screen) {
     for (const b of BUTTONS[screen] || []) {
@@ -222,8 +237,8 @@ export class Renderer {
 
   hud(game) { // Symbol 305 / X3323
     const ctx = this.ctx;
-    ctx.save(); ctx.translate(10, 10); this.frame('dmgLabel', 0); ctx.restore();
-    ctx.save(); ctx.translate(530, 13); this.frame('scoreLabel', 0); ctx.restore();
+    this.text('damage', 9.5, 7.5, { size: 15, font: HUD_FONT, weight: '800', align: 'left' });
+    this.text('score', 566.5, 9, { size: 12.5, font: HUD_FONT, weight: '800', align: 'right' });
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.fillRect(13.1, 25, 80, 10);
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
@@ -254,6 +269,46 @@ export class Renderer {
       ? 'Use the on-screen pedals and tilt buttons to drive'
       : 'Arrow keys drive and tilt  ·  P pauses  ·  Esc returns to the menu';
     this.text(hint, STAGE_W / 2, 422, { size: 11, weight: '600', color: 'rgba(255,255,255,0.78)' });
+  }
+
+  // The menu screens were bitmaps with their text baked in. They are now drawn from the plain
+  // backdrop plus the original art's keycaps and boxes, with the words as live text.
+
+  help() {
+    this.image('screen_plain.png');
+    this.piece('screen_help.png', 205, 45, 62, 145); // the four arrow keycaps
+    const label = { size: 14, weight: '600', align: 'left' };
+    ['Forwards', 'Reverse', 'Tilt Back', 'Tilt Forwards'].forEach((name, i) => this.text(name, 269, 65 + i * 29.7, label));
+    const line = { size: 14, weight: '600' };
+    this.text('Press P to Pause', STAGE_W / 2, 202, line);
+    this.text('Your truck is four-wheel drive.', STAGE_W / 2, 262, line);
+    this.text('To climb steep hills, tilt forwards so that your front wheel stays on the ground.', STAGE_W / 2, 296, { ...line, size: 13.5 });
+    this.buttons('help');
+  }
+
+  garage(game, v) {
+    this.image('screen_plain.png');
+    this.box('screen_garage.png', 10, 10, 556, 25, 10, 10, 556, 25, 12); // title bar
+    this.text('Your Truck', STAGE_W / 2, 15.5, { size: 14, weight: '700' });
+    this.truck(v.gT, v.grr, v.gfr, game.look);
+    ['Body', 'Tyres', 'Wheels'].forEach((name, i) => {
+      const y = 226 + i * 34;
+      this.piece('screen_garage.png', 200, y, 32, 32); // arrow buttons
+      this.piece('screen_garage.png', 344, y, 32, 32);
+      this.text(name, STAGE_W / 2, y + 8, { size: 14, weight: '700' });
+    });
+    this.buttons('garage');
+  }
+
+  practiceSelect() {
+    this.image('screen_plain.png');
+    this.text('Choose a Stage', STAGE_W / 2, 164, { size: 14, weight: '700' });
+    for (let i = 0; i < 9; i++) {
+      const x = 136 + 34 * i;
+      this.box('screen_practice.png', 136, 228, 32, 32, x, 228, 32, 32);
+      this.text(String(i + 1), x + 16, 234.5, { size: 17, weight: '700' });
+    }
+    this.buttons('practiceSelect');
   }
 
   overlayDim(alpha) {
@@ -295,13 +350,9 @@ export class Renderer {
     ctx.clip();
     switch (game.screen) {
       case 'title': this.title(game, v); break;
-      case 'help': this.image('screen_help.png'); this.buttons('help'); break;
-      case 'garage':
-        this.image('screen_garage.png');
-        this.truck(v.gT, v.grr, v.gfr, game.look);
-        this.buttons('garage');
-        break;
-      case 'practiceSelect': this.image('screen_practice.png'); this.buttons('practiceSelect'); break;
+      case 'help': this.help(); break;
+      case 'garage': this.garage(game, v); break;
+      case 'practiceSelect': this.practiceSelect(); break;
       case 'playing': this.world(game, v); break;
       case 'paused': this.world(game, v); this.paused(); break;
       case 'gameOver': this.world(game, v); this.gameOver(game); break;
