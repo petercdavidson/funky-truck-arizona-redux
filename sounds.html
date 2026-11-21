@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Funky Truck Sounds</title>
+  <link rel="icon" type="image/png" href="assets/favicon-32.png">
+  <style>
+    :root { --btn: rgba(107, 74, 64, 0.92); --card: rgba(0, 0, 0, 0.16); }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; color: #fff;
+      font-family: "Avenir Next", Avenir, "Nunito", "Segoe UI", system-ui, sans-serif;
+      background: linear-gradient(#c4826a, #946857) fixed;
+    }
+    main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-size: clamp(32px, 7vw, 52px); font-weight: 900; margin: 0; text-shadow: 3px 3px 0 rgba(38, 38, 38, 0.85); }
+    .lede { font-weight: 600; opacity: 0.9; max-width: 60ch; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 20px; }
+    .card { background: var(--card); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+    .card.current { outline: 2px solid rgba(255, 255, 255, 0.8); }
+    .card h2 { margin: 0; font-size: 22px; font-weight: 800; }
+    .card p { margin: 0; font-size: 14px; font-weight: 600; opacity: 0.85; min-height: 3em; }
+    .cues { display: flex; flex-wrap: wrap; gap: 6px; }
+    button {
+      font: inherit; font-weight: 800; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em;
+      color: #fff; background: var(--btn); border: 0; border-radius: 5px; padding: 8px 10px; cursor: pointer;
+    }
+    button:hover { background: rgba(130, 92, 80, 0.95); }
+    button.wide { width: 100%; padding: 10px; }
+    button.on { background: #fff; color: #6b4a40; }
+    .engine { display: grid; gap: 6px; font-size: 13px; font-weight: 700; }
+    .engine label { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 8px; }
+    input[type=range] { width: 100%; accent-color: #fff; }
+    a { color: #fff; }
+    .back { display: inline-block; margin-top: 18px; font-weight: 700; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>funky truck sounds</h1>
+  <p class="lede">Four sound sets to compare. Each one is synthesised live in the browser (no sound files). Try the
+    cues, rev the engine with the sliders, or play a short demo run. <b>Use in game</b> makes it the set the
+    game starts with (in this browser). In the game, the ♪ button on the title screen, the pause menu or the
+    M key switches sets too.</p>
+  <div class="grid" id="sets"></div>
+  <a class="back" href="./">← Back to the game</a>
+</main>
+<script type="module">
+import { Sound, SOUND_SETS, SOUND_NAMES, SOUND_BLURBS } from './src/audio.js';
+
+const sound = new Sound();
+const KEY = 'funkytruck.soundSet';
+const saved = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } };
+let current = SOUND_SETS.includes(saved()) ? saved() : SOUND_SETS[0];
+const LABELS = { start: 'Start', land: 'Land', bump: 'Bump', scrape: 'Scrape', flip: 'Flip', stage: 'Stage done', win: 'Win', wreck: 'Wreck', click: 'Click' };
+const engines = {};   // set -> { throttle, speed, airborne, on }
+let playingEngine = null;
+
+function tick() {
+  const e = playingEngine && engines[playingEngine];
+  sound.updateEngine(e ? { on: true, throttle: e.throttle, speed: e.speed, airborne: e.airborne } : { on: false }, playingEngine || 'off');
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+function el(tag, props = {}, ...kids) {
+  const n = Object.assign(document.createElement(tag), props);
+  for (const k of kids) n.append(k);
+  return n;
+}
+
+function render() {
+  const root = document.getElementById('sets');
+  root.innerHTML = '';
+  for (const set of SOUND_SETS.filter((s) => s !== 'off')) {
+    engines[set] ||= { throttle: 0, speed: 0.3, airborne: false };
+    const card = el('section', { className: 'card' + (set === current ? ' current' : '') });
+    card.append(el('h2', { textContent: SOUND_NAMES[set] }), el('p', { textContent: SOUND_BLURBS[set] }));
+    const cues = el('div', { className: 'cues' });
+    const cue = (name, opts, label) => cues.append(el('button', { textContent: label, onclick: () => { sound.unlock(); sound.play(name, opts, set); } }));
+    cue('start', {}, LABELS.start);
+    cue('bump', { force: 0.6 }, LABELS.bump);
+    cue('land', { force: 0.3 }, 'Soft land');
+    cue('land', { force: 1 }, 'Hard land');
+    cue('scrape', {}, LABELS.scrape);
+    cue('flip', { degrees: 360 }, 'Flip');
+    cue('flip', { degrees: 720 }, 'Double flip');
+    for (const n of ['stage', 'win', 'wreck', 'click']) cue(n, {}, LABELS[n]);
+    card.append(cues);
+    const eng = engines[set];
+    const toggle = el('button', { className: 'wide' + (playingEngine === set ? ' on' : ''), textContent: playingEngine === set ? 'Stop engine' : 'Start engine' });
+    toggle.onclick = () => { sound.unlock(); playingEngine = playingEngine === set ? null : set; render(); };
+    const slider = (key, label) => {
+      const input = el('input', { type: 'range', min: 0, max: 1, step: 0.01, value: eng[key] });
+      input.oninput = () => { eng[key] = Number(input.value); };
+      return el('label', {}, el('span', { textContent: label }), input);
+    };
+    const air = el('input', { type: 'checkbox', checked: eng.airborne });
+    air.onchange = () => { eng.airborne = air.checked; };
+    card.append(el('div', { className: 'engine' }, toggle, slider('throttle', 'Throttle'), slider('speed', 'Speed'), el('label', {}, el('span', { textContent: 'In the air' }), air)));
+    card.append(el('button', { className: 'wide', textContent: 'Demo run', onclick: () => demo(set) }));
+    const use = el('button', { className: 'wide' + (set === current ? ' on' : ''), textContent: set === current ? 'Used in game ✓' : 'Use in game' });
+    use.onclick = () => { current = set; try { localStorage.setItem(KEY, JSON.stringify(set)); } catch { /* storage blocked */ } render(); };
+    card.append(use);
+    root.append(card);
+  }
+}
+
+/** A few seconds of driving: rev up, a bump, a jump with a flip, a landing, a scrape, the finish. */
+function demo(set) {
+  sound.unlock();
+  const e = engines[set];
+  playingEngine = set;
+  render();
+  const steps = [
+    [0, () => { sound.play('start', {}, set); Object.assign(e, { throttle: 0, speed: 0.05, airborne: false }); }],
+    [400, () => Object.assign(e, { throttle: 1, speed: 0.2 })],
+    [900, () => Object.assign(e, { speed: 0.5 })],
+    [1400, () => sound.play('bump', { force: 0.5 }, set)],
+    [1700, () => Object.assign(e, { speed: 0.8 })],
+    [2300, () => Object.assign(e, { airborne: true })],
+    [3200, () => { Object.assign(e, { airborne: false, speed: 0.6 }); sound.play('land', { force: 0.9 }, set); }],
+    [3220, () => sound.play('flip', { degrees: 380 }, set)],
+    [3900, () => sound.play('scrape', {}, set)],
+    [4300, () => Object.assign(e, { throttle: 0, speed: 0.3 })],
+    [4600, () => sound.play('stage', {}, set)],
+    [6200, () => { playingEngine = null; render(); }],
+  ];
+  for (const [t, f] of steps) setTimeout(f, t);
+}
+
+render();
+</script>
+</body>
+</html>

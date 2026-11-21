@@ -4,6 +4,8 @@
 import { Game, STEP_HZ, emptyKeys } from './game.js';
 import { loadAssets } from './assets.js';
 import { Renderer, hitButton } from './render.js';
+import { Sound } from './audio.js';
+import { SoundWatcher } from './sound-events.js';
 
 const DT = 1000 / STEP_HZ;
 
@@ -23,6 +25,12 @@ const loadingBar = document.getElementById('loading-bar');
 const touchUI = document.getElementById('touch');
 
 let game, renderer;
+const sound = new Sound();
+const watcher = new SoundWatcher();
+let engineState = { on: false };
+
+// Browsers only start audio after the player taps or presses a key.
+for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, () => sound.unlock(), { capture: true });
 
 // ---------------------------------------------------------------------------------------------
 // Input state. Several sources can hold the same control, so each source keeps its own keys
@@ -60,6 +68,7 @@ function onKey(e, down) {
   if (down && !e.repeat) {
     if (e.code === 'Escape') { if (game.screen !== 'title') goMenu(); return; }
     if (e.code === 'KeyF') { toggleFullscreen(); return; }
+    if (e.code === 'KeyM') { doAction('sound'); return; }
     if (game.screen === 'title' && (e.code === 'Space' || e.code === 'Enter')) { doAction('play'); return; }
   }
   if (name) { keyboard[name] = down; combineKeys(); }
@@ -74,6 +83,7 @@ window.addEventListener('blur', () => {
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && game?.screen === 'playing') game.togglePause();
+  sound.suspend(document.hidden);
 });
 
 function toggleFullscreen() {
@@ -87,6 +97,13 @@ function toggleFullscreen() {
 function goMenu() { game.showMenu('title'); }
 
 function doAction(a) {
+  if (a === 'sound') {
+    game.cycleSound();
+    sound.setSet(game.soundSet);
+    sound.play('start');
+    return;
+  }
+  sound.play('click');
   if (a === 'play') game.startCampaign();
   else if (a === 'endless') game.startEndless();
   else if (a === 'practice') game.showMenu('practiceSelect');
@@ -226,12 +243,17 @@ function frame(now) {
       for (let i = 0; i < 10; i += 2) prev.T[i] -= game.lastShift;
       prev.camX -= game.lastShift;
     }
+    const heard = watcher.observe(game);
+    for (const e of heard.events) sound.play(e.type, e);
+    engineState = heard.engine;
     acc -= DT;
     steps++;
     if (game.screen !== before) break;
   }
   if (steps === 8 || game.screen !== before) acc = 0;
   if (game.teleportCount !== seenTeleport) { seenTeleport = game.teleportCount; prev = null; }
+  if (game.screen !== 'playing') engineState = { on: false };
+  sound.updateEngine(engineState);
   const cur = snapshot();
   const t = game.screen === 'playing' || game.screen === 'title' || game.screen === 'garage' ? Math.min(acc / DT, 1) : 1;
   renderer.draw(game, prev ? lerpView(prev, cur, t) : cur);
@@ -288,6 +310,7 @@ async function boot() {
   try {
     const assets = await loadAssets('assets/', (p) => { loadingBar.style.width = `${Math.round(p * 100)}%`; });
     game = new Game(assets.levels, { store });
+    sound.setSet(game.soundSet);
     renderer = new Renderer(canvas, assets);
     window.__funkyTruck = { game, renderer }; // handy for debugging in the console
     setTouchMode(window.matchMedia('(pointer: coarse)').matches);
