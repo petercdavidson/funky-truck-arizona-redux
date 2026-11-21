@@ -439,22 +439,22 @@ export const RULES = {
  * truck is going fast or has been high above the ground for a while, and closes in again when it
  * settles. `zoom` is how many times the usual view it shows (1 = the original 576 across).
  *
- * Everything it reacts to is smoothed first, so bumps and short hops don't move it: speed and
- * height are eased towards their raw values (quicker going up than coming down), height only
- * counts after half a second in the air, and the zoom itself eases, with a speed limit and a
- * dead zone. The camera's own movement is limited in how quickly it can speed up or slow down.
+ * Everything moves like a spring, so nothing starts or stops suddenly: speed, height and zoom
+ * are each followed by a critically damped spring, height fades in over the first second in the
+ * air, and the camera itself follows its target with a spring that also matches the target's
+ * (smoothed) velocity, so it keeps up with a fall without trailing behind it, but never jolts.
+ * `w` values are a spring's stiffness per step (bigger is quicker): it settles in about 5/w steps.
  */
 export const CAMERA = {
   maxZoom: 1.8,
   speedFrom: 5, speedTo: 13, speedZoom: 0.3,       // px per step: no pull-back at 5, full at 13
   heightFrom: 80, heightTo: 600, heightZoom: 0.65, // px above the ground
-  airDelay: 35,                                    // steps in the air before height counts
-  speedRise: 0.02, speedFall: 0.008,               // easing of the smoothed speed, per step
-  heightRise: 0.025, heightFall: 0.015,            // easing of the smoothed height, per step
-  out: 0.02, in: 0.008,                            // share of the zoom's gap closed each step
+  airFrom: 10, airTo: 70,                          // height fades in between these steps in the air
+  speedW: 0.035, heightW: 0.05, zoomW: 0.045,      // springs for the smoothed speed, height and zoom
   maxRate: 0.006,                                  // most the zoom changes in one step
-  deadZone: 0.04,                                  // gaps smaller than this are left alone
-  accel: 1.5,                                      // px/step the camera's speed can change per step
+  followW: 0.1,                                    // the camera's spring towards where it aims
+  velSmooth: 0.15,                                 // how quickly the matched velocity catches up
+  accel: 1.5,                                      // px/step² the camera's acceleration eases off at
 };
 
 /** Flip-upright assist: steps of being stuck before the button appears. */
@@ -535,9 +535,13 @@ export class Game {
     this.finished = false;
     this.camX = 0; this.camY = 0;     // J1Fc4 / k20D4
     this.zoom = 1;                    // the dynamic camera's pull-back (outside Classic)
-    this.ground = 0;                  // dynamic camera: smoothed height above the ground
-    this.camSpeed = 0;                // dynamic camera: smoothed speed
-    this.camVX = 0; this.camVY = 0;   // dynamic camera: the camera's own speed
+    // Dynamic camera springs: each a value and its velocity per step.
+    this.ground = 0; this.groundV = 0;     // smoothed height above the ground
+    this.camSpeed = 0; this.camSpeedV = 0; // smoothed speed
+    this.zoomV = 0;
+    this.camVX = 0; this.camVY = 0;        // the camera's own velocity
+    this.aimV = [0, 0, 0, 0];              // where it aims: velocity, smoothed twice (x, x, y, y)
+    this.lastAim = null;
     // How much of the world the driving view shows top to bottom (at zoom 1) when it fills the
     // window: the renderer keeps it up to date with the window's shape, even on the menus, so a
     // stage starts with its camera in the right place. Classic always shows 448 (see viewH).
@@ -632,7 +636,8 @@ export class Game {
     const s = this.levelData.start;
     this.truck.reset(s[0], s[1]);
     this.truck.rearWheelRot = 0; this.truck.frontWheelRot = 0;
-    this.zoom = 1; this.ground = 0; this.camSpeed = 0; this.camVX = 0; this.camVY = 0;
+    this.zoom = 1; this.zoomV = 0; this.ground = 0; this.groundV = 0; this.camSpeed = 0; this.camSpeedV = 0;
+    this.camVX = 0; this.camVY = 0; this.aimV = [0, 0, 0, 0]; this.lastAim = null;
     this.camX = Math.min(Math.max(s[0] - 150, 0), this.maxCamX);       // s4833
     this.camY = s[1] - this.viewH / 2;
     if (this.rules.classic) this.camY = Math.min(Math.max(this.camY, 0), this.maxCamY);
@@ -722,26 +727,28 @@ export class Game {
     if (dyn && Math.hypot(wantX - this.camX, wantY - this.camY) > 2 * this.viewH * z) {
       // Too far to pan to (the truck was moved, not driven): cut straight there.
       this.camX = wantX; this.camY = wantY; this.camVX = 0; this.camVY = 0;
+      this.aimV = [0, 0, 0, 0]; this.lastAim = [wantX, wantY];
       return;
     }
-    let dx = Math.max(Math.min((wantX - this.camX) * 0.2, TILE), -TILE);
-    let dy = Math.max(Math.min((wantY - this.camY) * 0.2, TILE), -TILE);
+    let dx, dy;
     if (dyn) {
-      // Ease the camera's own speed towards the move it wants, so it never lurches. It never goes
-      // faster than it could stop from before reaching where it's heading, so it can't overshoot.
-      const A = CAMERA.accel, lim = (v) => Math.max(-A, Math.min(A, v));
-      const brake = (d, gap) => Math.sign(d) * Math.min(Math.abs(d), Math.sqrt(2 * A * Math.abs(gap)));
-      this.camVX += lim(brake(dx, wantX - this.camX) - this.camVX);
-      this.camVY += lim(brake(dy, wantY - this.camY) - this.camVY);
+      // Follow with a spring that also matches how fast the aim point is moving (smoothed twice,
+      // so a landing or take-off never jolts it), easing off its acceleration near CAMERA.accel.
+      const C = CAMERA, w = C.followW, k = C.velSmooth, A = C.accel, V = this.aimV;
+      const last = this.lastAim || [wantX, wantY];
+      this.lastAim = [wantX, wantY];
+      V[0] += (wantX - last[0] - V[0]) * k; V[1] += (V[0] - V[1]) * k;
+      V[2] += (wantY - last[1] - V[2]) * k; V[3] += (V[2] - V[3]) * k;
+      const soft = (a) => A * Math.tanh(a / A);
+      this.camVX += soft(w * w * (wantX - this.camX) + 2 * w * (V[1] - this.camVX));
+      this.camVY += soft(w * w * (wantY - this.camY) + 2 * w * (V[3] - this.camVY));
       dx = this.camVX; dy = this.camVY;
+    } else {
+      dx = Math.max(Math.min((wantX - this.camX) * 0.2, TILE), -TILE);
+      dy = Math.max(Math.min((wantY - this.camY) * 0.2, TILE), -TILE);
     }
     const x = clampX(this.camX + dx), y = clampY(this.camY + dy);
-    if (dyn) {
-      // An edge can stop the camera, or push it when the view grows: neither is the camera's own
-      // speed, so keep only the part of the move it meant to make.
-      const keep = (moved, meant) => (Math.sign(moved) === Math.sign(meant) ? Math.sign(meant) * Math.min(Math.abs(moved), Math.abs(meant)) : 0);
-      this.camVX = keep(x - this.camX, dx); this.camVY = keep(y - this.camY, dy);
-    }
+    if (dyn && x !== this.camX + dx) this.camVX = x - this.camX; // stopped by the level's end
     this.camX = x; this.camY = y;
   }
 
@@ -754,25 +761,27 @@ export class Game {
   /** The dynamic camera: pull back for sustained speed and for time spent high above the ground. */
   updateZoom() {
     const C = CAMERA, t = this.truck;
-    const ease = (cur, to, up, down) => cur + (to - cur) * (to > cur ? up : down);
+    const smoothstep = (v, a, b) => { const x = Math.max(0, Math.min(1, (v - a) / (b - a))); return x * x * (3 - 2 * x); };
+    // A critically damped spring: no overshoot, and no sudden starts or stops.
+    const spring = (x, v, to, w) => { v += w * w * (to - x) - 2 * w * v; return [x + v, v]; };
     let speed = 0, height = 0;
     if (!this.wreck) { // a wreck: close in on it
       speed = Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]);
-      // Height only counts once the truck has been in the air a while, so bumps and hops don't
-      // move the camera. Look down from the wheel centres, which are always clear of the ground.
-      if (this.airSteps >= C.airDelay) height = Math.min(this.groundBelow(t.T[2], t.T[3]), this.groundBelow(t.T[4], t.T[5]));
+      // Height fades in over the first second in the air, so bumps and hops hardly count. Look
+      // down from the wheel centres, which are always clear of the ground.
+      const air = smoothstep(this.airSteps, C.airFrom, C.airTo);
+      if (air > 0) height = air * Math.min(this.groundBelow(t.T[2], t.T[3]), this.groundBelow(t.T[4], t.T[5]));
     }
-    this.camSpeed = ease(this.camSpeed, speed, C.speedRise, C.speedFall);
-    this.ground = ease(this.ground, height, C.heightRise, C.heightFall);
+    [this.camSpeed, this.camSpeedV] = spring(this.camSpeed, this.camSpeedV, speed, C.speedW);
+    [this.ground, this.groundV] = spring(this.ground, this.groundV, height, C.heightW);
+    this.ground = Math.max(0, this.ground);
     const ramp = (v, a, b) => Math.max(0, Math.min(1, (v - a) / (b - a)));
     const target = Math.min(C.maxZoom, 1
       + ramp(this.camSpeed, C.speedFrom, C.speedTo) * C.speedZoom
       + ramp(this.ground, C.heightFrom, C.heightTo) * C.heightZoom);
-    const gap = target - this.zoom;
-    // Close a small gap only when settling all the way back in, so the zoom doesn't hunt.
-    if (Math.abs(gap) < C.deadZone && !(target === 1 && gap < 0)) return;
-    const step = gap * (gap > 0 ? C.out : C.in);
-    this.zoom += Math.max(-C.maxRate, Math.min(C.maxRate, step));
+    let [z, v] = spring(this.zoom, this.zoomV, target, C.zoomW);
+    v = Math.max(-C.maxRate, Math.min(C.maxRate, v));
+    this.zoom = Math.max(1, this.zoom + v); this.zoomV = v;
   }
 
   spawnDirt(x, y, vx, vy) { // X7381

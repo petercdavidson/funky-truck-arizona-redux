@@ -492,3 +492,21 @@ test('a flip upright is not a trick, and tricks count again a moment after it la
   for (let i = 0; i < 300; i++) g.step();
   assert.ok(g.tricks.done > done, 'tricks count again');
 });
+
+test('the dynamic camera never jolts: its vertical acceleration changes smoothly', () => {
+  for (const stage of [0, 1, 4, 5]) {
+    const g = new Game(data);
+    g.practiceDamage = false;
+    g.startPractice(stage);
+    g.keys.up = true;
+    const ys = [];
+    for (let i = 0; i < 2000 && g.screen === 'playing'; i++) {
+      g.keys.right = g.truck.bodyRot < -25; g.keys.left = g.truck.bodyRot > 25;
+      g.step();
+      ys.push(g.camY + g.viewH * g.zoom / 2);
+    }
+    let jerk = 0;
+    for (let i = 3; i < ys.length; i++) jerk = Math.max(jerk, Math.abs(ys[i] - 3 * ys[i - 1] + 3 * ys[i - 2] - ys[i - 3]));
+    assert.ok(jerk < 0.5, `stage ${stage + 1}: the camera's acceleration jumped by ${jerk.toFixed(2)} px/step in one step`);
+  }
+});
