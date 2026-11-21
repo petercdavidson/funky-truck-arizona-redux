@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Game, TILE, STUCK_STEPS, CAMERA } from '../src/game.js';
+import { Game, TILE, STUCK_STEPS, CAMERA, UPRIGHT_LINGER, TRICK_COOLDOWN } from '../src/game.js';
 import { turnOver, memoryStore } from './helpers.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
@@ -412,4 +412,83 @@ test('the tall menu layouts keep every button on the page, apart from the others
   }
   const practice = TALL_BUTTONS.title.find((b) => b.action === 'practice').rect;
   assert.equal(hitButton('title', practice.x + 5, practice.y + 5, g, true).action, 'practice');
+});
+
+test('the chassis bottoming out on a hard landing is no scrape outside Classic; Classic still counts it', () => {
+  for (const classic of [false, true]) {
+    const g = new Game(data);
+    g.startCampaign(classic);
+    settle(g, 150);
+    const t = g.truck;
+    for (let i = 1; i < 10; i += 2) t.P[i] = t.T[i] - 16; // slammed down onto flat ground
+    let touched = 0, scraping = 0;
+    for (let i = 0; i < 60; i++) { g.step(); if (t.probeHit) touched++; if (g.scraping) scraping++; }
+    assert.ok(touched > 0, 'the body did touch the ground');
+    if (classic) assert.ok(g.damage > 0, 'Classic: damage, as the original');
+    else {
+      assert.equal(g.damage, 0, 'no damage');
+      assert.equal(scraping, 0, 'no scrape (so no sound and no bail)');
+    }
+  }
+  // On its roof is still a scrape everywhere.
+  const g = new Game(data);
+  g.startCampaign();
+  settle(g);
+  turnOver(g.truck);
+  settle(g, 60);
+  assert.ok(g.damage > 0 && g.scraping, 'on its roof: damage and scraping');
+});
+
+test('the scrape still sounds after the finish line, without adding damage', () => {
+  const g = new Game(data);
+  g.startCampaign();
+  settle(g);
+  g.endTimer = 200; // the stage is over
+  turnOver(g.truck);
+  let scraping = 0;
+  for (let i = 0; i < 60; i++) { g.step(); if (g.scraping) scraping++; }
+  assert.ok(scraping > 10, `scraping (${scraping} steps)`);
+  assert.equal(g.damage, 0);
+});
+
+test('the Flip button stays a few seconds after the truck stops looking stuck', () => {
+  const g = new Game(data, { random: () => 0.3 });
+  g.startEndless();
+  settle(g);
+  turnOver(g.truck);
+  let n = 0;
+  while (!g.canUpright && n++ < STUCK_STEPS * 3) g.step();
+  assert.ok(g.canUpright);
+  // Set it back on its wheels by hand (not with the button): it no longer looks stuck.
+  g.startEndless();
+  settle(g, 60);
+  g.canUpright = true; g.uprightLinger = UPRIGHT_LINGER; // as it was a moment ago
+  let shown = 0;
+  while (g.canUpright && shown < UPRIGHT_LINGER * 2) { g.step(); shown++; }
+  assert.ok(shown >= UPRIGHT_LINGER - 1 && shown <= UPRIGHT_LINGER + 1, `stayed ${shown} steps`);
+});
+
+test('a flip upright is not a trick, and tricks count again a moment after it lands', () => {
+  const g = new Game(data, { random: () => 0.3 });
+  g.startEndless();
+  settle(g);
+  turnOver(g.truck);
+  while (!g.canUpright) g.step();
+  const score = g.score;
+  assert.ok(g.upright());
+  assert.equal(g.tricks.done, 0, 'the trick tracker starts afresh');
+  let wasCooling = false, shown = false;
+  for (let i = 0; i < 400; i++) { g.step(); if (g.trickCooldown > 0) wasCooling = true; if (g.tricks.show) shown = true; }
+  assert.ok(wasCooling);
+  assert.equal(g.trickCooldown, 0, 'the cooldown ends once the truck is back on its wheels');
+  const done = g.tricks.done;
+  assert.equal(done, 0, 'no trick sounds from the flip');
+  assert.equal(shown, false, 'no trick names from the flip');
+  assert.equal(g.tricks.chain.length, 0);
+  assert.ok(g.score - score < 200, `no trick points (score went up ${g.score - score}, from distance only)`);
+  // Tricks are watched for again: a big drop scores Big Air.
+  const t = g.truck;
+  for (let i = 1; i < 10; i += 2) t.P[i] = t.T[i] + 9;
+  for (let i = 0; i < 300; i++) g.step();
+  assert.ok(g.tricks.done > done, 'tricks count again');
 });

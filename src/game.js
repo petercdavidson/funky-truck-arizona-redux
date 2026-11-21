@@ -165,6 +165,7 @@ export class Truck {
     this.rearWheelRot = 0; this.frontWheelRot = 0;       // degrees, unwrapped
     this.bodyRot = 0;                                    // L7935._rotation (degrees)
     this.probePrev = null;                               // N5555
+    this.probeHit = null;                                // what the roof probe last touched
     this.airborne = false; this.flipLast = 0; this.flipAccum = 0; // s0a55, T1B55, u2c55
   }
 
@@ -348,6 +349,7 @@ export class Truck {
     if (!this.probePrev) { this.probePrev = [x, y]; return null; }
     let result = null;
     const h = w.collide(this.probePrev[0], this.probePrev[1], x, y);
+    this.probeHit = h; // the surface touched (its normal says which side of the truck it's on)
     if (h) {
       const sx = h.x - x, sy = h.y - y;
       for (const p of [0, 3, 4]) { T[p * 2] += sx; T[p * 2 + 1] += sy; }
@@ -457,6 +459,16 @@ export const CAMERA = {
 
 /** Flip-upright assist: steps of being stuck before the button appears. */
 export const STUCK_STEPS = 140;
+/** ...and how long it stays once the truck no longer looks stuck (3 s). */
+export const UPRIGHT_LINGER = 210;
+/** After a flip upright, steps on the ground before tricks are watched for again (1 s). */
+export const TRICK_COOLDOWN = 70;
+/**
+ * Outside Classic, the body touching ground that's underneath it (the chassis bottoming out on a
+ * hard landing or a ramp) isn't a scrape. Underneath means the ground's normal is within about
+ * 65° of the truck's up direction.
+ */
+const UNDERSIDE = 0.42;
 const RIGHTING_STEPS = 80;
 const ONE_BUTTON_AIR = 4;        // steps off the ground before one-button controls tilt instead
 
@@ -510,6 +522,8 @@ export class Game {
     this.stuck = 0;                   // steps the truck has spent stuck (flip-upright assist)
     this.canUpright = false;
     this.righting = 0;                // steps left of a flip upright
+    this.uprightLinger = 0;           // steps the Flip button stays after the truck looks unstuck
+    this.trickCooldown = 0;           // steps on the ground after a flip upright before tricks count
     this.airSteps = 0;                // steps with no wheel on the ground (one-button controls)
     this.grammar = null;              // Endless Mode's course grammar, learned from the stages
     this.course = null;               // the current EndlessCourse
@@ -614,6 +628,7 @@ export class Game {
     this.world = this.makeWorld();
     this.wreck = null;
     this.stuck = 0; this.canUpright = false; this.righting = 0; this.airSteps = 0;
+    this.uprightLinger = 0; this.trickCooldown = 0;
     const s = this.levelData.start;
     this.truck.reset(s[0], s[1]);
     this.truck.rearWheelRot = 0; this.truck.frontWheelRot = 0;
@@ -816,8 +831,12 @@ export class Game {
     if (t.frontContact) this.kickDirt(t.frontSpin, 2, t.frontN);
     t.tilt(keys);
     const type = t.probeBody(w);
-    const scraped = type !== null && this.endTimer === 0 && type !== 1;
-    this.scraping = scraped;
+    // The cab (the truck above its wheels) is touching the ground. Outside Classic, ground under
+    // the body doesn't count: that's the chassis bottoming out, not the cab scraping.
+    const touching = type !== null && type !== 1 && (this.rules.classic || !this.underside(t));
+    this.scraping = touching; // heard even after the finish line
+    // It only damages the truck or bails a chain before the stage is over.
+    const scraped = touching && this.endTimer === 0;
     if (scraped && this.rules.damage) this.damage = Math.min(1000, this.damage + 6);
     const flip = t.trackFlip();
     if (this.rules.classic) {
@@ -834,9 +853,23 @@ export class Game {
     // original game's points (its degrees), as part of its chain.
     // Tricks score while the time bonus is running (as flips always did), or all run in Endless.
     const scoring = (this.mode === 'endless' || this.bonus !== 0) && this.endTimer === 0;
-    const paid = this.tricks.step(t, flip, scraped, scoring);
-    if (paid > 0) this.payTricks(paid);
-    if (this.uprightAllowed) this.updateStuck(type !== null);
+    if (this.righting > 0 || this.trickCooldown > 0) {
+      // A flip upright isn't a trick: tricks aren't watched for until the truck has been back on
+      // its wheels for a moment, and then the trick tracker starts afresh.
+      if (this.righting === 0 && (t.rearContact || t.frontContact) && --this.trickCooldown === 0) this.tricks.reset();
+    } else {
+      const paid = this.tricks.step(t, flip, scraped, scoring);
+      if (paid > 0) this.payTricks(paid);
+    }
+    if (this.uprightAllowed) this.updateStuck(touching);
+  }
+
+  /** Whether what the roof probe touched is under the truck's body rather than above or beside it. */
+  underside(t) {
+    const h = t.probeHit;
+    if (!h) return false;
+    const r = t.bodyRot * PI / 180;
+    return h.nx * Math.sin(r) - h.ny * Math.cos(r) > UNDERSIDE; // normal . the truck's up
   }
 
   // ---- flip-upright assist (damage-free runs outside Classic)
@@ -847,8 +880,9 @@ export class Game {
     if (this.righting > 0) { this.stepRighting(); return; }
     const bad = cabTouching || Math.abs(t.bodyRot) > 100;
     this.stuck = bad ? this.stuck + 1 : Math.max(0, this.stuck - 3);
-    if (this.stuck >= STUCK_STEPS) this.canUpright = true;
-    else if (this.stuck === 0) this.canUpright = false;
+    if (this.stuck >= STUCK_STEPS) { this.canUpright = true; this.uprightLinger = UPRIGHT_LINGER; }
+    // Once offered, the button stays a few seconds after the truck stops looking stuck.
+    else if (this.canUpright && !bad && --this.uprightLinger <= 0) this.canUpright = false;
   }
 
   /** Flip the truck back onto its wheels: hop it up and turn it over in the air. */
@@ -858,7 +892,10 @@ export class Game {
     for (let i = 0; i < 10; i += 2) { t.P[i] = t.T[i]; t.P[i + 1] = t.T[i + 1] + 4.2; }
     this.righting = RIGHTING_STEPS;
     this.canUpright = false;
+    this.uprightLinger = 0;
     this.stuck = 0;
+    this.tricks.reset();
+    this.trickCooldown = TRICK_COOLDOWN;
     this.lastRot = t.bodyRot;
     return true;
   }
