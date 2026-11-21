@@ -22,9 +22,23 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Pause | P | ⏸ button | Start |
 | Play again (game over) | Space, Enter or Ctrl | Play Again button | A |
 | Back to menu | Esc | Menu button | |
+| Change sound | M | ♪ button (title screen) or Sound (pause menu) | |
 | Full screen | F | | |
 
-The best score and the truck chosen in the garage are saved in the browser (`localStorage`).
+The best score, the sound set and the truck chosen in the garage are saved in the browser
+(`localStorage`).
+
+## Sound
+
+All sound is synthesised live with the Web Audio API, so the game ships no sound files. There are
+four sound sets to choose from: **Classic** (soft and warm), **Chiptune** (8-bit), **Rumble** (a
+gritty V8 with gravel and an air horn) and **Toybox** (boings and slide whistles), or **Off**.
+The page `sounds.html` (at `/sounds.html` on the site) lets you try every cue in every set, rev
+each engine with sliders, play a short demo run, and choose the set the game uses.
+
+The game logic knows nothing about sound: `src/sound-events.js` watches the game after every step
+and turns what happened (a landing, a cab scrape, a flip, a finished stage) into cues, and
+`src/audio.js` plays them in the chosen set.
 
 ## Publish on GitHub Pages
 
@@ -32,7 +46,8 @@ The best score and the truck chosen in the garage are saved in the browser (`loc
 2. In the repository, open **Settings → Pages** and set **Source** to **GitHub Actions**.
 
 After that, every push to `main` runs the tests and, if they pass, publishes the site
-(`.github/workflows/pages.yml`). Only the game files are published, not `tests/` or `tools/`.
+(`.github/workflows/pages.yml`). Only the game files (and `sounds.html`) are published, not
+`tests/` or `tools/`.
 
 ## Tests
 
@@ -54,6 +69,8 @@ saved to storage while a test parameter is set.
 | --- | --- |
 | `src/game.js` | All game logic: truck physics, collisions, scoring, stages and the screen state machine. No DOM access, so tests run it under Node. |
 | `src/render.js` | Draws everything on the canvas, and defines the clickable menu areas. |
+| `src/audio.js`, `src/sound-events.js` | Synthesised sound sets, and the watcher that turns game events into sound cues. |
+| `sounds.html` | A page for trying out and choosing the sound sets. |
 | `src/main.js` | Startup, the fixed 70 steps/second loop with smooth interpolated drawing, and all input. |
 | `src/assets.js` | Loads the images and level data, and prepares the terrain tiles. The game uses fonts already on the device and ships no font files. |
 | `index.html`, `style.css` | Page layout, loading screen and the on-screen touch controls. |

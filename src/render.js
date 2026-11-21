@@ -5,6 +5,7 @@
 
 import { TILE, STAGE_W, STAGE_H } from './game.js';
 import { HUD_FONT, TITLE_FONT } from './assets.js';
+import { SOUND_NAMES } from './audio.js';
 
 const DEG = Math.PI / 180;
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
@@ -21,6 +22,7 @@ export const BUTTONS = {
     { rect: r(229, 291, 120, 25), label: 'Practice', action: 'practice' },
     { rect: r(229, 320, 120, 25), label: 'Change Truck', action: 'garage' },
     { rect: r(229, 349, 120, 25), label: 'How to Play', action: 'help' },
+    { rect: r(490, 8, 78, 20), label: (g) => `♪ ${SOUND_NAMES[g.soundSet]}`, action: 'sound', small: true },
   ],
   help: [{ rect: r(229, 386, 120, 25), action: 'menu' }],
   garage: [
@@ -40,6 +42,7 @@ export const BUTTONS = {
   paused: [
     { rect: r(229, 262, 120, 25), label: 'Resume', action: 'resume' },
     { rect: r(229, 293, 120, 25), label: 'Quit to Menu', action: 'menu' },
+    { rect: r(229, 324, 120, 25), label: (g) => `Sound: ${SOUND_NAMES[g.soundSet]}`, action: 'sound' },
   ],
   playing: [],
 };
@@ -121,12 +124,13 @@ export class Renderer {
 
   image(name) { this.ctx.drawImage(this.a.images[name], 0, 0); }
 
-  buttons(screen) {
+  buttons(screen, game) {
     for (const b of BUTTONS[screen] || []) {
       const { x, y, w, h } = b.rect;
       if (b.label) {
-        this.roundRect(x, y, w, h, 4, BUTTON_FILL);
-        this.text(b.label.toUpperCase(), x + w / 2, y + 6.5, { size: 11.5, weight: '800' });
+        const label = typeof b.label === 'function' ? b.label(game) : b.label;
+        this.roundRect(x, y, w, h, 4, b.small ? 'rgba(107, 74, 64, 0.7)' : BUTTON_FILL);
+        this.text(label.toUpperCase(), x + w / 2, y + (b.small ? 4.5 : 6.5), { size: b.small ? 10 : 11.5, weight: '800' });
       }
       if (this.hover === b) this.roundRect(x, y, w, h, 4, 'rgba(255,255,255,0.16)');
     }
@@ -248,11 +252,11 @@ export class Renderer {
     this.ctx.translate(0, 48);
     this.truck(v.gT, v.grr, v.gfr, game.look);
     this.ctx.restore();
-    this.buttons('title');
+    this.buttons('title', game);
     if (game.best > 0) this.text(`Best score: ${game.best}`, STAGE_W / 2, 390, { size: 14, weight: '600' });
     const hint = this.touchMode
       ? 'Use the on-screen pedals and tilt buttons to drive'
-      : 'Arrow keys drive and tilt  ·  P pauses  ·  Esc returns to the menu';
+      : 'Arrow keys drive and tilt  ·  P pauses  ·  M changes the sound  ·  Esc returns to the menu';
     this.text(hint, STAGE_W / 2, 422, { size: 11, weight: '600', color: 'rgba(255,255,255,0.78)' });
   }
 
@@ -273,11 +277,11 @@ export class Renderer {
     if (hint) this.text(hint, STAGE_W / 2, 316, { size: 11, weight: '600', color: 'rgba(255,255,255,0.78)' });
   }
 
-  paused() {
+  paused(game) {
     this.overlayDim(0.3);
     this.text('Paused', STAGE_W / 2, 180, { size: 36, weight: '900', shadow: 'rgba(38,38,38,0.85)' });
     this.text(this.touchMode ? '' : 'Press P to resume play', STAGE_W / 2, 230, { size: 14, weight: '600' });
-    this.buttons('paused');
+    this.buttons('paused', game);
   }
 
   /** Draw a full frame. `v` holds interpolated positions. */
@@ -303,7 +307,7 @@ export class Renderer {
         break;
       case 'practiceSelect': this.image('screen_practice.png'); this.buttons('practiceSelect'); break;
       case 'playing': this.world(game, v); break;
-      case 'paused': this.world(game, v); this.paused(); break;
+      case 'paused': this.world(game, v); this.paused(game); break;
       case 'gameOver': this.world(game, v); this.gameOver(game); break;
     }
     ctx.restore();

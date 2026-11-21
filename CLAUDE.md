@@ -21,6 +21,8 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   gamepad), and `applyTestParams` (`?test=...` URL hooks used for screenshots).
 - `src/assets.js`: image and level loading, tile preparation, font stacks.
 - `index.html` / `style.css`: page shell, loading screen, touch controls.
+- `src/sound-events.js` (no DOM) turns game state into sound cues; `src/audio.js` synthesises them
+  with Web Audio in the chosen set. `sounds.html` previews the sets. No sound files.
 
 ## Rules that keep the game feeling right
 

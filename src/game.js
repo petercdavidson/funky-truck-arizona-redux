@@ -388,6 +388,9 @@ export class Truck {
 export const STAGE_NAMES = ['Stage One', 'Stage Two', 'Stage Three', 'Stage Four', 'Stage Five',
   'Stage Six', 'Stage Seven', 'Stage Eight', 'Stage Nine', 'Stage Ten'];
 
+/** Sound sets the player can pick, in the order the Sound button cycles through them. */
+export const SOUND_SETS = ['classic', 'chiptune', 'rumble', 'toybox', 'off'];
+
 export function emptyKeys() {
   return { up: false, down: false, left: false, right: false, pause: false, restart: false };
 }
@@ -430,6 +433,8 @@ export class Game {
     this.keys = emptyKeys();
     this.restartLatch = false;
     this.teleportCount = 0;           // bumped when things jump, so the renderer won't interpolate
+    const sound = this.store.get('soundSet');
+    this.soundSet = SOUND_SETS.includes(sound) ? sound : SOUND_SETS[0];
     const look = this.store.get('truckLook');
     if (look && typeof look === 'object') {
       for (const k of ['body', 'tyre', 'hub']) if (Number.isInteger(look[k]) && look[k] >= 0 && look[k] < 6) this.look[k] = look[k];
@@ -446,6 +451,11 @@ export class Game {
   cycleLook(part, delta) {
     this.look[part] = (this.look[part] + delta + 6) % 6;
     this.saveLook();
+  }
+
+  cycleSound() {
+    this.soundSet = SOUND_SETS[(SOUND_SETS.indexOf(this.soundSet) + 1) % SOUND_SETS.length];
+    this.store.set('soundSet', this.soundSet);
   }
 
   // ---- flow
