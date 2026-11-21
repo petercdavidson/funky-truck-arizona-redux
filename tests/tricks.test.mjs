@@ -83,10 +83,10 @@ test('scraping the cab bails the chain: its tricks pay, but with no multiplier',
   const paid = run(tr, ft, 1, { scraped: true });
   assert.equal(paid, points);
   assert.equal(tr.banked.bailed, true);
-  // "Bail" waits until the tricks' names have been up long enough to read.
+  // A bail isn't shown as a trick: the names stay, with a bail note under them.
   assert.deepEqual(tr.show.names, ['Frontflip', 'Huge Air']);
-  run(tr, ft, TRICK.readFor, { scraped: false });
-  assert.deepEqual(tr.show.names, ['Bail']);
+  assert.ok(tr.bail);
+  assert.equal(tr.queue.length, 0);
 });
 
 test('a trick name stays up long enough to read before the next one replaces it', () => {

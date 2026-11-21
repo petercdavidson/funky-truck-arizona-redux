@@ -324,9 +324,18 @@ export class Renderer {
 
   /** The name of the trick just done, popping in under the ticker and fading out. */
   trickNames(game) {
-    const show = game.tricks.show;
-    if (!show || game.screen === 'gameOver') return;
+    const show = game.tricks.show, bail = game.tricks.bail;
+    if (game.screen === 'gameOver') return;
     const ctx = this.ctx;
+    if (bail) {
+      // A bail ends the chain: a muted note under the trick names, not another trick.
+      const age = TRICK.showFor - bail.timer;
+      ctx.save();
+      ctx.globalAlpha = 0.75 * Math.min(1, bail.timer / 20, age / 6);
+      this.text('bail', STAGE_W / 2, 126, { size: 14, font: HUD_FONT, weight: 'italic 700', color: '#e4e4e4', shadow: 'rgba(38,38,38,0.6)' });
+      ctx.restore();
+    }
+    if (!show) return;
     const age = TRICK.showFor - show.timer;
     const pop = 1 + 0.3 * Math.max(0, 1 - age / 7) ** 2;
     ctx.save();

@@ -1,5 +1,6 @@
 // wreck.js — outside Classic, a wrecked truck comes apart: the body, both wheels and the four
-// suspension bars fly off and tumble as loose pieces. No DOM access (runs under Node for tests).
+// suspension bars come loose and the truck collapses. Each piece keeps the speed and spin it had;
+// nothing is added. No DOM access (runs under Node for tests).
 //
 // Every piece is made of Verlet points like the truck itself, under the same gravity. The body is
 // a rigid box of four points, each bar is two points, and each wheel is one point that collides
@@ -15,8 +16,6 @@ const BODY_BOX = [[-10, -26], [62, -26], [62, 10], [-10, 10]];
 export const WRECK = {
   bounce: 0.3,           // share of the speed into the ground that bounces back
   friction: 0.86,        // share of the speed along the ground kept on each contact
-  kick: 2.6,             // how hard the pieces burst apart
-  lift: 2.4,             // ...and upwards
 };
 
 export class Wreck {
@@ -24,9 +23,8 @@ export class Wreck {
    * @param truck     the Truck at the moment it was wrecked
    * @param wheelWorld the game's CollisionWorld (offset for the wheel radius)
    * @param thinWorld  a CollisionWorld of the same level built with a small offset
-   * @param random     () => number in [0, 1)
    */
-  constructor(truck, wheelWorld, thinWorld, random = Math.random) {
+  constructor(truck, wheelWorld, thinWorld) {
     this.wheelWorld = wheelWorld;
     this.thinWorld = thinWorld;
     this.T = [];
@@ -39,24 +37,6 @@ export class Wreck {
       this.T.push(x, y); this.P.push(px, py); this.thin.push(thin);
       return this.thin.length - 1;
     };
-    const burst = (ids, scale = 1) => {
-      // push a piece away from the chassis centre, and up
-      let mx = 0, my = 0;
-      for (const i of ids) { mx += this.T[i * 2]; my += this.T[i * 2 + 1]; }
-      mx /= ids.length; my /= ids.length;
-      let dx = mx - cx, dy = my - cy;
-      const l = Math.hypot(dx, dy) || 1;
-      dx /= l; dy /= l;
-      const k = WRECK.kick * scale * (0.6 + random() * 0.8);
-      const vx = dx * k + (random() - 0.5) * 1.2;
-      const vy = dy * k * 0.5 - WRECK.lift * scale * (0.6 + random() * 0.6);
-      const spin = (random() - 0.5) * 0.12 * scale;
-      for (const i of ids) {
-        const rx = this.T[i * 2] - mx, ry = this.T[i * 2 + 1] - my;
-        this.P[i * 2] -= vx - ry * spin;
-        this.P[i * 2 + 1] -= vy + rx * spin;
-      }
-    };
     const stick = (a, b) => this.sticks.push([a, b, Math.hypot(this.T[b * 2] - this.T[a * 2], this.T[b * 2 + 1] - this.T[a * 2 + 1])]);
 
     // Body: the four box corners, placed from the body mounts now and a step ago.
@@ -68,14 +48,12 @@ export class Wreck {
     const before = frame(P, P[6], P[7], P[8], P[9]);
     this.body = now.map((p, i) => add(p[0], p[1], before[i][0], before[i][1], true));
     for (let a = 0; a < 4; a++) for (let b = a + 1; b < 4; b++) stick(this.body[a], this.body[b]);
-    burst(this.body, 0.55);
 
     // Wheels, keeping their spin.
     this.wheels = [
       { p: add(T[2], T[3], P[2], P[3], false), rot: truck.rearWheelRot, spin: truck.rearSpin },
       { p: add(T[4], T[5], P[4], P[5], false), rot: truck.frontWheelRot, spin: truck.frontSpin },
     ];
-    for (const w of this.wheels) burst([w.p], 1);
     this.circumference = truck.circumference;
 
     // Bars, from the chassis centre to each body mount and wheel (drawn as in Renderer.truck).
@@ -83,7 +61,6 @@ export class Wreck {
       const a = add(cx, cy, P[0], P[1], true);
       const b = add(T[p], T[p + 1], P[p], P[p + 1], true);
       stick(a, b);
-      burst([a, b], 0.9);
       return { a, b, frame: frameIndex };
     });
     this.steps = 0;

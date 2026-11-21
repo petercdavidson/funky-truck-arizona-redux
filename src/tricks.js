@@ -51,6 +51,7 @@ export class TrickTracker {
     this.banked = null;        // last payout: { points, multiplier, bailed }
     this.show = null;          // what the HUD shows: { names, timer }
     this.queue = [];           // names waiting their turn on screen
+    this.bail = null;          // a bail's note under the names: { timer }
     this.done = 0;             // bumped each time tricks are performed (for the sound)
     this.fresh = [];           // the tricks just performed
   }
@@ -81,6 +82,7 @@ export class TrickTracker {
 
   /** Count down the name on screen, and bring on the next one when its turn comes. */
   tickShow() {
+    if (this.bail && --this.bail.timer <= 0) this.bail = null;
     const s = this.show;
     if (s) {
       s.timer--;
@@ -179,7 +181,8 @@ export class TrickTracker {
     const mult = bailed ? 1 : this.multiplier;
     const points = this.chainPoints * mult;
     this.banked = { points, multiplier: mult, bailed };
-    if (bailed && this.chain.length > 1) { this.announce(['Bail']); this.done--; } // no sound for a bail
+    // A bail isn't a trick: it's noted under the chain's names, and makes no trick sound.
+    if (bailed && this.chain.length > 1) this.bail = { timer: TRICK.showFor };
     this.chain = [];
     this.idle = 0;
     return points;

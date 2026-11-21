@@ -11,9 +11,9 @@ export const CUES = ['start', 'land', 'bump', 'flip', 'trick', 'stage', 'win', '
 
 /** Scrape sounds to choose between (sounds.html plays them; ?scrape=N picks one in the game). */
 export const SCRAPES = {
-  1: { name: 'Grind', blurb: 'Low and gritty, like the cab grinding through dirt.' },
-  2: { name: 'Skid', blurb: 'A metal panel skidding along: brighter, with a faint squeal.' },
-  3: { name: 'Scratch', blurb: 'Dry and scratchy, fluttering faster the quicker you slide.' },
+  1: { name: 'Crunch', blurb: 'Hard hits, one after another while the cab drags: each a sharp crack with a thud under it.' },
+  2: { name: 'Grate', blurb: 'Starts with a hit, then a harsh metal grating that cuts in at once and stops just as fast.' },
+  3: { name: 'Crash & Drag', blurb: 'A heavy crash as the cab hits, then a rough, rattling drag along the ground.' },
 };
 export const DEFAULT_SCRAPE = 1;
 
@@ -116,7 +116,7 @@ const SET = {
     const a = voice(k, { type: 'triangle', dest: lp }), b = voice(k, { type: 'sawtooth', dest: lp });
     // tyres on the ground: a quiet band of noise that grows with speed
     const grit = ctx.createBufferSource(); grit.buffer = k.noise; grit.loop = true;
-    const gf = ctx.createBiquadFilter(); gf.type = 'bandpass'; gf.frequency.value = 900; gf.Q.value = 0.8;
+    const gf = ctx.createBiquadFilter(); gf.type = 'bandpass'; gf.frequency.value = 450; gf.Q.value = 0.8;
     const gg = ctx.createGain(); gg.gain.value = 0;
     grit.connect(gf).connect(gg).connect(out); grit.start();
     return engineShell(k, [a.o, b.o, grit], out, ({ throttle, speed, airborne }) => {
@@ -124,7 +124,7 @@ const SET = {
       smooth(a.o.frequency, f, k, 0.08); smooth(b.o.frequency, f / 2, k, 0.08);
       smooth(a.g.gain, 0.10 + throttle * 0.08, k); smooth(b.g.gain, 0.035 + throttle * 0.04, k);
       smooth(lp.frequency, 500 + throttle * 600 + speed * 400, k, 0.1);
-      smooth(gf.frequency, 700 + speed * 500, k, 0.1);
+      smooth(gf.frequency, 330 + speed * 260, k, 0.1);
       smooth(gg.gain, airborne ? 0 : speed * 0.016, k, 0.06);
     });
   },
@@ -159,59 +159,79 @@ const SET = {
   click(k) { tone(k, { f: 1800, f2: 1200, dur: 0.035, gain: 0.08 }); },
 };
 
+/** A soft-clipping curve, for a harsher, overdriven sound. */
+function drive(ctx, amount) {
+  const ws = ctx.createWaveShaper();
+  const n = 1024, curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; curve[i] = Math.tanh(x * amount); }
+  ws.curve = curve;
+  return ws;
+}
+
+const semis = (n) => Math.pow(2, n / 12);
+
+/** One hard hit of the cab on the ground: a crack of noise with a thud under it. */
+function hit(k, { pitch = 1, force = 0.6, heavy = false } = {}) {
+  noise(k, { dur: heavy ? 0.22 : 0.11, gain: (heavy ? 0.5 : 0.32) + force * 0.3, type: 'bandpass', f: (heavy ? 650 : 1100) * pitch, f2: (heavy ? 260 : 500) * pitch, Q: 1.4, attack: 0.002 });
+  noise(k, { dur: 0.04, gain: 0.12 + force * 0.1, type: 'highpass', f: 3500 * pitch, attack: 0.001 });
+  tone(k, { f: (heavy ? 110 : 150) * pitch, f2: 50, dur: heavy ? 0.26 : 0.12, gain: (heavy ? 0.35 : 0.18) + force * 0.15, attack: 0.002 });
+}
+
 /**
- * The scrape voices. Each fades in and out gently rather than hitting, and each new scrape picks
- * a slightly different pitch so a run of scrapes doesn't sound the same every time.
- * update({ on, speed, pitch }) is called every frame.
+ * The scrape voices. Each one starts hard, so it's clear something has gone wrong, and each new
+ * scrape (and each hit in a run of them) picks a slightly different pitch so it never sounds the
+ * same twice. update({ on, speed, pitch }) is called every frame.
  */
 const SCRAPE_VOICES = {
-  1(k) { // Grind
-    const { ctx } = k;
-    const src = ctx.createBufferSource(); src.buffer = k.noise; src.loop = true;
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.3; bp.frequency.value = 600;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400;
-    const wob = ctx.createGain(); wob.gain.value = 0.8;
-    const lfo = ctx.createOscillator(), la = ctx.createGain(); lfo.frequency.value = 7; la.gain.value = 0.25;
-    lfo.connect(la).connect(wob.gain); lfo.start();
-    const g = ctx.createGain(); g.gain.value = 0;
-    src.connect(bp).connect(lp).connect(wob).connect(g).connect(k.out); src.start();
-    return { nodes: [src, lfo], g, update: ({ on, speed, pitch }) => {
-      smooth(bp.frequency, (420 + speed * 420) * pitch, k, 0.08);
-      smooth(lfo.frequency, 5 + speed * 9, k, 0.1);
-      smooth(g.gain, on ? 0.12 + speed * 0.3 : 0, k, on ? 0.07 : 0.14);
+  1(k) { // Crunch: repeated hits
+    const g = k.ctx.createGain();
+    let next = 0;
+    return { nodes: [], g, update: ({ on, speed, pitch }) => {
+      const now = k.ctx.currentTime;
+      if (!on) { next = 0; return; }
+      if (now >= next) {
+        hit(k, { pitch: pitch * semis(Math.random() * 4 - 2), force: 0.4 + speed * 0.6 });
+        next = now + 0.16 - speed * 0.07 + Math.random() * 0.04;
+      }
     } };
   },
-  2(k) { // Skid
+  2(k) { // Grate: a hit, then harsh metal held while it drags
     const { ctx } = k;
     const src = ctx.createBufferSource(); src.buffer = k.noise; src.loop = true;
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 4.5; bp.frequency.value = 1700;
+    const pre = ctx.createBiquadFilter(); pre.type = 'bandpass'; pre.frequency.value = 1500; pre.Q.value = 0.7;
+    const sh = drive(ctx, 6);
+    const r1 = ctx.createBiquadFilter(); r1.type = 'peaking'; r1.frequency.value = 1150; r1.Q.value = 9; r1.gain.value = 14;
+    const r2 = ctx.createBiquadFilter(); r2.type = 'peaking'; r2.frequency.value = 2700; r2.Q.value = 11; r2.gain.value = 12;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5000;
     const g = ctx.createGain(); g.gain.value = 0;
-    src.connect(bp).connect(g).connect(k.out); src.start();
-    const sq = ctx.createOscillator(); sq.type = 'sawtooth'; sq.frequency.value = 330;
-    const sf = ctx.createBiquadFilter(); sf.type = 'bandpass'; sf.Q.value = 8; sf.frequency.value = 1300;
-    const sg = ctx.createGain(); sg.gain.value = 0;
-    sq.connect(sf).connect(sg).connect(k.out); sq.start();
-    return { nodes: [src, sq], g, extra: sg, update: ({ on, speed, pitch }) => {
-      smooth(bp.frequency, (1300 + speed * 900) * pitch, k, 0.08);
-      smooth(sq.frequency, (300 + speed * 90) * pitch, k, 0.1);
-      smooth(sf.frequency, (1100 + speed * 500) * pitch, k, 0.1);
-      smooth(g.gain, on ? 0.18 + speed * 0.35 : 0, k, on ? 0.06 : 0.14);
-      smooth(sg.gain, on ? 0.006 + speed * 0.012 : 0, k, on ? 0.1 : 0.12);
+    src.connect(pre).connect(sh).connect(r1).connect(r2).connect(lp).connect(g).connect(k.out); src.start();
+    let was = false;
+    return { nodes: [src], g, update: ({ on, speed, pitch }) => {
+      if (on && !was) hit(k, { pitch, force: 0.5 + speed * 0.5 });
+      was = on;
+      smooth(r1.frequency, 1150 * pitch, k, 0.02);
+      smooth(r2.frequency, 2700 * pitch * (0.95 + speed * 0.1), k, 0.02);
+      smooth(pre.frequency, (1200 + speed * 800) * pitch, k, 0.03);
+      smooth(g.gain, on ? 0.05 + speed * 0.09 : 0, k, on ? 0.006 : 0.035);
     } };
   },
-  3(k) { // Scratch
+  3(k) { // Crash & Drag: a heavy hit, then a rough rattling drag
     const { ctx } = k;
     const src = ctx.createBufferSource(); src.buffer = k.noise; src.loop = true;
-    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2200; hp.Q.value = 0.9;
-    const flutter = ctx.createGain(); flutter.gain.value = 0.55;
-    const lfo = ctx.createOscillator(), la = ctx.createGain(); lfo.type = 'triangle'; lfo.frequency.value = 18; la.gain.value = 0.45;
-    lfo.connect(la).connect(flutter.gain); lfo.start();
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 600; bp.Q.value = 1.8;
+    const sh = drive(ctx, 3);
+    const rattle = ctx.createGain(); rattle.gain.value = 0.5;
+    const lfo = ctx.createOscillator(), la = ctx.createGain(); lfo.type = 'square'; lfo.frequency.value = 24; la.gain.value = 0.5;
+    lfo.connect(la).connect(rattle.gain); lfo.start();
     const g = ctx.createGain(); g.gain.value = 0;
-    src.connect(hp).connect(flutter).connect(g).connect(k.out); src.start();
+    src.connect(bp).connect(sh).connect(rattle).connect(g).connect(k.out); src.start();
+    let was = false;
     return { nodes: [src, lfo], g, update: ({ on, speed, pitch }) => {
-      smooth(hp.frequency, (1800 + speed * 1400) * pitch, k, 0.08);
-      smooth(lfo.frequency, (14 + speed * 26) * pitch, k, 0.08);
-      smooth(g.gain, on ? 0.08 + speed * 0.2 : 0, k, on ? 0.06 : 0.12);
+      if (on && !was) hit(k, { pitch, force: 0.6 + speed * 0.4, heavy: true });
+      was = on;
+      smooth(bp.frequency, (480 + speed * 500) * pitch, k, 0.03);
+      smooth(lfo.frequency, (16 + speed * 22) * pitch, k, 0.05);
+      smooth(g.gain, on ? 0.12 + speed * 0.2 : 0, k, on ? 0.008 : 0.04);
     } };
   },
 };

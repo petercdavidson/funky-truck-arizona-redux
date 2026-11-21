@@ -70,7 +70,7 @@ distance in metres.
 All sound is synthesised live with the Web Audio API, so the game ships no sound files. Sound is
 off until you switch it on. There's a soft engine hum with a quiet hiss of tyres on the ground,
 thumps for landings, and bells for tricks, which ring as each trick is done. Scraping the cab
-is a held sound that fades in and out, with a slightly different pitch each time.
+sounds hard and sudden, with a slightly different pitch each time.
 
 There are three scrape sounds to choose from. The page `sounds.html` (at `/sounds.html` on the
 site) plays them side by side, and `?scrape=1`, `2` or `3` on the game's address tries one in
@@ -91,8 +91,8 @@ plays them.
 
 Tricks score in Play, Endless and Practice (not Classic). Tricks done close together make a chain. The chain pays out about 1½ s after its last trick, worth
 its points times the number of tricks in it (up to ×5). While a chain is open, its running total and
-multiplier show under the score. Scraping the cab is a **Bail**: the chain pays out at once, without
-the multiplier. A chain still open at the finish line is paid out there. Each trick name stays on
+multiplier show under the score. Scraping the cab is a **bail**: the chain pays out at once, without
+the multiplier, and a grey *bail* note appears under the trick names. A chain still open at the finish line is paid out there. Each trick name stays on
 screen long enough to read; one that comes too soon waits its turn. The trick tracker
 (`src/tricks.js`) only watches the truck; the physics is unchanged.
 

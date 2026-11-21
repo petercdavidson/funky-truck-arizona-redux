@@ -787,8 +787,8 @@ export class Game {
     if (this.damage === 1000 && this.rules.damage) {
       this.ticker = 'Your truck is wrecked - Game over !'; this.tickerTimer = 140; this.endTimer = 210;
       if (!this.rules.classic) {
-        // The truck comes apart; the pieces tumble for a moment before the game-over screen.
-        this.wreck = new Wreck(this.truck, this.world, this.makeWorld(3), this.random);
+        // The truck comes apart and collapses; the pieces tumble for a moment before the game-over screen.
+        this.wreck = new Wreck(this.truck, this.world, this.makeWorld(3));
         this.endTimer = 160;
         this.tricks.reset();
       }

@@ -261,8 +261,21 @@ function lerpView(a, b, t) {
 
 let last = 0, acc = 0, prev = null, seenTeleport = -1, seenShift = 0;
 
+/** Tell the page where the game view is, so the pause and flip buttons sit inside it. */
+let viewKey = '';
+function placeView() {
+  const rect = canvas.getBoundingClientRect(), k = renderer.cssPerDevice;
+  const x = rect.left + renderer.offX * k, y = rect.top + renderer.offY * k, w = 576 * renderer.scale * k;
+  const key = `${x.toFixed(1)},${y.toFixed(1)},${w.toFixed(1)}`;
+  if (key === viewKey) return;
+  viewKey = key;
+  const st = document.documentElement.style;
+  st.setProperty('--view-x', `${x}px`); st.setProperty('--view-y', `${y}px`); st.setProperty('--view-w', `${w}px`);
+}
+
 function frame(now) {
   requestAnimationFrame(frame);
+  placeView();
   if (!last) last = now;
   acc += Math.min(now - last, 250);
   last = now;

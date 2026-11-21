@@ -38,12 +38,12 @@ html, body {
   height: 100%;
 }
 
-/* On a touch device held upright, put the game near the top (below the pause button) and
+/* On a touch device held upright, put the game near the top and
    leave the lower part of the screen for the controls. */
 @media (orientation: portrait) {
   body.touch-mode[data-screen="playing"] #stage,
   body.touch-mode[data-screen="paused"] #stage {
-    top: calc(env(safe-area-inset-top) + 68px);
+    top: calc(env(safe-area-inset-top) + 12px);
     bottom: auto;
     height: calc(100vw * 448 / 576);
   }
@@ -132,12 +132,13 @@ body.touch-mode[data-screen="paused"] #touch .pad { visibility: hidden; }
   stroke-linejoin: round;
 }
 
-/* Pause (all devices) and flip-upright buttons, top centre while driving. */
+/* Pause (all devices) and flip-upright buttons, at the top centre of the game view while driving.
+   main.js keeps --view-x/y/w set to where the game view is on the page. */
 #corner {
   display: none;
   position: fixed;
-  top: max(10px, env(safe-area-inset-top));
-  left: 50%;
+  top: calc(var(--view-y, 0px) + 8px);
+  left: calc(var(--view-x, 0px) + var(--view-w, 100vw) / 2);
   transform: translateX(-50%);
   gap: 10px;
   z-index: 3;
@@ -164,7 +165,7 @@ body[data-onebutton="1"] #touch .pad { visibility: hidden; }
   position: fixed;
   left: 0;
   right: 0;
-  top: calc(env(safe-area-inset-top) + 68px + 100vw * 448 / 576 + 20px);
+  top: calc(env(safe-area-inset-top) + 12px + 100vw * 448 / 576 + 20px);
   text-align: center;
   font-size: 14px;
   font-weight: 600;
