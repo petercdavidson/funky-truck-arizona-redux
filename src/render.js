@@ -10,6 +10,7 @@ import { Wreck } from './wreck.js';
 
 const DEG = Math.PI / 180;
 const FILL_SCREENS = new Set(['playing', 'paused', 'gameOver']);
+const MENU_SCREENS = new Set(['title', 'help', 'garage', 'practiceSelect']);
 const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
 
@@ -28,8 +29,8 @@ export const BUTTONS = {
     { rect: r(229, 278, 120, 25), label: 'Classic', action: 'classic' },
     { rect: r(229, 306, 120, 25), label: 'Endless', action: 'endless' },
     { rect: r(229, 334, 120, 25), label: 'Practice', action: 'practice' },
-    { rect: r(163, 362, 122, 25), label: 'Change Truck', action: 'garage' },
-    { rect: r(291, 362, 122, 25), label: 'How to Play', action: 'help' },
+    { rect: r(229, 362, 120, 25), label: 'Change Truck', action: 'garage' },
+    { rect: r(238, 425, 100, 17), label: 'How to Play', action: 'help', small: true },
     option(252, (g) => `♪ Sound: ${onOff(g.soundOn)}`, 'sound'),
     option(276, (g) => `One Button: ${onOff(g.oneButton)}`, 'oneButton'),
   ],
@@ -192,7 +193,7 @@ export class Renderer {
       if (b.label) {
         const label = typeof b.label === 'function' ? b.label(game) : b.label;
         this.roundRect(x, y, w, h, 4, b.small ? 'rgba(107, 74, 64, 0.7)' : BUTTON_FILL);
-        this.text(label.toUpperCase(), x + w / 2, y + (b.small ? 4.5 : 6.5), { size: b.small ? 10 : 11.5, weight: '800' });
+        this.text(label.toUpperCase(), x + w / 2, y + (b.small ? h / 2 - 5.5 : 6.5), { size: b.small ? 10 : 11.5, weight: '800' });
       }
       if (this.hover === b) this.roundRect(x, y, w, h, 4, 'rgba(255,255,255,0.16)');
     }
@@ -391,7 +392,6 @@ export class Renderer {
   // ---- screens
 
   title(game, v) {
-    this.image('screen_plain.png');
     const shadow = 'rgba(38,38,38,0.85)';
     this.text('funky truck', STAGE_W / 2, 18, { size: 62, weight: '900', color: '#f5f5f5', shadow });
     this.text('UTAH', 470, 94, { size: 28, weight: '900', color: '#f5f5f5', shadow, align: 'right' });
@@ -404,18 +404,17 @@ export class Renderer {
     if (game.bestPlay > 0) bests.push(`Play: ${game.bestPlay}`);
     if (game.best > 0) bests.push(`Classic: ${game.best}`);
     if (game.bestEndless > 0) bests.push(`Endless: ${game.bestEndless} m`);
-    if (bests.length) this.text(`Best  ·  ${bests.join('   ·   ')}`, STAGE_W / 2, 396, { size: 14, weight: '600' });
+    if (bests.length) this.text(`Best  ·  ${bests.join('   ·   ')}`, STAGE_W / 2, 393, { size: 14, weight: '600' });
     let hint;
     if (game.oneButton) hint = this.touchMode ? 'Hold anywhere to drive, and to tilt back in the air' : 'Hold Space to drive, and to tilt back in the air  ·  P pauses  ·  Esc returns to the menu';
     else hint = this.touchMode ? 'Use the on-screen pedals and tilt buttons to drive' : 'Arrow keys drive and tilt  ·  P pauses  ·  M sound  ·  Esc returns to the menu';
-    this.text(hint, STAGE_W / 2, 422, { size: 11, weight: '600', color: 'rgba(255,255,255,0.78)' });
+    this.text(hint, STAGE_W / 2, 410, { size: 11, weight: '600', color: 'rgba(255,255,255,0.78)' });
   }
 
   // The menu screens were bitmaps with their text baked in. They are now drawn from the plain
   // backdrop plus the original art's keycaps and boxes, with the words as live text.
 
   help() {
-    this.image('screen_plain.png');
     this.piece('screen_help.png', 205, 45, 62, 145); // the four arrow keycaps
     const label = { size: 14, weight: '600', align: 'left' };
     ['Forwards', 'Reverse', 'Tilt Back', 'Tilt Forwards'].forEach((name, i) => this.text(name, 269, 65 + i * 29.7, label));
@@ -428,7 +427,6 @@ export class Renderer {
   }
 
   garage(game, v) {
-    this.image('screen_plain.png');
     this.box('screen_garage.png', 10, 10, 556, 25, 10, 10, 556, 25, 12); // title bar
     this.text('Your Truck', STAGE_W / 2, 15.5, { size: 14, weight: '700' });
     this.truck(v.gT, v.grr, v.gfr, game.look);
@@ -442,7 +440,6 @@ export class Renderer {
   }
 
   practiceSelect(game) {
-    this.image('screen_plain.png');
     this.text('Choose a Stage', STAGE_W / 2, 164, { size: 14, weight: '700' });
     for (let i = 0; i < 9; i++) {
       const x = 136 + 34 * i;
@@ -494,6 +491,9 @@ export class Renderer {
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
+    // The menus' backdrop (a plain gradient) fills the whole window; their contents stay the
+    // 576x448 stage, centred and scaled to fit.
+    if (MENU_SCREENS.has(game.screen)) ctx.drawImage(this.a.images['screen_plain.png'], 0, 0, this.canvas.width, this.canvas.height);
     this.stageTransform();
     ctx.save();
     ctx.beginPath();
