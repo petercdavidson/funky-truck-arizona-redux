@@ -4,6 +4,31 @@ A bouncy monster-truck game for the browser: drive across nine stages of Utah hi
 wrecking your truck. It works with a keyboard, a touchscreen or a gamepad, and runs as a static
 site on GitHub Pages.
 
+## Modes
+
+| Mode | What it is |
+| --- | --- |
+| **Play** | The nine stages, with tricks, a ragdoll wreck, and no invisible ceiling (the camera rises to follow a big jump). |
+| **Classic** | The nine stages as the original game played: the original flip bonus, the ceiling, the original controls, and a wrecked truck stays in one piece. Only display fixes (live text, alignment) and the pause button are new. |
+| **Endless** | A course generated as you drive that never ends. No damage: it's free play. **End Run** in the pause menu finishes the run and saves your best distance. |
+| **Practice** | One stage of your choice, played like Play. Options on the stage screen switch **Damage** off and play by **Classic** rules. |
+
+Outside Classic, the driving view fills the window. It always shows the same width of the world
+(the original 576 units), so everyone sees the same distance ahead; a taller window shows more
+sky and ground, a wider one less. The backdrop scales up evenly to cover it. Classic and the menus
+keep the original 576×448 view.
+
+Play, Classic and Endless each keep their own best (score, score, distance). A Practice run with
+damage saves to Play's or Classic's best; a damage-free one saves none.
+
+In damage-free runs outside Classic (Endless, and Practice with damage off), a **Flip** button
+appears at the top of the screen when the truck has been stuck on its roof or side for two seconds.
+It hops the truck up and turns it back onto its wheels.
+
+**One-button controls** (an option on the title screen) use a single button: Space on a keyboard,
+or holding anywhere on a touchscreen. On the ground it drives; in the air it tilts the truck back.
+Classic always uses the original controls.
+
 It's plain JavaScript (ES modules) and a 2D canvas, with no build step and no npm dependencies.
 
 ## Run it locally
@@ -19,12 +44,60 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | --- | --- | --- | --- |
 | Forwards / reverse | ↑ / ↓ (or W / S) | right-hand pedals | A or RT / B or LT |
 | Tilt back / forwards | ← / → (or A / D) | left-hand buttons | stick or d-pad |
+| One-button controls | Space | hold anywhere | A |
 | Pause | P | ⏸ button | Start |
+| Flip upright (when offered) | R | Flip button | Y |
 | Play again (game over) | Space, Enter or Ctrl | Play Again button | A |
 | Back to menu | Esc | Menu button | |
+| Sound on / off | M | Sound switch (title screen or pause menu) | |
 | Full screen | F | | |
 
-The best score and the truck chosen in the garage are saved in the browser (`localStorage`).
+The best scores, the options and the truck chosen in the garage are saved in the browser
+(`localStorage`).
+
+## Endless Mode
+
+Endless courses are built from the original nine stages' own building blocks. Every column of
+tiles in the stages is reduced to its shape, and the generator records every place one shape
+follows another (with how far the ground steps up or down). It then strings columns together using
+only those joins. Usually it matches the last two or three columns, so whole hills and ramps come
+out as they were designed; now and then it matches only the last one, which is where the course
+turns into something new. The ground is kept inside a fixed height band, and the joins are weighted
+by the stage they came from, so a course starts like Stage One and drifts towards the later stages
+the further you get. The course lives in a window of 128 columns that scrolls as you drive
+(`src/endless.js`).
+
+Score: 10 points for every new tile of ground, plus tricks as usual. The HUD shows the
+distance in metres.
+
+## Sound
+
+All sound is synthesised live with the Web Audio API, so the game ships no sound files. Sound is
+off until you switch it on. There's a soft engine hum with a quiet hiss of tyres on the ground,
+thumps for landings, and bells for tricks, which ring as each trick is done. Scraping the cab
+is a run of hard hits, each at a slightly different pitch.
+
+The page `sounds.html` (at `/sounds.html` on the site) plays every sound.
+
+The game logic knows nothing about sound: `src/sound-events.js` watches the game after every step
+and turns what happened (a landing, a trick, a finished stage) into cues, and `src/audio.js`
+plays them.
+
+## Tricks
+
+| Trick | How | Points |
+| --- | --- | --- |
+| Backflip / Frontflip | Turn over in the air and land (Double, Triple… for more turns) | the degrees turned, as in the original |
+| Big Air / Huge Air | 1 s / 2 s with no wheel on the ground | 3 per 1/70 s past half a second |
+| Wheelie / Nose Wheelie | Drive along on the back / front wheel for ¾ s or more | 2 per 1/70 s |
+| Clean | Land a jump on both wheels at once without scraping the cab | half the jump's points |
+
+Tricks score in Play, Endless and Practice (not Classic). Tricks done close together make a chain. The chain pays out about 1½ s after its last trick, worth
+its points times the number of tricks in it (up to ×5). While a chain is open, its running total and
+multiplier show under the score. Scraping the cab is a **bail**: the chain pays out at once, without
+the multiplier, and a grey *bail* note appears under the trick names. A chain still open at the finish line is paid out there. Each trick name stays on
+screen long enough to read; one that comes too soon waits its turn. The trick tracker
+(`src/tricks.js`) only watches the truck; the physics is unchanged.
 
 ## Publish on GitHub Pages
 
@@ -32,7 +105,8 @@ The best score and the truck chosen in the garage are saved in the browser (`loc
 2. In the repository, open **Settings → Pages** and set **Source** to **GitHub Actions**.
 
 After that, every push to `main` runs the tests and, if they pass, publishes the site
-(`.github/workflows/pages.yml`). Only the game files are published, not `tests/` or `tools/`.
+(`.github/workflows/pages.yml`). Only the game files (and `sounds.html`) are published, not
+`tests/` or `tools/`.
 
 ## Tests
 
@@ -45,7 +119,7 @@ checks the truck moves, and saves screenshots. Pass a folder as the first argume
 where they go: `node tests/phone-check.mjs /tmp/shots`.
 
 For screenshots of a particular state, the page accepts test parameters, for example
-`?test=play&stage=5&frames=600&touch=1`. See `applyTestParams` in `src/main.js`. Nothing is
+`?test=play&stage=5&frames=600&touch=1` (add `&classic=1` or `&damage=0` for those Practice options), or `?test=endless&seed=3&frames=600` for Endless Mode. See `applyTestParams` in `src/main.js`. Nothing is
 saved to storage while a test parameter is set.
 
 ## Code layout
@@ -54,13 +128,20 @@ saved to storage while a test parameter is set.
 | --- | --- |
 | `src/game.js` | All game logic: truck physics, collisions, scoring, stages and the screen state machine. No DOM access, so tests run it under Node. |
 | `src/render.js` | Draws everything on the canvas, and defines the clickable menu areas. |
+| `src/endless.js` | Endless Mode's course generator. |
+| `src/audio.js`, `src/sound-events.js` | Synthesised sound, and the watcher that turns game events into sound cues. |
+| `sounds.html` | A page for hearing every sound. |
+| `src/wreck.js` | The ragdoll wreck: a wrecked truck's loose pieces (outside Classic). |
+| `src/tricks.js` | Spots tricks (flips, airtime, wheelies, clean landings) and scores them in chains. |
 | `src/main.js` | Startup, the fixed 70 steps/second loop with smooth interpolated drawing, and all input. |
 | `src/assets.js` | Loads the images and level data, and prepares the terrain tiles. The game uses fonts already on the device and ships no font files. |
 | `index.html`, `style.css` | Page layout, loading screen and the on-screen touch controls. |
 | `assets/levels.json` | The 9 stages (tile grids and start points) and per-tile collision lines. |
 | `assets/sprites.json` | Each sprite frame's image and its offset from the sprite's origin. |
 
-The game runs on the original 576×448 coordinate grid, scaled to fit the screen.
+The game runs on the original 576×448 coordinate grid, scaled to fit the screen. All words on
+screen are live text in fonts already on the device, so they stay sharp at any size. The menu
+screens are drawn from the original backdrop, keycaps and boxes, with the text added on top.
 
 ## History
 

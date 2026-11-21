@@ -4,6 +4,8 @@
 import { Game, STEP_HZ, emptyKeys } from './game.js';
 import { loadAssets } from './assets.js';
 import { Renderer, hitButton } from './render.js';
+import { Sound } from './audio.js';
+import { SoundWatcher } from './sound-events.js';
 
 const DT = 1000 / STEP_HZ;
 
@@ -23,6 +25,13 @@ const loadingBar = document.getElementById('loading-bar');
 const touchUI = document.getElementById('touch');
 
 let game, renderer;
+const sound = new Sound();
+const watcher = new SoundWatcher();
+let engineState = { on: false };
+let scrapeState = { on: false, speed: 0 };
+
+// Browsers only start audio after the player taps or presses a key.
+for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, () => sound.unlock(), { capture: true });
 
 // ---------------------------------------------------------------------------------------------
 // Input state. Several sources can hold the same control, so each source keeps its own keys
@@ -44,7 +53,8 @@ const KEY_MAP = {
   ArrowLeft: 'left', KeyA: 'left',
   ArrowRight: 'right', KeyD: 'right',
   KeyP: 'pause',
-  Space: 'restart', Enter: 'restart', NumpadEnter: 'restart', ControlLeft: 'restart', ControlRight: 'restart',
+  KeyR: 'upright',
+  Space: ['restart', 'one'], Enter: 'restart', NumpadEnter: 'restart', ControlLeft: 'restart', ControlRight: 'restart',
 };
 
 function setTouchMode(on) {
@@ -60,9 +70,10 @@ function onKey(e, down) {
   if (down && !e.repeat) {
     if (e.code === 'Escape') { if (game.screen !== 'title') goMenu(); return; }
     if (e.code === 'KeyF') { toggleFullscreen(); return; }
+    if (e.code === 'KeyM') { doAction('sound'); return; }
     if (game.screen === 'title' && (e.code === 'Space' || e.code === 'Enter')) { doAction('play'); return; }
   }
-  if (name) { keyboard[name] = down; combineKeys(); }
+  if (name) { for (const n of [name].flat()) keyboard[n] = down; combineKeys(); }
 }
 
 window.addEventListener('keydown', (e) => onKey(e, true));
@@ -74,6 +85,7 @@ window.addEventListener('blur', () => {
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && game?.screen === 'playing') game.togglePause();
+  sound.suspend(document.hidden);
 });
 
 function toggleFullscreen() {
@@ -87,7 +99,18 @@ function toggleFullscreen() {
 function goMenu() { game.showMenu('title'); }
 
 function doAction(a) {
+  if (a === 'sound') {
+    game.toggle('soundOn');
+    sound.setEnabled(game.soundOn);
+    sound.play('start');
+    return;
+  }
+  sound.play('click');
+  if (a === 'oneButton' || a === 'practiceDamage' || a === 'practiceClassic') { game.toggle(a); return; }
   if (a === 'play') game.startCampaign();
+  else if (a === 'classic') game.startCampaign(true);
+  else if (a === 'endless') game.startEndless();
+  else if (a === 'endRun') game.endRun();
   else if (a === 'practice') game.showMenu('practiceSelect');
   else if (a === 'garage') game.showMenu('garage');
   else if (a === 'help') game.showMenu('help');
@@ -111,14 +134,14 @@ function stagePoint(e) {
 canvas.addEventListener('pointerdown', (e) => {
   setTouchMode(e.pointerType === 'touch');
   const [x, y] = stagePoint(e);
-  const b = hitButton(game.screen, x, y);
+  const b = hitButton(game.screen, x, y, game);
   if (b) { e.preventDefault(); doAction(b.action); }
 });
 
 canvas.addEventListener('pointermove', (e) => {
   if (e.pointerType === 'touch') return;
   const [x, y] = stagePoint(e);
-  const b = hitButton(game.screen, x, y);
+  const b = hitButton(game.screen, x, y, game);
   renderer.hover = b;
   canvas.style.cursor = b ? 'pointer' : '';
 });
@@ -147,9 +170,33 @@ for (const btn of touchUI.querySelectorAll('[data-key]')) {
   }
 }
 
-document.getElementById('touch-pause').addEventListener('pointerdown', (e) => {
+// One-button controls on a touch screen: hold anywhere (apart from the buttons) to drive.
+{
+  const tap = document.getElementById('tap');
+  const pointers = new Set();
+  const update = () => { touchKeys.one = pointers.size > 0; combineKeys(); };
+  tap.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    setTouchMode(true);
+    tap.setPointerCapture?.(e.pointerId);
+    pointers.add(e.pointerId);
+    update();
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    tap.addEventListener(ev, (e) => { pointers.delete(e.pointerId); update(); });
+  }
+}
+
+document.getElementById('pause-button').addEventListener('pointerdown', (e) => {
   e.preventDefault();
+  e.stopPropagation();
   game.togglePause();
+});
+
+document.getElementById('upright-button').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (game.upright()) sound.play('click');
 });
 
 // Stop long-press menus and double-tap zoom from getting in the way on phones.
@@ -173,6 +220,8 @@ function pollGamepads() {
     padKeys.left ||= b(14) || ax < -0.4;
     padKeys.right ||= b(15) || ax > 0.4;
     padKeys.restart ||= b(0) || b(9);
+    padKeys.one ||= b(0);
+    padKeys.upright ||= b(3);                      // Y
     pauseDown ||= b(9);                            // Start
     startDown ||= b(0) || b(9);
   }
@@ -194,6 +243,7 @@ function snapshot() {
   return {
     T: t.T.slice(), camX: game.camX, camY: game.camY, rr: t.rearWheelRot, fr: t.frontWheelRot,
     gT: g.T.slice(), grr: g.rearWheelRot, gfr: g.frontWheelRot,
+    W: game.wreck ? game.wreck.T.slice() : null,
   };
 }
 
@@ -203,13 +253,27 @@ function lerpView(a, b, t) {
     T: a.T.map((x, i) => L(x, b.T[i])), camX: L(a.camX, b.camX), camY: L(a.camY, b.camY),
     rr: L(a.rr, b.rr), fr: L(a.fr, b.fr),
     gT: a.gT.map((x, i) => L(x, b.gT[i])), grr: L(a.grr, b.grr), gfr: L(a.gfr, b.gfr),
+    W: a.W && b.W && a.W.length === b.W.length ? a.W.map((x, i) => L(x, b.W[i])) : b.W,
   };
 }
 
-let last = 0, acc = 0, prev = null, seenTeleport = -1;
+let last = 0, acc = 0, prev = null, seenTeleport = -1, seenShift = 0;
+
+/** Tell the page where the game view is, so the pause and flip buttons sit inside it. */
+let viewKey = '';
+function placeView() {
+  const rect = canvas.getBoundingClientRect(), k = renderer.cssPerDevice;
+  const x = rect.left + renderer.offX * k, y = rect.top + renderer.offY * k, w = 576 * renderer.scale * k;
+  const key = `${x.toFixed(1)},${y.toFixed(1)},${w.toFixed(1)}`;
+  if (key === viewKey) return;
+  viewKey = key;
+  const st = document.documentElement.style;
+  st.setProperty('--view-x', `${x}px`); st.setProperty('--view-y', `${y}px`); st.setProperty('--view-w', `${w}px`);
+}
 
 function frame(now) {
   requestAnimationFrame(frame);
+  placeView();
   if (!last) last = now;
   acc += Math.min(now - last, 250);
   last = now;
@@ -219,16 +283,34 @@ function frame(now) {
   while (acc >= DT && steps < 8) {
     prev = snapshot();
     game.step();
+    if (game.shiftCount !== seenShift) {
+      // Endless Mode scrolled the world left; move the previous frame with it.
+      seenShift = game.shiftCount;
+      for (let i = 0; i < 10; i += 2) prev.T[i] -= game.lastShift;
+      prev.camX -= game.lastShift;
+      prev.W = null;
+    }
+    const heard = watcher.observe(game);
+    for (const e of heard.events) sound.play(e.type, e);
+    engineState = heard.engine;
+    scrapeState = heard.scrape;
     acc -= DT;
     steps++;
     if (game.screen !== before) break;
   }
   if (steps === 8 || game.screen !== before) acc = 0;
   if (game.teleportCount !== seenTeleport) { seenTeleport = game.teleportCount; prev = null; }
+  if (game.screen !== 'playing') { engineState = { on: false }; scrapeState = { on: false, speed: 0 }; }
+  sound.updateEngine(engineState);
+  sound.updateScrape(scrapeState);
   const cur = snapshot();
   const t = game.screen === 'playing' || game.screen === 'title' || game.screen === 'garage' ? Math.min(acc / DT, 1) : 1;
   renderer.draw(game, prev ? lerpView(prev, cur, t) : cur);
-  document.body.dataset.screen = game.screen;
+  const ds = document.body.dataset;
+  if (ds.screen !== game.screen) ds.screen = game.screen;
+  const one = game.oneButtonActive ? '1' : '0', up = game.canUpright && game.screen === 'playing' ? '1' : '0';
+  if (ds.onebutton !== one) ds.onebutton = one;
+  if (ds.upright !== up) ds.upright = up;
 }
 
 function fit() {
@@ -239,8 +321,9 @@ function fit() {
 
 /**
  * Test hook for automated screenshots, e.g. ?test=play&stage=5&frames=400&touch=1
- *   test   = title | garage | help | practice | play | paused | gameover
+ *   test   = title | garage | help | practice | play | endless | paused | gameover
  *   stage  = stage index for play (0-8), frames = steps to simulate with the gas held
+ *   seed   = for endless: a number, so the same course comes up every time
  *   look   = body,tyre,hub (e.g. 3,2,4), touch = 1 to show the touch controls
  * Nothing is saved to storage while this is active.
  */
@@ -261,7 +344,15 @@ function applyTestParams() {
     for (let i = 0; i < 300; i++) game.step();
     return;
   }
-  game.startPractice(Number(q.get('stage')) || 0);
+  if (test === 'endless') {
+    let s = Number(q.get('seed')) || 1;
+    game.random = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    game.startEndless();
+  } else {
+    if (q.get('classic') === '1') game.practiceClassic = true;
+    if (q.get('damage') === '0') game.practiceDamage = false;
+    game.startPractice(Number(q.get('stage')) || 0);
+  }
   game.keys.up = true;
   for (let i = 0; i < frames && game.screen === 'playing'; i++) {
     game.keys.right = game.truck.bodyRot < -25; game.keys.left = game.truck.bodyRot > 25;
@@ -276,6 +367,7 @@ async function boot() {
   try {
     const assets = await loadAssets('assets/', (p) => { loadingBar.style.width = `${Math.round(p * 100)}%`; });
     game = new Game(assets.levels, { store });
+    sound.setEnabled(game.soundOn);
     renderer = new Renderer(canvas, assets);
     window.__funkyTruck = { game, renderer }; // handy for debugging in the console
     setTouchMode(window.matchMedia('(pointer: coarse)').matches);

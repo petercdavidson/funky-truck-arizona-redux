@@ -16,11 +16,28 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `src/game.js`: all game logic and state (`Game`, `Truck`, `CollisionWorld`). Must stay free of
   DOM/browser APIs so it runs under Node. Storage and randomness are injected (`opts.store`,
   `opts.random`).
+- `src/endless.js`: Endless Mode's course generator (learns tile joins from `levels.json`). Also
+  free of DOM APIs. The game scrolls the world left as the course moves (`Game.scrollWorld`).
+- `src/tricks.js`: trick detection and chain scoring (no DOM). It reads the truck and never
+  changes it; flips still come from `Truck.trackFlip`.
 - `src/render.js`: canvas drawing, plus `BUTTONS`, the clickable areas for each screen.
 - `src/main.js`: startup, the fixed-step loop, input (keyboard, pointer, on-screen controls,
   gamepad), and `applyTestParams` (`?test=...` URL hooks used for screenshots).
 - `src/assets.js`: image and level loading, tile preparation, font stacks.
 - `index.html` / `style.css`: page shell, loading screen, touch controls.
+- `src/sound-events.js` (no DOM) turns game state into sound cues; `src/audio.js` synthesises them
+  with Web Audio (sound is on/off, off by default). `sounds.html` plays every sound. No
+  sound files.
+- `src/wreck.js` (no DOM): the ragdoll wreck, a wrecked truck's loose pieces.
+
+## Modes and rules
+
+- "Classic" means the original gameplay, before the added features. A run's rules are
+  `game.rules = { classic, damage }`. Play, Endless and Practice share the new features; Classic
+  has none of them (no tricks, ragdoll, one-button controls or flip-upright, and it keeps the
+  ceiling and the original flip bonus). Display fixes and quality-of-life touches are fine in Classic.
+- New features go in every mode except Classic unless the user says otherwise, and new options go
+  in the small on/off switches at the side of a screen (`option()` in `render.js`).
 
 ## Rules that keep the game feeling right
 

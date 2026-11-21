@@ -41,8 +41,18 @@
       </button>
     </div>
     <div id="rotate-tip">Tip: turn your phone sideways for a bigger view</div>
-    <button id="touch-pause" aria-label="Pause">
+  </div>
+
+  <!-- One-button controls on a touch screen: the whole screen is the button. -->
+  <div id="tap" aria-hidden="true"></div>
+
+  <div id="corner" aria-hidden="true">
+    <button id="pause-button" aria-label="Pause">
       <svg viewBox="0 0 24 24"><path d="M9 6v12" /><path d="M15 6v12" /></svg>
+    </button>
+    <button id="upright-button" aria-label="Flip upright">
+      <svg viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 1 3 5.7" /><path d="M3 18l5-.5-.5-5" /></svg>
+      <span>Flip</span>
     </button>
   </div>
 

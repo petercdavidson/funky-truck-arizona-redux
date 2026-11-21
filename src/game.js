@@ -4,12 +4,20 @@
 // a line-for-line port of the original Flash ActionScript. Comments name the original obfuscated
 // identifiers where that helps cross-checking. Everything runs at the original 70 steps/second.
 
+import { buildGrammar, EndlessCourse, ENDLESS_WIDTH, ENDLESS_SHIFT } from './endless.js';
+import { TrickTracker } from './tricks.js';
+import { Wreck } from './wreck.js';
+
 export const TILE = 64;          // s4c2
 export const STAGE_W = 576;      // Z7552
 export const STAGE_H = 448;      // B9752
 export const STEP_HZ = 70;       // the SWF frame rate
 
 const PI = Math.PI;
+
+/** Endless Mode: metres shown per tile column travelled, and points per column. */
+export const METRES_PER_TILE = 2.5;
+const POINTS_PER_TILE = 10;
 
 // ---------------------------------------------------------------------------------------------
 // Collision world (H312 / i0c3 / F335 / a80D / k44F)
@@ -26,7 +34,8 @@ function near(a, b, c, d) { // s849
 }
 
 export class CollisionWorld {
-  constructor(level, table, wheelRadius) {
+  /** `ceiling` false leaves out the invisible wall along the top of the level (outside Classic). */
+  constructor(level, table, wheelRadius, { ceiling = true } = {}) {
     this.cell = 20;                    // V151
     this.offset = wheelRadius - 1;     // B7B1
     this.segs = [];                    // H77: {x1,y1,x2,y2,nx,ny,type}
@@ -43,7 +52,7 @@ export class CollisionWorld {
     const B = this.offset;
     this.segs.push({ x1: B, y1: H * TILE, x2: B, y2: 0, nx: 1, ny: 0, type: 1 });
     this.segs.push({ x1: W * TILE - B, y1: 0, x2: W * TILE - B, y2: H * TILE, nx: -1, ny: 0, type: 1 });
-    this.segs.push({ x1: 0, y1: B, x2: W * TILE, y2: B, nx: 0, ny: 1, type: 1 });
+    if (ceiling) this.segs.push({ x1: 0, y1: B, x2: W * TILE, y2: B, nx: 0, ny: 1, type: 1 });
     this.buildGrid();
   }
 
@@ -369,6 +378,18 @@ export class Truck {
     return null;
   }
 
+  /** Add `d` radians per step of clockwise spin about the truck's middle (flip-upright assist). */
+  addSpin(d) {
+    const T = this.T, P = this.P;
+    let cx = 0, cy = 0;
+    for (let i = 0; i < 10; i += 2) { cx += T[i]; cy += T[i + 1]; }
+    cx /= 5; cy /= 5;
+    for (let i = 0; i < 10; i += 2) {
+      const rx = T[i] - cx, ry = T[i + 1] - cy;
+      P[i] += ry * d; P[i + 1] -= rx * d;
+    }
+  }
+
   // u6a33 / g0406: idle bounce used on the title and garage screens.
   garageStep() {
     this.integrate();
@@ -388,11 +409,39 @@ export class Truck {
 export const STAGE_NAMES = ['Stage One', 'Stage Two', 'Stage Three', 'Stage Four', 'Stage Five',
   'Stage Six', 'Stage Seven', 'Stage Eight', 'Stage Nine', 'Stage Ten'];
 
-export function emptyKeys() {
-  return { up: false, down: false, left: false, right: false, pause: false, restart: false };
+/** A saved whole number of metres, or 0 if what was saved isn't one. */
+function validCount(v) {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 && n < 1e9 ? n : 0;
 }
 
-/** Screens: 'title' | 'help' | 'garage' | 'practiceSelect' | 'playing' | 'paused' | 'gameOver' */
+export function emptyKeys() {
+  // `one` is the single button of the one-button controls.
+  return { up: false, down: false, left: false, right: false, pause: false, restart: false, one: false, upright: false };
+}
+
+/**
+ * The rules a run is played by.
+ *   classic  the original game: no tricks, no ragdoll wreck, the invisible ceiling, the original
+ *            flip bonus, and no one-button controls
+ *   damage   scraping the cab adds damage, and 1000 damage wrecks the truck
+ */
+export const RULES = {
+  play: { classic: false, damage: true },
+  classic: { classic: true, damage: true },
+  endless: { classic: false, damage: false },
+};
+
+/** Flip-upright assist: steps of being stuck before the button appears. */
+export const STUCK_STEPS = 140;
+const RIGHTING_STEPS = 80;
+const ONE_BUTTON_AIR = 4;        // steps off the ground before one-button controls tilt instead
+
+/**
+ * Screens: 'title' | 'help' | 'garage' | 'practiceSelect' | 'playing' | 'paused' | 'gameOver'
+ * Modes: 'campaign' (all nine stages), 'practice' (one stage), 'endless' (a generated course).
+ * The title screen's Play and Classic both start a campaign, under different rules.
+ */
 export class Game {
   /**
    * @param {{levels: Array, collision: Array}} data  contents of assets/levels.json
@@ -412,17 +461,42 @@ export class Game {
     this.look = { body: 0, tyre: 0, hub: 0 }; // y66D2
     this.score = 0;                   // D9522
     this.bonus = 0;                   // Z3F62
-    this.flipBonus = 0;               // a4072
+    this.flipBonus = 0;               // a4072 (now: the last trick chain's payout)
     this.flipBonusTimer = 0;          // B5172
+    this.tricks = new TrickTracker();
     this.damage = 0;                  // X5B4 (0..1000)
     this.endTimer = 0;                // L5B72
     this.tickerTimer = 0;             // e8472
     this.ticker = '';
-    this.best = Number(this.store.get('bestScore')) || 0; // a0a82
+    this.rules = RULES.play;
+    // Best scores: Classic keeps the original game's saved best; Play and Endless have their own.
+    this.best = validCount(this.store.get('bestScore')); // a0a82
+    this.bestPlay = validCount(this.store.get('bestPlay'));
+    this.bestEndless = validCount(this.store.get('bestEndless'));
+    // Options (all off by default, apart from damage in Practice).
+    const flag = (k, dflt) => { const v = this.store.get(k); return typeof v === 'boolean' ? v : dflt; };
+    this.soundOn = flag('sound', false);
+    this.oneButton = flag('oneButton', false);
+    this.practiceDamage = flag('practiceDamage', true);
+    this.practiceClassic = flag('practiceClassic', false);
+    this.wreck = null;                // the pieces of a wrecked truck (outside Classic)
+    this.scraping = false;            // the cab is scraping the ground this step
+    this.stuck = 0;                   // steps the truck has spent stuck (flip-upright assist)
+    this.canUpright = false;
+    this.righting = 0;                // steps left of a flip upright
+    this.airSteps = 0;                // steps with no wheel on the ground (one-button controls)
+    this.grammar = null;              // Endless Mode's course grammar, learned from the stages
+    this.course = null;               // the current EndlessCourse
+    this.distance = 0;                // Endless Mode: furthest tile column reached
+    this.shiftCount = 0;              // bumped when Endless Mode scrolls the world left...
+    this.lastShift = 0;               // ...by this many pixels (so the renderer can follow)
     this.lastScore = 0;
     this.wrecked = false;
     this.finished = false;
     this.camX = 0; this.camY = 0;     // J1Fc4 / k20D4
+    // How much of the world shows top to bottom. The width is always the original 576; outside
+    // Classic the renderer sets the height to fit the window's shape. It only moves the camera.
+    this.viewH = STAGE_H;
     this.dirt = [];                   // Z5D11
     for (let i = 0; i < 16; i++) this.dirt.push({ life: 0, x: 0, y: 0, vx: 0, vy: 0, frame: 0, scale: 1, alpha: 1 });
     this.dirtCooldown = 0;            // y4c11
@@ -437,9 +511,9 @@ export class Game {
     this.garageTruck.reset(STAGE_W / 2, 120);
   }
 
-  get levelData() { return this.data.levels[this.level]; }
+  get levelData() { return this.mode === 'endless' ? this.course.level : this.data.levels[this.level]; }
   get maxCamX() { return this.levelData.width * TILE - STAGE_W; }   // N53D4
-  get maxCamY() { return this.levelData.height * TILE - STAGE_H; }  // o64D4
+  get maxCamY() { return this.levelData.height * TILE - this.viewH; }  // o64D4
 
   saveLook() { this.store.set('truckLook', { ...this.look }); }
 
@@ -448,10 +522,38 @@ export class Game {
     this.saveLook();
   }
 
+  /** Flip an on/off option and save it: 'soundOn', 'oneButton', 'practiceDamage', 'practiceClassic'. */
+  toggle(option) {
+    const key = { soundOn: 'sound', oneButton: 'oneButton', practiceDamage: 'practiceDamage', practiceClassic: 'practiceClassic' }[option];
+    if (!key) return;
+    this[option] = !this[option];
+    this.store.set(key, this[option]);
+  }
+
+  /** One-button controls apply outside Classic. */
+  get oneButtonActive() { return this.oneButton && !this.rules.classic; }
+
+  /** The flip-upright assist is offered in damage-free runs outside Classic. */
+  get uprightAllowed() { return !this.rules.damage && !this.rules.classic; }
+
   // ---- flow
 
-  startCampaign() { this.mode = 'campaign'; this.beginRun(0); }
-  startPractice(l) { this.mode = 'practice'; this.beginRun(l); }
+  /** The nine stages, as Play (`classic` false) or as the original game (`classic` true). */
+  startCampaign(classic = false) { this.mode = 'campaign'; this.rules = classic ? RULES.classic : RULES.play; this.beginRun(0); }
+  startPractice(l) {
+    this.mode = 'practice';
+    this.rules = { classic: this.practiceClassic, damage: this.practiceDamage };
+    this.beginRun(l);
+  }
+
+  startEndless() {
+    this.mode = 'endless';
+    this.rules = RULES.endless;
+    if (!this.grammar) this.grammar = buildGrammar(this.data.levels);
+    this.course = new EndlessCourse(this.grammar, this.data.levels, this.random);
+    this.distance = 0;
+    this.beginRun(0);
+  }
 
   beginRun(firstLevel) { // H5D52
     if (this.mode === 'campaign') { this.lastLevel = this.data.levels.length - 1; this.level = 0; }
@@ -461,41 +563,95 @@ export class Game {
     this.startStage();
   }
 
+  makeWorld(radius = this.truck.wheelRadius) {
+    return new CollisionWorld(this.levelData, this.data.collision, radius, { ceiling: this.rules.classic });
+  }
+
   startStage() { // u8a62
-    this.world = new CollisionWorld(this.levelData, this.data.collision, this.truck.wheelRadius);
+    this.world = this.makeWorld();
+    this.wreck = null;
+    this.stuck = 0; this.canUpright = false; this.righting = 0; this.airSteps = 0;
     const s = this.levelData.start;
     this.truck.reset(s[0], s[1]);
     this.truck.rearWheelRot = 0; this.truck.frontWheelRot = 0;
     this.camX = Math.min(Math.max(s[0] - 150, 0), this.maxCamX);       // s4833
-    this.camY = Math.min(Math.max(s[1] - STAGE_H / 2, 0), this.maxCamY);
+    this.camY = Math.min(Math.max(s[1] - this.viewH / 2, 0), this.maxCamY);
     this.updateCamera();
     this.ticker = STAGE_NAMES[this.level]; this.tickerTimer = 140;      // m2813
     this.endTimer = 0;
     this.score += this.bonus;
     this.bonus = (this.level + 1) * 10000;
+    if (this.mode === 'endless') { this.ticker = 'Endless'; this.bonus = 0; }
     this.flipBonusTimer = 0;
+    this.tricks.reset();
     for (const d of this.dirt) d.life = 0;
     this.teleportCount++;
     this.screen = 'playing';
   }
 
   restart() {
-    if (this.mode === 'campaign') this.startCampaign(); else this.startPractice(this.lastLevel);
+    if (this.mode === 'campaign') this.startCampaign(this.rules.classic);
+    else if (this.mode === 'endless') this.startEndless();
+    else this.startPractice(this.lastLevel);
+  }
+
+  saveEndlessBest() {
+    if (this.metres > this.bestEndless) { this.bestEndless = this.metres; this.store.set('bestEndless', this.bestEndless); }
+  }
+
+  /** Endless Mode: metres travelled so far. */
+  get metres() { return Math.floor(this.distance * METRES_PER_TILE); }
+
+  /** Endless Mode: score new ground, and scroll the world when the truck nears the window's end. */
+  updateEndless() {
+    const col = Math.floor(this.truck.T[0] / TILE) + this.course.dropped;
+    if (col > this.distance) {
+      if (this.endTimer === 0) this.score += (col - this.distance) * POINTS_PER_TILE;
+      this.distance = col;
+    }
+    if (this.truck.T[0] > (ENDLESS_WIDTH - 40) * TILE) this.scrollWorld(ENDLESS_SHIFT);
+  }
+
+  /** Drop `n` columns off the left of the course and move everything left to match. */
+  scrollWorld(n) {
+    const dx = n * TILE;
+    this.course.scroll(n);
+    const t = this.truck;
+    for (let i = 0; i < 10; i += 2) { t.T[i] -= dx; t.P[i] -= dx; }
+    if (t.probePrev) t.probePrev[0] -= dx;
+    for (const d of this.dirt) d.x -= dx;
+    this.camX -= dx;
+    this.world = this.makeWorld();
+    this.shiftCount++;
+    this.lastShift = dx;
   }
 
   showMenu(screen) {
+    // Leaving an Endless run part-way (quitting from pause, say) still counts its distance.
+    if (this.mode === 'endless' && (this.screen === 'playing' || this.screen === 'paused')) this.saveEndlessBest();
     if (screen === 'title' || screen === 'garage') this.garageTruck.reset(STAGE_W / 2, 120);
     this.screen = screen;
     this.teleportCount++;
   }
 
+  bankTricks() {
+    const paid = this.tricks.bank();
+    if (paid > 0) this.payTricks(paid);
+  }
+
+  /** What the camera follows: the truck, or the body of a wrecked one. */
+  get focus() { return this.wreck ? this.wreck.centre : [this.truck.T[0], this.truck.T[1]]; }
+
   updateCamera() { // T5933 + w6015
-    let dx = (this.truck.T[0] - 150 - this.camX) * 0.2;
-    let dy = (this.truck.T[1] - STAGE_H / 2 - this.camY) * 0.2;
+    const [fx, fy] = this.focus;
+    let dx = (fx - 150 - this.camX) * 0.2;
+    let dy = (fy - this.viewH / 2 - this.camY) * 0.2;
     dx = Math.max(Math.min(dx, TILE), -TILE);
     dy = Math.max(Math.min(dy, TILE), -TILE);
+    // Outside Classic there's no ceiling, so the camera rises to keep a high-flying truck in view.
+    const top = this.rules.classic ? 0 : Math.min(0, fy - 110);
     this.camX = Math.min(Math.max(this.camX + dx, 0), this.maxCamX);
-    this.camY = Math.min(Math.max(this.camY + dy, 0), this.maxCamY);
+    this.camY = Math.min(Math.max(this.camY + dy, top), Math.max(this.maxCamY, top));
   }
 
   spawnDirt(x, y, vx, vy) { // X7381
@@ -533,24 +689,92 @@ export class Game {
     }
   }
 
+  /** The keys the truck sees: with one-button controls, the button drives on the ground and tilts back in the air. */
+  driveKeys() {
+    const k = this.keys;
+    if (!this.oneButtonActive || !k.one) return k;
+    const air = this.airSteps >= ONE_BUTTON_AIR;
+    return { ...k, up: k.up || !air, left: k.left || air };
+  }
+
   stepTruck(w) { // V7B33
     const t = this.truck;
     t.integrate();
     t.rearContact = false; t.frontContact = false;
     for (let i = 0; i < 2; i++) { t.constrain(); t.collideWheels(w); }
-    t.drive(this.keys);
+    this.airSteps = t.rearContact || t.frontContact ? 0 : this.airSteps + 1;
+    const keys = this.driveKeys();
+    t.drive(keys);
     t.spinWheels();
     if (t.rearContact) this.kickDirt(t.rearSpin, 1, t.rearN);
     if (t.frontContact) this.kickDirt(t.frontSpin, 2, t.frontN);
-    t.tilt(this.keys);
+    t.tilt(keys);
     const type = t.probeBody(w);
-    if (type !== null && this.endTimer === 0 && type !== 1) this.damage = Math.min(1000, this.damage + 6);
+    const scraped = type !== null && this.endTimer === 0 && type !== 1;
+    this.scraping = scraped;
+    if (scraped && this.rules.damage) this.damage = Math.min(1000, this.damage + 6);
     const flip = t.trackFlip();
-    if (flip !== null && this.bonus !== 0) {
-      this.flipBonus = flip; this.flipBonusTimer = 70;
-      this.score += flip;
+    if (this.rules.classic) {
+      // The original flip bonus: a landed flip's degrees, paid at once while the time bonus runs.
+      if (flip !== null && this.bonus !== 0) {
+        this.flipBonus = flip; this.flipBonusTimer = 70;
+        this.score += flip;
+      }
+      t.updateBodyRot();
+      return;
     }
     t.updateBodyRot();
+    // Flips and the other tricks are scored in chains by TrickTracker. A flip still pays the
+    // original game's points (its degrees), as part of its chain.
+    // Tricks score while the time bonus is running (as flips always did), or all run in Endless.
+    const scoring = (this.mode === 'endless' || this.bonus !== 0) && this.endTimer === 0;
+    const paid = this.tricks.step(t, flip, scraped, scoring);
+    if (paid > 0) this.payTricks(paid);
+    if (this.uprightAllowed) this.updateStuck(type !== null);
+  }
+
+  // ---- flip-upright assist (damage-free runs outside Classic)
+
+  /** Watch for the truck being stuck: on its roof or side, or with the cab dragging, for a while. */
+  updateStuck(cabTouching) {
+    const t = this.truck;
+    if (this.righting > 0) { this.stepRighting(); return; }
+    const bad = cabTouching || Math.abs(t.bodyRot) > 100;
+    this.stuck = bad ? this.stuck + 1 : Math.max(0, this.stuck - 3);
+    if (this.stuck >= STUCK_STEPS) this.canUpright = true;
+    else if (this.stuck === 0) this.canUpright = false;
+  }
+
+  /** Flip the truck back onto its wheels: hop it up and turn it over in the air. */
+  upright() {
+    if (!this.canUpright || this.righting > 0 || this.screen !== 'playing') return false;
+    const t = this.truck;
+    for (let i = 0; i < 10; i += 2) { t.P[i] = t.T[i]; t.P[i + 1] = t.T[i + 1] + 4.2; }
+    this.righting = RIGHTING_STEPS;
+    this.canUpright = false;
+    this.stuck = 0;
+    this.lastRot = t.bodyRot;
+    return true;
+  }
+
+  stepRighting() {
+    const t = this.truck;
+    const DEG = PI / 180;
+    const wrap = (a) => ((a + 540) % 360) - 180;
+    const err = wrap(t.bodyRot);
+    const spin = wrap(t.bodyRot - this.lastRot) * DEG;
+    this.lastRot = t.bodyRot;
+    const target = Math.max(-0.13, Math.min(0.13, -err * DEG * 0.12));
+    t.addSpin((target - spin) * 0.35);
+    // lighten gravity for the first part of the hop, so it has time to turn over
+    if (this.righting > RIGHTING_STEPS - 40) for (let i = 1; i < 10; i += 2) t.P[i] += 0.07;
+    this.righting--;
+    if (Math.abs(err) < 6 && (t.rearContact || t.frontContact)) this.righting = 0;
+  }
+
+  payTricks(points) {
+    this.flipBonus = points; this.flipBonusTimer = 105;
+    this.score += points;
   }
 
   checkStageEnd() { // P5B13
@@ -559,11 +783,18 @@ export class Game {
       if (this.endTimer === 0) this.finishStage();
       return;
     }
-    if (this.truck.T[0] >= (this.levelData.width - 9) * TILE) {
+    if (this.mode !== 'endless' && this.truck.T[0] >= (this.levelData.width - 9) * TILE) {
       this.ticker = 'Stage Complete !'; this.tickerTimer = 140; this.endTimer = 210;
+      this.bankTricks(); // a chain still going at the finish line is paid out
     }
-    if (this.damage === 1000) {
+    if (this.damage === 1000 && this.rules.damage) {
       this.ticker = 'Your truck is wrecked - Game over !'; this.tickerTimer = 140; this.endTimer = 210;
+      if (!this.rules.classic) {
+        // The truck comes apart and collapses; the pieces tumble for a moment before the game-over screen.
+        this.wreck = new Wreck(this.truck, this.world, this.makeWorld(3));
+        this.endTimer = 160;
+        this.tricks.reset();
+      }
     }
   }
 
@@ -577,7 +808,8 @@ export class Game {
       this.wrecked = isWrecked;
       this.finished = !isWrecked;
       this.lastScore = this.score;
-      if (this.score > this.best) { this.best = this.score; this.store.set('bestScore', this.best); }
+      if (this.mode === 'endless') this.saveEndlessBest();
+      else if (this.rules.damage) this.saveBest(this.score);
       this.restartLatch = true;
       this.screen = 'gameOver';
     } else {
@@ -586,12 +818,34 @@ export class Game {
     }
   }
 
+  /** The best score for the current rules (Classic and Play are kept apart). */
+  get bestForRules() { return this.rules.classic ? this.best : this.bestPlay; }
+
+  saveBest(score) {
+    if (this.rules.classic) { if (score > this.best) { this.best = score; this.store.set('bestScore', score); } }
+    else if (score > this.bestPlay) { this.bestPlay = score; this.store.set('bestPlay', score); }
+  }
+
+  /** Endless Mode: stop here and show the result (from the pause menu). */
+  endRun() {
+    if (this.mode !== 'endless' || (this.screen !== 'playing' && this.screen !== 'paused')) return;
+    this.bankTricks();
+    for (const d of this.dirt) d.life = 0;
+    this.lastScore = this.score;
+    this.wrecked = false; this.finished = true;
+    this.saveEndlessBest();
+    this.restartLatch = true;
+    this.screen = 'gameOver';
+  }
+
   /** Advance one 1/70 s frame. */
   step() {
     switch (this.screen) {
       case 'playing':
         if (!this.world) return;
-        this.stepTruck(this.world);
+        if (this.wreck) this.wreck.step(); else this.stepTruck(this.world);
+        if (this.keys.upright) this.upright();
+        if (this.mode === 'endless') this.updateEndless();
         this.updateCamera();
         this.updateDirt();
         this.checkStageEnd();
@@ -612,6 +866,8 @@ export class Game {
         this.garageTruck.garageStep();
         break;
       case 'gameOver':
+        // A wrecked truck's pieces keep tumbling behind the game-over box.
+        if (this.wreck) { this.wreck.step(); this.updateCamera(); }
         if (!this.keys.restart) this.restartLatch = false;
         else if (!this.restartLatch) this.restart();
         break;

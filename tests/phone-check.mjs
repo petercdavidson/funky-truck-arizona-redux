@@ -112,7 +112,7 @@ try {
   }
 
   // Pause button.
-  const pause = await center('#touch-pause');
+  const pause = await center('#pause-button');
   await touch('touchStart', [pause]); await touch('touchEnd', []);
   await sleep(200);
   check(await evaluate('window.__funkyTruck.game.screen') === 'paused', 'pause button pauses');
@@ -126,6 +126,23 @@ try {
   await shot('phone-landscape-driving');
   const gasL = await center('[data-key="up"]');
   check(!!gasL && gasL[0] < 844 && gasL[1] < 390, 'gas pedal is on screen in landscape');
+
+  // One-button controls: the pedals go, and holding anywhere drives.
+  await evaluate('(() => { const g = window.__funkyTruck.game; g.oneButton = true; g.startCampaign(); })()');
+  await sleep(1500);
+  check(await evaluate('getComputedStyle(document.querySelector(".pad-right")).visibility') === 'hidden', 'one-button: the pedals are hidden');
+  const xa = await evaluate('window.__funkyTruck.game.truck.T[0]');
+  await touch('touchStart', [[600, 250]]);
+  await sleep(1500);
+  check(await evaluate('window.__funkyTruck.game.keys.one'), 'one-button: holding the screen presses the button');
+  await shot('phone-landscape-one-button');
+  await touch('touchEnd', []);
+  const xb = await evaluate('window.__funkyTruck.game.truck.T[0]');
+  check(xb - xa > 50, `one-button: the truck drove (moved ${Math.round(xb - xa)}px)`);
+  const pauseL = await center('#pause-button');
+  await touch('touchStart', [pauseL]); await touch('touchEnd', []);
+  await sleep(200);
+  check(await evaluate('window.__funkyTruck.game.screen') === 'paused', 'one-button: the pause button still works');
 
   ws.close();
 } catch (err) {
