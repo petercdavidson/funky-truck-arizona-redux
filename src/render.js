@@ -17,10 +17,11 @@ const r = (x, y, w, h) => ({ x, y, w, h });
 
 export const BUTTONS = {
   title: [
-    { rect: r(229, 262, 120, 25), label: 'Play', action: 'play' },
-    { rect: r(229, 291, 120, 25), label: 'Practice', action: 'practice' },
-    { rect: r(229, 320, 120, 25), label: 'Change Truck', action: 'garage' },
-    { rect: r(229, 349, 120, 25), label: 'How to Play', action: 'help' },
+    { rect: r(229, 250, 120, 25), label: 'Play', action: 'play' },
+    { rect: r(229, 278, 120, 25), label: 'Endless', action: 'endless' },
+    { rect: r(229, 306, 120, 25), label: 'Practice', action: 'practice' },
+    { rect: r(229, 334, 120, 25), label: 'Change Truck', action: 'garage' },
+    { rect: r(229, 362, 120, 25), label: 'How to Play', action: 'help' },
   ],
   help: [{ rect: r(229, 386, 120, 25), action: 'menu' }],
   garage: [
@@ -230,7 +231,8 @@ export class Renderer {
     ctx.fillRect(13.1, 25, 80 * game.damage / 1000, 10);
     const hud = { size: 12.85, font: HUD_FONT, weight: '800', align: 'right' };
     this.text(String(game.score), 566, 22, hud);
-    this.text(`+${game.bonus}`, 566, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
+    if (game.mode === 'endless') this.text(`${game.metres} m`, 566, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
+    else this.text(`+${game.bonus}`, 566, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
     if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, 566, 46, { ...hud, color: 'rgba(255,255,255,0.9)' });
     if (game.tickerTimer > 0 && game.screen !== 'gameOver') {
       this.text(game.ticker, STAGE_W / 2, 82, { size: 15, font: HUD_FONT, weight: '800' });
@@ -249,7 +251,10 @@ export class Renderer {
     this.truck(v.gT, v.grr, v.gfr, game.look);
     this.ctx.restore();
     this.buttons('title');
-    if (game.best > 0) this.text(`Best score: ${game.best}`, STAGE_W / 2, 390, { size: 14, weight: '600' });
+    const bests = [];
+    if (game.best > 0) bests.push(`Best score: ${game.best}`);
+    if (game.bestEndless > 0) bests.push(`Endless: ${game.bestEndless} m`);
+    if (bests.length) this.text(bests.join('   ·   '), STAGE_W / 2, 396, { size: 14, weight: '600' });
     const hint = this.touchMode
       ? 'Use the on-screen pedals and tilt buttons to drive'
       : 'Arrow keys drive and tilt  ·  P pauses  ·  Esc returns to the menu';
@@ -266,8 +271,13 @@ export class Renderer {
     this.roundRect(158, 112, 260, 232, 10, 'rgba(140,97,79,0.96)', 'rgba(255,255,255,0.6)');
     const title = game.wrecked ? 'Truck Wrecked' : (game.finished && game.mode === 'campaign' ? 'Well Driven!' : 'Game Over');
     this.text(title, STAGE_W / 2, 128, { size: 30, weight: '900' });
-    this.text(`Score: ${game.lastScore}`, STAGE_W / 2, 182, { size: 17, weight: '600' });
-    this.text(`Best: ${game.best}`, STAGE_W / 2, 206, { size: 17, weight: '600' });
+    if (game.mode === 'endless') {
+      this.text(`${game.metres} m  ·  ${game.lastScore}`, STAGE_W / 2, 182, { size: 17, weight: '600' });
+      this.text(`Best: ${game.bestEndless} m`, STAGE_W / 2, 206, { size: 17, weight: '600' });
+    } else {
+      this.text(`Score: ${game.lastScore}`, STAGE_W / 2, 182, { size: 17, weight: '600' });
+      this.text(`Best: ${game.best}`, STAGE_W / 2, 206, { size: 17, weight: '600' });
+    }
     this.buttons('gameOver');
     const hint = this.touchMode ? '' : 'or press Space / Ctrl';
     if (hint) this.text(hint, STAGE_W / 2, 316, { size: 11, weight: '600', color: 'rgba(255,255,255,0.78)' });

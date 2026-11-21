@@ -4,12 +4,18 @@
 // a line-for-line port of the original Flash ActionScript. Comments name the original obfuscated
 // identifiers where that helps cross-checking. Everything runs at the original 70 steps/second.
 
+import { buildGrammar, EndlessCourse, ENDLESS_WIDTH, ENDLESS_SHIFT } from './endless.js';
+
 export const TILE = 64;          // s4c2
 export const STAGE_W = 576;      // Z7552
 export const STAGE_H = 448;      // B9752
 export const STEP_HZ = 70;       // the SWF frame rate
 
 const PI = Math.PI;
+
+/** Endless Mode: metres shown per tile column travelled, and points per column. */
+export const METRES_PER_TILE = 2.5;
+const POINTS_PER_TILE = 10;
 
 // ---------------------------------------------------------------------------------------------
 // Collision world (H312 / i0c3 / F335 / a80D / k44F)
@@ -388,11 +394,20 @@ export class Truck {
 export const STAGE_NAMES = ['Stage One', 'Stage Two', 'Stage Three', 'Stage Four', 'Stage Five',
   'Stage Six', 'Stage Seven', 'Stage Eight', 'Stage Nine', 'Stage Ten'];
 
+/** A saved whole number of metres, or 0 if what was saved isn't one. */
+function validCount(v) {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 && n < 1e9 ? n : 0;
+}
+
 export function emptyKeys() {
   return { up: false, down: false, left: false, right: false, pause: false, restart: false };
 }
 
-/** Screens: 'title' | 'help' | 'garage' | 'practiceSelect' | 'playing' | 'paused' | 'gameOver' */
+/**
+ * Screens: 'title' | 'help' | 'garage' | 'practiceSelect' | 'playing' | 'paused' | 'gameOver'
+ * Modes: 'campaign' (all nine stages), 'practice' (one stage), 'endless' (a generated course).
+ */
 export class Game {
   /**
    * @param {{levels: Array, collision: Array}} data  contents of assets/levels.json
@@ -419,6 +434,12 @@ export class Game {
     this.tickerTimer = 0;             // e8472
     this.ticker = '';
     this.best = Number(this.store.get('bestScore')) || 0; // a0a82
+    this.bestEndless = validCount(this.store.get('bestEndless'));
+    this.grammar = null;              // Endless Mode's course grammar, learned from the stages
+    this.course = null;               // the current EndlessCourse
+    this.distance = 0;                // Endless Mode: furthest tile column reached
+    this.shiftCount = 0;              // bumped when Endless Mode scrolls the world left...
+    this.lastShift = 0;               // ...by this many pixels (so the renderer can follow)
     this.lastScore = 0;
     this.wrecked = false;
     this.finished = false;
@@ -437,7 +458,7 @@ export class Game {
     this.garageTruck.reset(STAGE_W / 2, 120);
   }
 
-  get levelData() { return this.data.levels[this.level]; }
+  get levelData() { return this.mode === 'endless' ? this.course.level : this.data.levels[this.level]; }
   get maxCamX() { return this.levelData.width * TILE - STAGE_W; }   // N53D4
   get maxCamY() { return this.levelData.height * TILE - STAGE_H; }  // o64D4
 
@@ -452,6 +473,14 @@ export class Game {
 
   startCampaign() { this.mode = 'campaign'; this.beginRun(0); }
   startPractice(l) { this.mode = 'practice'; this.beginRun(l); }
+
+  startEndless() {
+    this.mode = 'endless';
+    if (!this.grammar) this.grammar = buildGrammar(this.data.levels);
+    this.course = new EndlessCourse(this.grammar, this.data.levels, this.random);
+    this.distance = 0;
+    this.beginRun(0);
+  }
 
   beginRun(firstLevel) { // H5D52
     if (this.mode === 'campaign') { this.lastLevel = this.data.levels.length - 1; this.level = 0; }
@@ -473,6 +502,7 @@ export class Game {
     this.endTimer = 0;
     this.score += this.bonus;
     this.bonus = (this.level + 1) * 10000;
+    if (this.mode === 'endless') { this.ticker = 'Endless'; this.bonus = 0; }
     this.flipBonusTimer = 0;
     for (const d of this.dirt) d.life = 0;
     this.teleportCount++;
@@ -480,10 +510,45 @@ export class Game {
   }
 
   restart() {
-    if (this.mode === 'campaign') this.startCampaign(); else this.startPractice(this.lastLevel);
+    if (this.mode === 'campaign') this.startCampaign();
+    else if (this.mode === 'endless') this.startEndless();
+    else this.startPractice(this.lastLevel);
+  }
+
+  saveEndlessBest() {
+    if (this.metres > this.bestEndless) { this.bestEndless = this.metres; this.store.set('bestEndless', this.bestEndless); }
+  }
+
+  /** Endless Mode: metres travelled so far. */
+  get metres() { return Math.floor(this.distance * METRES_PER_TILE); }
+
+  /** Endless Mode: score new ground, and scroll the world when the truck nears the window's end. */
+  updateEndless() {
+    const col = Math.floor(this.truck.T[0] / TILE) + this.course.dropped;
+    if (col > this.distance) {
+      if (this.endTimer === 0) this.score += (col - this.distance) * POINTS_PER_TILE;
+      this.distance = col;
+    }
+    if (this.truck.T[0] > (ENDLESS_WIDTH - 40) * TILE) this.scrollWorld(ENDLESS_SHIFT);
+  }
+
+  /** Drop `n` columns off the left of the course and move everything left to match. */
+  scrollWorld(n) {
+    const dx = n * TILE;
+    this.course.scroll(n);
+    const t = this.truck;
+    for (let i = 0; i < 10; i += 2) { t.T[i] -= dx; t.P[i] -= dx; }
+    if (t.probePrev) t.probePrev[0] -= dx;
+    for (const d of this.dirt) d.x -= dx;
+    this.camX -= dx;
+    this.world = new CollisionWorld(this.levelData, this.data.collision, t.wheelRadius);
+    this.shiftCount++;
+    this.lastShift = dx;
   }
 
   showMenu(screen) {
+    // Leaving an Endless run part-way (quitting from pause, say) still counts its distance.
+    if (this.mode === 'endless' && (this.screen === 'playing' || this.screen === 'paused')) this.saveEndlessBest();
     if (screen === 'title' || screen === 'garage') this.garageTruck.reset(STAGE_W / 2, 120);
     this.screen = screen;
     this.teleportCount++;
@@ -546,7 +611,8 @@ export class Game {
     const type = t.probeBody(w);
     if (type !== null && this.endTimer === 0 && type !== 1) this.damage = Math.min(1000, this.damage + 6);
     const flip = t.trackFlip();
-    if (flip !== null && this.bonus !== 0) {
+    const scoring = this.mode === 'endless' ? this.endTimer === 0 : this.bonus !== 0;
+    if (flip !== null && scoring) {
       this.flipBonus = flip; this.flipBonusTimer = 70;
       this.score += flip;
     }
@@ -559,7 +625,7 @@ export class Game {
       if (this.endTimer === 0) this.finishStage();
       return;
     }
-    if (this.truck.T[0] >= (this.levelData.width - 9) * TILE) {
+    if (this.mode !== 'endless' && this.truck.T[0] >= (this.levelData.width - 9) * TILE) {
       this.ticker = 'Stage Complete !'; this.tickerTimer = 140; this.endTimer = 210;
     }
     if (this.damage === 1000) {
@@ -577,7 +643,8 @@ export class Game {
       this.wrecked = isWrecked;
       this.finished = !isWrecked;
       this.lastScore = this.score;
-      if (this.score > this.best) { this.best = this.score; this.store.set('bestScore', this.best); }
+      if (this.mode === 'endless') this.saveEndlessBest();
+      else if (this.score > this.best) { this.best = this.score; this.store.set('bestScore', this.best); }
       this.restartLatch = true;
       this.screen = 'gameOver';
     } else {
@@ -592,6 +659,7 @@ export class Game {
       case 'playing':
         if (!this.world) return;
         this.stepTruck(this.world);
+        if (this.mode === 'endless') this.updateEndless();
         this.updateCamera();
         this.updateDirt();
         this.checkStageEnd();
