@@ -10,6 +10,7 @@ import { Wreck } from './wreck.js';
 
 const DEG = Math.PI / 180;
 const FILL_SCREENS = new Set(['playing', 'paused', 'gameOver']);
+const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
 
 // ---------------------------------------------------------------------------------------------
@@ -285,16 +286,22 @@ export class Renderer {
     const edgeX = (gx) => Math.round((gx * TILE - camX) * s) + this.offX;
     const edgeY = (gy) => Math.round((gy * TILE - camY) * s) + this.offY;
     const rows = Math.ceil(this.viewH / TILE) + 1;
-    for (let r = 0; r < rows; r++) {
-      const gy = ty0 + r;
-      if (gy < 0 || gy >= level.height) continue;
-      const y0 = edgeY(gy), y1 = edgeY(gy + 1);
-      for (let c = 0; c < 10; c++) {
-        const gx = tx0 + c;
-        if (gx < 0 || gx >= level.width) continue;
-        const id = level.tiles[gy][gx];
+    for (let c = 0; c < 10; c++) {
+      const gx = tx0 + c;
+      if (gx < 0 || gx >= level.width) continue;
+      const x0 = edgeX(gx), x1 = edgeX(gx + 1);
+      // The stages only have ground tiles as deep as the original 448-high view could see. A
+      // taller view can look further down, so below a column's last tile, if that tile is solid
+      // dirt, keep drawing dirt.
+      let last = level.height - 1;
+      while (last >= 0 && level.tiles[last][gx] === 0) last--;
+      const fillFrom = last >= 0 && level.tiles[last][gx] === FILL_TILE ? last + 1 : Infinity;
+      for (let r = 0; r < rows; r++) {
+        const gy = ty0 + r;
+        if (gy < 0) continue;
+        const id = gy >= fillFrom ? FILL_TILE : gy < level.height ? level.tiles[gy][gx] : 0;
         if (id === 0) continue; // tile 0 is empty sky
-        const x0 = edgeX(gx), x1 = edgeX(gx + 1);
+        const y0 = edgeY(gy), y1 = edgeY(gy + 1);
         ctx.drawImage(this.a.tiles[id], x0, y0, x1 - x0, y1 - y0);
       }
     }
