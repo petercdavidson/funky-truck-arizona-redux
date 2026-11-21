@@ -251,9 +251,9 @@ test('outside Classic the camera pulls back high in the air, keeps the truck in 
   settle(g, 200);
   assert.ok(g.zoom < 1.02, `close in at rest (${g.zoom.toFixed(3)})`);
   const t = g.truck;
-  for (let i = 1; i < 10; i += 2) t.P[i] = t.T[i] + 11; // thrown straight up, about 550 px high
+  for (let i = 1; i < 10; i += 2) t.P[i] = t.T[i] + 14; // thrown straight up, about 900 px high
   let most = 1;
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < 250; i++) {
     g.step();
     most = Math.max(most, g.zoom);
     const x = (t.T[0] - g.camX) / g.zoom, y = (t.T[1] - g.camY) / g.zoom; // where it shows on screen
@@ -261,8 +261,15 @@ test('outside Classic the camera pulls back high in the air, keeps the truck in 
   }
   assert.ok(most > 1.3, `pulled back for the height (${most.toFixed(2)})`);
   assert.ok(most <= CAMERA.maxZoom);
-  settle(g, 600);
+  settle(g, 800);
   assert.ok(g.zoom < 1.05, `closed in again once down (${g.zoom.toFixed(3)})`);
+
+  const off = new Game(data);
+  off.toggle('dynamicCamera');
+  off.startCampaign();
+  settle(off);
+  for (let i = 1; i < 10; i += 2) off.truck.P[i] = off.truck.T[i] + 14;
+  for (let i = 0; i < 250; i++) { off.step(); assert.equal(off.zoom, 1, 'switched off, the camera stays close in'); }
 
   const c = new Game(data);
   c.startCampaign(true);
@@ -286,4 +293,30 @@ test('the camera pulls back a little when the truck is going fast', () => {
   }
   assert.ok(fastest > CAMERA.speedFrom + 2, `got going (${fastest.toFixed(1)} px/step)`);
   assert.ok(zoomAtSpeed > 1.03, `pulled back at speed (${zoomAtSpeed.toFixed(3)})`);
+});
+
+test('the dynamic camera is steady: it rarely changes direction and never lurches', () => {
+  for (const stage of [0, 2, 5]) {
+    const g = new Game(data);
+    g.practiceDamage = false;
+    g.startPractice(stage);
+    g.viewH = 330;
+    g.keys.up = true;
+    let reversals = 0, prevDir = 0, prevZ = g.zoom, worstDz = 0, worstAccel = 0;
+    let prevCam = [g.camX, g.camY], prevVel = [0, 0];
+    for (let i = 0; i < 2000 && g.screen === 'playing'; i++) {
+      g.keys.right = g.truck.bodyRot < -25; g.keys.left = g.truck.bodyRot > 25;
+      g.step();
+      const dz = g.zoom - prevZ;
+      worstDz = Math.max(worstDz, Math.abs(dz));
+      if (Math.abs(dz) > 1e-4) { const dir = Math.sign(dz); if (prevDir && dir !== prevDir) reversals++; prevDir = dir; }
+      prevZ = g.zoom;
+      const vel = [g.camX - prevCam[0], g.camY - prevCam[1]];
+      if (i > 0) worstAccel = Math.max(worstAccel, Math.hypot(vel[0] - prevVel[0], vel[1] - prevVel[1]));
+      prevVel = vel; prevCam = [g.camX, g.camY];
+    }
+    assert.ok(reversals <= 20, `stage ${stage + 1}: zoom changed direction ${reversals} times in 30 s`);
+    assert.ok(worstDz <= CAMERA.maxRate + 1e-9, `stage ${stage + 1}: zoom moved ${worstDz.toFixed(4)} in one step`);
+    assert.ok(worstAccel <= 3, `stage ${stage + 1}: camera speed changed by ${worstAccel.toFixed(1)} px/step in one step`);
+  }
 });

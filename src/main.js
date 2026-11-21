@@ -106,7 +106,7 @@ function doAction(a) {
     return;
   }
   sound.play('click');
-  if (a === 'oneButton' || a === 'practiceDamage' || a === 'practiceClassic') { game.toggle(a); return; }
+  if (a === 'oneButton' || a === 'practiceDamage' || a === 'practiceClassic' || a === 'dynamicCamera') { game.toggle(a); return; }
   if (a === 'play') game.startCampaign();
   else if (a === 'classic') game.startCampaign(true);
   else if (a === 'endless') game.startEndless();

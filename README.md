@@ -18,10 +18,13 @@ world (the original 576 units), so everyone sees the same distance ahead; a tall
 more sky and ground, a wider one less. The backdrop scales up evenly to cover it. Classic keeps
 the original 576×448 view. The menus' backdrop fills the window, with the menu centred on it.
 
-**Dynamic camera** (outside Classic): the camera pulls back when the truck is going fast or is
-high above the ground, up to 1.8 times as much of the world. High in the air it also aims below
-the truck, so you can see where you'll land. It closes in again once the truck settles. Classic
-keeps the original fixed camera. The settings are `CAMERA` in `src/game.js`.
+**Dynamic camera** (outside Classic; a switch on the title screen turns it off): the camera pulls
+back when the truck keeps up a good speed or has been high in the air for a while, up to 1.8 times
+as much of the world. High up it also aims below the truck, so you can see where you'll land. It
+reacts only to smoothed speed and height (height counts after half a second in the air), eases
+in and out slowly, ignores small changes, and is limited in how quickly it can speed up or slow
+down, so bumps and short hops don't move it. Classic keeps the original fixed camera. The
+settings are `CAMERA` in `src/game.js`.
 
 **Garage**: choose the truck's body, paint, tyres and wheels. Any body can wear any body's
 colour; each body starts in its own and remembers the paint you give it. Only the look changes:

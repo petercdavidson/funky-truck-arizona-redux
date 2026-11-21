@@ -33,6 +33,7 @@ export const BUTTONS = {
     { rect: r(238, 425, 100, 17), label: 'How to Play', action: 'help', small: true },
     option(252, (g) => `♪ Sound: ${onOff(g.soundOn)}`, 'sound'),
     option(276, (g) => `One Button: ${onOff(g.oneButton)}`, 'oneButton'),
+    option(300, (g) => `Dynamic Camera: ${onOff(g.dynamicCamera)}`, 'dynamicCamera'),
   ],
   help: [{ rect: r(229, 386, 120, 25), label: 'Menu', action: 'menu' }],
   garage: [

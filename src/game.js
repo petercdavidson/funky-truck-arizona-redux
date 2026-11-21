@@ -433,15 +433,26 @@ export const RULES = {
 };
 
 /**
- * The dynamic camera (outside Classic): it pulls back to show more when the truck is going fast
- * or is high above the ground, and closes in again when it settles. `zoom` is how many times the
- * usual view it shows (1 = the original 576 across).
+ * The dynamic camera (outside Classic, when switched on): it pulls back to show more when the
+ * truck is going fast or has been high above the ground for a while, and closes in again when it
+ * settles. `zoom` is how many times the usual view it shows (1 = the original 576 across).
+ *
+ * Everything it reacts to is smoothed first, so bumps and short hops don't move it: speed and
+ * height are eased towards their raw values (quicker going up than coming down), height only
+ * counts after half a second in the air, and the zoom itself eases, with a speed limit and a
+ * dead zone. The camera's own movement is limited in how quickly it can speed up or slow down.
  */
 export const CAMERA = {
   maxZoom: 1.8,
-  speedFrom: 4, speedTo: 12, speedZoom: 0.3,       // px per step: no pull-back at 4, full at 12
-  heightFrom: 60, heightTo: 600, heightZoom: 0.65, // px above the ground
-  out: 0.03, in: 0.012,                            // share of the gap closed each step
+  speedFrom: 5, speedTo: 13, speedZoom: 0.3,       // px per step: no pull-back at 5, full at 13
+  heightFrom: 80, heightTo: 600, heightZoom: 0.65, // px above the ground
+  airDelay: 35,                                    // steps in the air before height counts
+  speedRise: 0.02, speedFall: 0.008,               // easing of the smoothed speed, per step
+  heightRise: 0.025, heightFall: 0.015,            // easing of the smoothed height, per step
+  out: 0.02, in: 0.008,                            // share of the zoom's gap closed each step
+  maxRate: 0.006,                                  // most the zoom changes in one step
+  deadZone: 0.04,                                  // gaps smaller than this are left alone
+  accel: 1.5,                                      // px/step the camera's speed can change per step
 };
 
 /** Flip-upright assist: steps of being stuck before the button appears. */
@@ -493,6 +504,7 @@ export class Game {
     this.oneButton = flag('oneButton', false);
     this.practiceDamage = flag('practiceDamage', true);
     this.practiceClassic = flag('practiceClassic', false);
+    this.dynamicCamera = flag('dynamicCamera', true);
     this.wreck = null;                // the pieces of a wrecked truck (outside Classic)
     this.scraping = false;            // the cab is scraping the ground this step
     this.stuck = 0;                   // steps the truck has spent stuck (flip-upright assist)
@@ -509,7 +521,9 @@ export class Game {
     this.finished = false;
     this.camX = 0; this.camY = 0;     // J1Fc4 / k20D4
     this.zoom = 1;                    // the dynamic camera's pull-back (outside Classic)
-    this.ground = 0;                  // the truck's height above the ground (dynamic camera)
+    this.ground = 0;                  // dynamic camera: smoothed height above the ground
+    this.camSpeed = 0;                // dynamic camera: smoothed speed
+    this.camVX = 0; this.camVY = 0;   // dynamic camera: the camera's own speed
     // How much of the world shows top to bottom. The width is always the original 576; outside
     // Classic the renderer sets the height to fit the window's shape. It only moves the camera.
     this.viewH = STAGE_H;
@@ -543,13 +557,16 @@ export class Game {
     this.saveLook();
   }
 
-  /** Flip an on/off option and save it: 'soundOn', 'oneButton', 'practiceDamage', 'practiceClassic'. */
+  /** Flip an on/off option and save it: 'soundOn', 'oneButton', 'practiceDamage', 'practiceClassic', 'dynamicCamera'. */
   toggle(option) {
-    const key = { soundOn: 'sound', oneButton: 'oneButton', practiceDamage: 'practiceDamage', practiceClassic: 'practiceClassic' }[option];
+    const key = { soundOn: 'sound', oneButton: 'oneButton', practiceDamage: 'practiceDamage', practiceClassic: 'practiceClassic', dynamicCamera: 'dynamicCamera' }[option];
     if (!key) return;
     this[option] = !this[option];
     this.store.set(key, this[option]);
   }
+
+  /** The dynamic camera applies outside Classic, when switched on. */
+  get dynamicCameraActive() { return this.dynamicCamera && !this.rules.classic; }
 
   /** One-button controls apply outside Classic. */
   get oneButtonActive() { return this.oneButton && !this.rules.classic; }
@@ -595,7 +612,7 @@ export class Game {
     const s = this.levelData.start;
     this.truck.reset(s[0], s[1]);
     this.truck.rearWheelRot = 0; this.truck.frontWheelRot = 0;
-    this.zoom = 1; this.ground = 0;
+    this.zoom = 1; this.ground = 0; this.camSpeed = 0; this.camVX = 0; this.camVY = 0;
     this.camX = Math.min(Math.max(s[0] - 150, 0), this.maxCamX);       // s4833
     this.camY = Math.min(Math.max(s[1] - this.viewH / 2, 0), this.maxCamY);
     this.updateCamera();
@@ -666,18 +683,30 @@ export class Game {
 
   updateCamera() { // T5933 + w6015
     const [fx, fy] = this.focus;
-    if (!this.rules.classic) this.updateZoom();
+    const dyn = this.dynamicCameraActive;
+    if (dyn) this.updateZoom();
+    else this.zoom = 1;
     const z = this.zoom;
     // High in the air, the camera aims below the truck so the ground it's coming down on shows.
-    const lower = this.rules.classic ? 0 : Math.min(this.ground, this.viewH * z * 0.6) * 0.5;
-    let dx = (fx - 150 * z - this.camX) * 0.2;
-    let dy = (fy + lower - this.viewH * z / 2 - this.camY) * 0.2;
-    dx = Math.max(Math.min(dx, TILE), -TILE);
-    dy = Math.max(Math.min(dy, TILE), -TILE);
+    const lower = dyn ? Math.min(this.ground, this.viewH * z * 0.6) * 0.5 : 0;
     // Outside Classic there's no ceiling, so the camera rises to keep a high-flying truck in view.
     const top = this.rules.classic ? 0 : Math.min(0, fy - 110 * z);
-    this.camX = Math.min(Math.max(this.camX + dx, 0), this.maxCamX);
-    this.camY = Math.min(Math.max(this.camY + dy, top), Math.max(this.maxCamY, top));
+    const clampX = (x) => Math.min(Math.max(x, 0), this.maxCamX);
+    const clampY = (y) => Math.min(Math.max(y, top), Math.max(this.maxCamY, top));
+    let wantX = fx - 150 * z, wantY = fy + lower - this.viewH * z / 2;
+    // The dynamic camera aims inside the level's edges, so it slows to a stop at one rather than hitting it.
+    if (dyn) { wantX = clampX(wantX); wantY = clampY(wantY); }
+    let dx = Math.max(Math.min((wantX - this.camX) * 0.2, TILE), -TILE);
+    let dy = Math.max(Math.min((wantY - this.camY) * 0.2, TILE), -TILE);
+    if (dyn) {
+      // Ease the camera's own speed towards the move it wants, so it never lurches.
+      const A = CAMERA.accel, lim = (v) => Math.max(-A, Math.min(A, v));
+      this.camVX += lim(dx - this.camVX); this.camVY += lim(dy - this.camVY);
+      dx = this.camVX; dy = this.camVY;
+    }
+    const x = clampX(this.camX + dx), y = clampY(this.camY + dy);
+    if (dyn) { this.camVX = x - this.camX; this.camVY = y - this.camY; } // stopped by an edge
+    this.camX = x; this.camY = y;
   }
 
   /** How far below the point (x, y) the ground is (a wheel centre's resting height), up to `max`. */
@@ -686,23 +715,28 @@ export class Game {
     return h ? Math.max(0, h.y - y) : max;
   }
 
-  /** The dynamic camera: pull back for speed and for height above the ground. */
+  /** The dynamic camera: pull back for sustained speed and for time spent high above the ground. */
   updateZoom() {
     const C = CAMERA, t = this.truck;
-    let speed = 0;
-    if (this.wreck) this.ground = 0; // close in on a wreck
-    else {
-      // On the ground (even a steep slope, where straight down can miss it) the height is 0. In
-      // the air, look down from the wheel centres, which are always kept clear of the ground.
-      this.ground = t.rearContact || t.frontContact ? 0
-        : Math.min(this.groundBelow(t.T[2], t.T[3]), this.groundBelow(t.T[4], t.T[5]));
+    const ease = (cur, to, up, down) => cur + (to - cur) * (to > cur ? up : down);
+    let speed = 0, height = 0;
+    if (!this.wreck) { // a wreck: close in on it
       speed = Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]);
+      // Height only counts once the truck has been in the air a while, so bumps and hops don't
+      // move the camera. Look down from the wheel centres, which are always clear of the ground.
+      if (this.airSteps >= C.airDelay) height = Math.min(this.groundBelow(t.T[2], t.T[3]), this.groundBelow(t.T[4], t.T[5]));
     }
+    this.camSpeed = ease(this.camSpeed, speed, C.speedRise, C.speedFall);
+    this.ground = ease(this.ground, height, C.heightRise, C.heightFall);
     const ramp = (v, a, b) => Math.max(0, Math.min(1, (v - a) / (b - a)));
     const target = Math.min(C.maxZoom, 1
-      + ramp(speed, C.speedFrom, C.speedTo) * C.speedZoom
+      + ramp(this.camSpeed, C.speedFrom, C.speedTo) * C.speedZoom
       + ramp(this.ground, C.heightFrom, C.heightTo) * C.heightZoom);
-    this.zoom += (target - this.zoom) * (target > this.zoom ? C.out : C.in);
+    const gap = target - this.zoom;
+    // Close a small gap only when settling all the way back in, so the zoom doesn't hunt.
+    if (Math.abs(gap) < C.deadZone && !(target === 1 && gap < 0)) return;
+    const step = gap * (gap > 0 ? C.out : C.in);
+    this.zoom += Math.max(-C.maxRate, Math.min(C.maxRate, step));
   }
 
   spawnDirt(x, y, vx, vy) { // X7381
