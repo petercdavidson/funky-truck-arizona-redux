@@ -78,7 +78,10 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   the art joins up at tile edges, scored from `src/tile-art.js` (each tile's edge pixels, made by
   `tools/make-tile-art.mjs`; rerun it if the tile art changes). Also `MIRROR_PAIRS` / `mirrorOf` /
   `flipTiles`: which tiles are each other's left-right mirror (41 to 55, the kickers, have none).
-  Tested in `tests/autotile.test.mjs`.
+  Paths may also run any way round (`drawPathFree`: up walls, back over themselves for overhangs,
+  along ceilings) with turned pieces; the ground is on the right-hand side of the way a path runs.
+  `fillGround` / `paintFill` fill ground in between ground facing up and down (`sidesOf`: which
+  edges of a tile are ground). Tested in `tests/autotile.test.mjs`.
 - `tools/map.html`: draws whole tracks as maps (serve the repo, open `/tools/map.html?stages=9,10,11`).
 - `tests/bot.mjs`: a simulated driver (backs up for run-ups when it stalls) for checking that
   generated courses can be driven. Endless never climbs more than `MAX_RISE` tiles within

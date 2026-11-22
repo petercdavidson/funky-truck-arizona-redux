@@ -15,7 +15,10 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
 - `../src/game.js`: only the constants `TILE` (64 px), `STAGE_NAMES`, `METRES_PER_TILE` (2.5).
 - `../src/autotile.js`: the Path tool (`buildKit`, `drawPath`), tested in `tests/autotile.test.mjs`.
   A path rebuilds its columns from its curve down, and clears the old ground above the curve only
-  up to the first sky, so an overhang above a gap is left alone.
+  up to the first sky, so an overhang above a gap is left alone. A path that goes back on itself or
+  up a wall is laid by `drawPathFree` (pieces turned any way, ground on the right-hand side of the
+  way the path runs). `fillGround` (the Fill ground buttons) and `paintFill` (painting with
+  "fill ground") fill in ground by which side of each tile is ground (`sidesOf`).
 - `../src/tile-forms.js`: tiles turned and flipped (walls, ceilings, overhangs) and the mirrors:
   ids `base + 256 * form`, `mirrorId` / `flipUpId` / `turnId` for one tile, `flipTiles` /
   `flipTilesUp` / `turnTiles` for an area, `formCollision`, `tileLabel` (e.g. `2→`, `24↓`). The
@@ -39,6 +42,9 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
 - Tiles: `sel` is the chosen tile id (any form). The palette shows the sheet in `palForm`
   (upright, upside down, turned either way); H / V / R change the chosen tile or the selection.
   `img(id)` and `lines(id)` give any tile's image and collision lines.
+- Path points are in the order the path runs (not sorted): a click adds one on the curve where
+  it's near it, else at the nearer end (`insertAt`). Brown ticks show the ground side;
+  Swap ground side reverses the points. While a point is dragged the look pass waits for the drop.
 - Paths: `L.paths = [{ pts }]`, `L.ap` the one being edited (-1 none), `L.pathBase` the tiles from
   before it (null: taken when it's next edited; any other edit sets it null). Points have handles
   (`ix, iy, ox, oy`) unless `auto`; `broken` points (Alt-dragged handles) move their handles

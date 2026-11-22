@@ -212,3 +212,126 @@ test('a path leaves an overhang above a gap of sky alone, and clears old ground 
     assert.equal(r.tiles[9][x], 0, `the old ground above the dip is cleared at ${x}`);
   }
 });
+
+// ---- paths any way round, and filling ground in
+
+import { sidesOf, fillGround, paintFill } from '../src/autotile.js';
+import { makeId, formOf, turnId, flipUpId } from '../src/tile-forms.js';
+
+/** A path through points given in tiles, as px every 8th of a tile. */
+function poly(P) {
+  const out = [];
+  for (let i = 0; i + 1 < P.length; i++) {
+    const [a, b] = [P[i], P[i + 1]], n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) * 8);
+    for (let k = 0; k < n; k++) out.push([(a[0] + (b[0] - a[0]) * k / n) * TILE, (a[1] + (b[1] - a[1]) * k / n) * TILE]);
+  }
+  out.push(P.at(-1).map((v) => v * TILE));
+  return out;
+}
+/** Each piece of a chain laid any way round starts where the one before it ends. */
+function assertJoinedAnyWay(chain) {
+  for (let i = 1; i < chain.length; i++) {
+    const a = chain[i - 1], b = chain[i], p = artKit.oById.get(a.id), q = artKit.oById.get(b.id);
+    assert.equal(a.x * TILE + p.outX, b.x * TILE + q.inX, `piece ${i} joins in x`);
+    assert.equal(a.y * TILE + p.outY, b.y * TILE + q.inY, `piece ${i} joins in y`);
+  }
+}
+
+test('which side of a tile is ground: up, down, walls, every way round', () => {
+  const s2 = sidesOf(artKit, 2);
+  assert.ok(s2.bottom === 1 && s2.top === 0 && s2.surface);
+  const ceiling = sidesOf(artKit, flipUpId(2));
+  assert.ok(ceiling.top === 1 && ceiling.bottom === 0);
+  const wall = sidesOf(artKit, turnId(2));      // its top turned to the right: ground on the left
+  assert.ok(wall.left === 1 && wall.right === 0);
+  assert.deepEqual(sidesOf(artKit, 1), { top: 1, right: 1, bottom: 1, left: 1, surface: false });
+  // the look pass knows turned tiles' art: two tiles side by side, turned, are one above the other
+  for (const [a, b] of [[2, 2], [4, 14], [60, 61], [110, 111]]) assert.ok(Math.abs(artKit.seam(a, b, 0) - artKit.seam(turnId(a), turnId(b), 1)) < 1e-6);
+});
+
+test('a sketch up a wall lays turned pieces, joined, with ground behind the wall', () => {
+  const level = blank(20, 16, 12);
+  const r = drawPath(level, poly([[1, 12.5], [8, 12.5], [8.5, 12], [8.5, 6], [9, 5.5], [17, 5.5]]), artKit, { smooth: 2 });
+  assert.ok(r && r.free);
+  assertJoinedAnyWay(r.chain);
+  const walls = r.chain.filter((c) => formOf(c.id) === 3);
+  assert.ok(walls.length >= 3, `turned pieces up the wall (${walls.length})`);
+  assert.ok(walls.every((c) => c.x === 8));
+  // the plateau is solid down to the old ground; to the left of the wall is sky
+  for (let y = 7; y <= 11; y++) { assert.equal(r.tiles[y][12], 1); assert.equal(r.tiles[y][5], 0); }
+});
+
+test('a sketch back over itself makes an overhang: two grounds in one column, a cave under the lip', () => {
+  const level = blank(20, 16, 12);
+  const r = drawPath(level, poly([[1, 5.5], [10, 5.5], [10.8, 6], [10.5, 7], [8, 7.5], [7.5, 8.2], [7.5, 11.5], [8.2, 12.5], [17, 12.5]]), artKit, { smooth: 2 });
+  assert.ok(r && r.free);
+  assertJoinedAnyWay(r.chain);
+  const surfaces = (x) => r.tiles.map((row, y) => [y, row[x]]).filter(([, id]) => sidesOf(artKit, id).surface);
+  const col = surfaces(9);
+  assert.ok(col.length >= 3, `the lip's top, its underside and the floor below (${col.map(([y, id]) => `${id}@${y}`)})`);
+  assert.ok(sidesOf(artKit, col[1][1]).top >= 0.6, 'the underside is a ceiling');
+  for (let y = col[1][0] + 1; y < col[2][0]; y++) assert.equal(r.tiles[y][9], 0, 'the cave is sky');
+  for (let y = col[0][0] + 1; y < col[1][0]; y++) assert.notEqual(r.tiles[y][9], 0, 'the lip is solid');
+});
+
+test('fill ground: between ground facing up and down, and to the top or bottom; nothing taken away', () => {
+  const W = 6, H = 12;
+  const tiles = Array.from({ length: H }, () => Array(W).fill(0));
+  tiles[3][1] = flipUpId(2);                  // a ceiling: ground above it, to the top
+  tiles[2][2] = 2; tiles[7][2] = flipUpId(2); // a floor above a ceiling: ground between
+  tiles[8][3] = 2;                            // a floor: ground below it, to the bottom
+  tiles[4][4] = flipUpId(2); tiles[9][4] = 2; // a ceiling above a floor: a cave, left alone
+  tiles[5][5] = turnId(2);                    // a wall: nothing up or down
+  const r = fillGround({ width: W, height: H, tiles }, artKit, null, { look: false });
+  const col = (x) => r.tiles.map((row) => row[x]);
+  assert.deepEqual(col(1).slice(0, 3), [1, 1, 1]); assert.equal(col(1)[4], 0);
+  assert.deepEqual(col(2).slice(3, 7), [1, 1, 1, 1]); assert.equal(col(2)[1], 0); assert.equal(col(2)[8], 0);
+  assert.deepEqual(col(3).slice(9), [1, 1, 1]); assert.equal(col(3)[7], 0);
+  assert.deepEqual(col(4).slice(5, 9), [0, 0, 0, 0]); assert.deepEqual(col(4).slice(0, 4), [1, 1, 1, 1]); assert.deepEqual(col(4).slice(10), [1, 1]);
+  assert.ok(col(5).every((id, y) => (y === 5 ? id === turnId(2) : id === 0)));
+  // only in an area
+  const a = fillGround({ width: W, height: H, tiles }, artKit, { x0: 3, y0: 9, x1: 3, y1: 10 }, { look: false });
+  assert.deepEqual(a.tiles.map((row) => row[3]).slice(9), [1, 1, 0]);
+  assert.equal(a.tiles[0][1], 0);
+});
+
+test('painting ground fills its far side: down under a floor, up over a ceiling', () => {
+  const H = 10, tiles = Array.from({ length: H }, () => [0]);
+  tiles[8][0] = flipUpId(2);                  // a cave's ceiling further down stops the fill
+  tiles[3][0] = 2;
+  paintFill(tiles, artKit, 0, 3);
+  assert.deepEqual(tiles.map((r) => r[0]), [0, 0, 0, 2, 1, 1, 1, 1, flipUpId(2), 0]);
+  const up = Array.from({ length: H }, () => [0]);
+  up[5][0] = flipUpId(2);
+  paintFill(up, artKit, 0, 5);
+  assert.deepEqual(up.map((r) => r[0]).slice(0, 6), [1, 1, 1, 1, 1, flipUpId(2)]);
+  const wall = Array.from({ length: H }, () => [0]);
+  wall[5][0] = turnId(2);
+  assert.deepEqual(paintFill(wall, artKit, 0, 5), []);
+});
+
+test('path-made walls and overhangs drive as they look in the game', async () => {
+  const { memoryStore } = await import('./helpers.mjs');
+  const play = (tiles, start) => {
+    const g = new Game(data, { store: memoryStore() });
+    assert.ok(g.bringInStage({ name: 'Free', width: tiles[0].length, height: tiles.length, start, tiles }));
+    g.customDamage = false;
+    g.startCustom(0);
+    return g;
+  };
+  // the cliff stops the truck
+  const cliff = drawPath(blank(20, 16, 12), poly([[1, 12.5], [8, 12.5], [8.5, 12], [8.5, 6], [9, 5.5], [17, 5.5]]), artKit, { smooth: 2 });
+  let g = play(cliff.tiles, [2 * TILE, 11 * TILE]);
+  let furthest = 0;
+  for (let i = 0; i < 700; i++) { g.keys.up = true; g.step(); furthest = Math.max(furthest, g.truck.T[0]); }
+  assert.ok(furthest > 5 * TILE && furthest < 8.6 * TILE, `stopped at the cliff (${(furthest / TILE).toFixed(2)})`);
+  // under the overhang and out along the floor
+  const lip = drawPath(blank(20, 16, 12), poly([[1, 5.5], [10, 5.5], [10.8, 6], [10.5, 7], [8, 7.5], [7.5, 8.2], [7.5, 11.5], [8.2, 12.5], [17, 12.5]]), artKit, { smooth: 2 });
+  g = play(lip.tiles, [9.5 * TILE, 11 * TILE]);
+  for (let i = 0; i < 700 && g.truck.T[0] < 16 * TILE; i++) { g.keys.up = true; g.keys.right = g.truck.bodyRot < -15; g.step(); }
+  assert.ok(g.truck.T[0] >= 16 * TILE, `drove out from under the lip (${(g.truck.T[0] / TILE).toFixed(1)})`);
+  // and on top of the lip, it stays up there
+  g = play(lip.tiles, [3 * TILE, 4 * TILE]);
+  for (let i = 0; i < 150; i++) g.step();
+  assert.ok(g.truck.T[1] < 6 * TILE, `rests on the lip (y ${(g.truck.T[1] / TILE).toFixed(1)})`);
+});

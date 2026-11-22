@@ -195,7 +195,7 @@
           <button class="btn" id="turnTile" title="Turn it a quarter clockwise: walls (R; Shift+R the other way)"><svg viewBox="0 0 20 20"><path d="M16 10a6 6 0 1 1-2-4.5"/><path d="M15 2v4h-4"/></svg>Turn <kbd>R</kbd></button>
           <button class="btn icon" id="plainTile" title="Back to the tile as it is in the sheet">⟲</button>
         </div>
-        <div class="row"><label class="check" title="Painting a tile fills the column below it with solid dirt"><input id="fill" type="checkbox" checked> fill dirt below</label></div>
+        <div class="row"><label class="check" title="Painting ground fills in the dirt on its far side: below ground facing up (down to ground facing down, or the bottom), above a ceiling (up to ground facing up, or the top)"><input id="fill" type="checkbox" checked> fill ground</label></div>
         <div class="hint"><p>Drag paints · right-drag erases to sky</p><p><kbd>Alt</kbd>-click picks up a tile · <kbd>Shift</kbd>-click moves the start</p></div>
       </div>
       <div class="tp" data-tp="select">
@@ -208,6 +208,7 @@
           <button class="btn" id="selTurn" title="Turn it a quarter clockwise (Shift+R the other way)">Turn ↻ <kbd>R</kbd></button>
           <button class="btn" id="selDel">Clear <kbd>Del</kbd></button>
           <button class="btn" id="selAll">Select all <kbd>⌘A</kbd></button>
+          <button class="btn" id="selFill" title="Fill in the ground in the area: between ground facing up and ground facing down, and from those to the top or bottom">Fill ground</button>
         </div>
         <div class="hint"><p>Drag a box. Drag inside it to <b>move</b> it; <kbd>Alt</kbd>-drag to move a <b>copy</b>. Arrow keys nudge it a tile.</p>
           <p>A moved or pasted area floats over the stage until you click outside it, press <kbd>Enter</kbd> or switch tools, so you can keep moving it without wiping what's underneath.</p>
@@ -216,8 +217,10 @@
       <div class="tp" data-tp="path">
         <div class="row"><button class="btn" id="pathNew" title="Keep this path and its tiles, and start another curve (Esc)">New path</button>
           <button class="btn" id="pathDel" title="Remove the selected point (Del)">Remove point</button>
-          <button class="btn" id="pathForget" title="Forget this path's curve; its tiles stay">Forget path</button></div>
-        <div class="hint"><p>Click to add points; the tiles follow the curve, joining the ground either side, with fill chosen so the dirt's edge carries on from tile to tile. Where a click would add a point, a <b>+</b> shows.</p>
+          <button class="btn" id="pathForget" title="Forget this path's curve; its tiles stay">Forget path</button>
+          <button class="btn" id="pathSwap" title="Put the ground on the other side of the curve">Swap ground side</button></div>
+        <div class="hint"><p>Click to add points; the tiles follow the curve, joining the ground either side, with fill chosen so the dirt's edge carries on from tile to tile. Where a click would add a point, a <b>+</b> shows: at the nearer end of the path, or on the curve itself.</p>
+          <p>The ground is on the side with the brown ticks: below a path drawn left to right. A path can go any way: up a wall, back over itself for an overhang, upside down along a ceiling. Turned tiles are used where it needs them.</p>
           <p>Drag a point or a handle to reshape. <kbd>Alt</kbd>-drag a handle to make a corner: its handles then move on their own (the point shows as a diamond) until you <kbd>Alt</kbd>-click the point to line them up again. Double-click a point to make it smooth, right-click to remove it.</p>
           <p>Click another path's point to edit that path. Its tiles only change in the columns it covers, and ground above a gap of sky (an overhang) is left alone.</p></div>
       </div>
@@ -253,6 +256,8 @@
       <div class="row"><label>W <input id="w" type="number" min="10" max="2000" value="60"></label>
         <label>H <input id="h" type="number" min="8" max="400" value="24"></label>
         <button class="btn" id="resize" title="Keep what's there, change the size (adds or removes columns on the right and rows at the bottom)">Resize</button></div>
+      <div class="row"><button class="btn" id="fillAll" title="Fill in the ground everywhere: between ground facing up and ground facing down, and from those to the top or bottom of the level">Fill ground</button>
+        <span class="hint" style="margin:0">between ground facing up and down, and to the edges</span></div>
       <div class="row" title="Move the whole level, start point included. Tiles pushed past the edge are dropped; the gap left behind repeats the edge column or row. Shift+arrow keys move it 1 tile.">
         Shift all <button class="btn icon" id="shiftL">←</button><button class="btn icon" id="shiftR">→</button><button class="btn icon" id="shiftU">↑</button><button class="btn icon" id="shiftD">↓</button>
         <label>by <input id="shiftN" type="number" min="1" max="500" value="1"></label></div>
@@ -290,7 +295,7 @@
     <table>
       <tr><td><kbd>B</kbd> Paint</td><td>Drag paints the chosen tile, right-drag erases. <kbd>Alt</kbd>-click picks up a tile. <kbd>H</kbd> mirrors the chosen tile, <kbd>V</kbd> turns it upside down, <kbd>R</kbd> turns it a quarter (<kbd>Shift+R</kbd> the other way).</td></tr>
       <tr><td><kbd>S</kbd> Select</td><td>Drag a box; drag inside to move it, <kbd>Alt</kbd>-drag to copy. <kbd>H</kbd> flips it left to right, <kbd>V</kbd> upside down, <kbd>R</kbd> turns it; arrows nudge it, <kbd>Del</kbd> clears it, <kbd>Enter</kbd> drops it, <kbd>Esc</kbd> lets go.</td></tr>
-      <tr><td><kbd>D</kbd> Path</td><td>Click to add points to a curve; the tiles follow it. Drag points and handles; <kbd>Alt</kbd>-drag a handle for a corner, <kbd>Alt</kbd>-click the point to line its handles up again. Right-click removes a point; <kbd>Esc</kbd> starts a new path.</td></tr>
+      <tr><td><kbd>D</kbd> Path</td><td>Click to add points to a curve; the tiles follow it, the ground on the side with the brown ticks (any way round: walls, overhangs, ceilings). Drag points and handles; <kbd>Alt</kbd>-drag a handle for a corner, <kbd>Alt</kbd>-click the point to line its handles up again. Right-click removes a point; <kbd>Esc</kbd> starts a new path.</td></tr>
       <tr><td><kbd>T</kbd> Start</td><td>Click where the truck drops in (or <kbd>Shift</kbd>-click while painting).</td></tr>
       <tr><td><kbd>F</kbd> Finish</td><td>Click where the finish line goes.</td></tr>
     </table>
@@ -310,7 +315,7 @@
   <script type="module">
     import { loadAssets, tileImage } from '../src/assets.js';
     import { TILE, STAGE_NAMES, METRES_PER_TILE } from '../src/game.js';
-    import { buildKit, drawPath } from '../src/autotile.js';
+    import { buildKit, drawPath, fillGround, paintFill } from '../src/autotile.js';
     import { NO_MIRROR, mirrorOf, baseOf, formOf, makeId, isTileId, mirrorId, flipUpId, turnId, flipTiles, flipTilesUp, turnTiles, formCollision, tileLabel } from '../src/tile-forms.js';
     import { TILE_EDGES } from '../src/tile-art.js';
 
@@ -750,8 +755,8 @@
     }
     function paintAt(x, y, id) {
       set(x, y, id);
-      // (only under tiles the right way up: a ceiling or a wall has its ground elsewhere)
-      if (id !== SKY && !formOf(id) && $('fill').checked) for (let r = y + 1; r < L.height; r++) set(x, r, DIRT);
+      // the ground on its far side: below ground facing up, above a ceiling (a wall fills nothing)
+      if (id !== SKY && $('fill').checked && x >= 0 && y >= 0 && x < L.width && y < L.height) for (const [cx, cy] of paintFill(L.tiles, kit, x, y)) drawTile(cx, cy);
     }
     /** The level's tiles made `next` (redrawing the cells that changed). */
     function apply(next) {
@@ -852,6 +857,14 @@
     $('selTurn').onclick = $('fbTurn').onclick = () => selTurn(true);
     $('selDel').onclick = $('fbDel').onclick = selClear;
     $('selAll').onclick = selAll;
+    function fillIn(area) {
+      dropFloat(); remember();
+      const r = fillGround(L, kit, area);
+      apply(r.tiles); drawOver(); save();
+      say(r.filled.length ? `Filled in ${r.filled.length} tile${r.filled.length === 1 ? '' : 's'} of ground${area ? ' in the area' : ''}.` : 'No ground to fill in: there was no sky between ground facing up and ground facing down.');
+    }
+    $('selFill').onclick = () => { if (!box) { say('Select an area first, or use Fill ground under Level for all of it.'); return; } fillIn(box); };
+    $('fillAll').onclick = () => fillIn(null);
     $('fbDone').onclick = () => { dropFloat(); say('Dropped.'); };
 
     // ---- mouse on the stage
@@ -975,11 +988,12 @@
       return out;
     }
     /** Lay the tiles for the path being edited over the level as it was before it. */
-    function layGuide() {
+    function layGuide(quick = false) {
       const g = AP();
       if (!g) return;
       if (!L.pathBase) L.pathBase = L.tiles.map((r) => r.slice());
-      const r = g.pts.length > 1 ? drawPath({ ...L, tiles: L.pathBase }, guideLine(g.pts), kit, { smooth: 2 }) : null;
+      // (while dragging, the look pass waits till the drag ends)
+      const r = g.pts.length > 1 ? drawPath({ ...L, tiles: L.pathBase }, guideLine(g.pts), kit, { smooth: 2, look: !quick }) : null;
       apply(r ? r.tiles : L.pathBase.map((row) => row.slice()));
       drawOver();
       say(r ? `${g.pts.length} points · ${r.chain.length} ground pieces over columns ${r.x0} to ${r.x1 - 1}`
@@ -1011,6 +1025,37 @@
       const li = Math.hypot(h.ix, h.iy), lo = Math.hypot(h.ox, h.oy);
       Object.assign(p, { auto: false, broken: false, ix: -dx * li, iy: -dy * li, ox: dx * lo, oy: dy * lo });
     }
+    /**
+     * Where a point clicked at c goes in path P: on the curve where the click is on it, else at the
+     * nearer end (after the last point when the path is just starting).
+     */
+    function insertAt(P, c) {
+      if (P.length < 2) return P.length;
+      let bestD = Infinity, bestI = -1;
+      for (let i = 0; i + 1 < P.length; i++) {
+        const q = cubic(P, i);
+        for (let k = 0; k <= 24; k++) { const [x, y] = bez(q, k / 24), d = Math.hypot((x - c.px) * Z, (y - c.py) * Z); if (d < bestD) { bestD = d; bestI = i + 1; } }
+      }
+      if (bestD <= 14) return bestI;
+      const d0 = Math.hypot(P[0].x - c.px, P[0].y - c.py), d1 = Math.hypot(P[P.length - 1].x - c.px, P[P.length - 1].y - c.py);
+      return d0 < d1 ? 0 : P.length;
+    }
+    /** Short brown ticks along a path, on its ground side (the right-hand side of the way it runs). */
+    function groundTicks(P) {
+      const line = guideLine(P);
+      ox.strokeStyle = 'rgba(120,72,30,0.95)'; ox.lineWidth = 2;
+      ox.beginPath();
+      let run = 0;
+      for (let i = 1; i < line.length; i++) {
+        const [ax, ay] = line[i - 1], [bx, by] = line[i], d = Math.hypot(bx - ax, by - ay);
+        run += d * Z;
+        if (run < 22 || !d) continue;
+        run = 0;
+        const nx = -(by - ay) / d, ny = (bx - ax) / d;
+        ox.moveTo(bx * Z, by * Z); ox.lineTo(bx * Z + nx * 8, by * Z + ny * 8);
+      }
+      ox.stroke();
+    }
     let pathSel = -1, pathPending = false, pathHover = null;
     function pathDown(e, c) {
       const h = pathHit(c);
@@ -1030,11 +1075,9 @@
         dragging = { path: true, ...h };
         drawOver(); return;
       }
-      // a new point, in its place left to right (on a new path if none is being edited)
+      // a new point (on a new path if none is being edited)
       if (!AP()) { L.paths.push({ pts: [] }); activate(L.paths.length - 1); }
-      const P = AP().pts;
-      let i = P.findIndex((p) => p.x > c.px);
-      if (i < 0) i = P.length;
+      const P = AP().pts, i = insertAt(P, c);
       P.splice(i, 0, { x: c.px, y: c.py, auto: true });
       pathSel = i;
       dragging = { path: true, p: L.ap, i, part: 'pt' };
@@ -1044,9 +1087,6 @@
       const P = AP().pts, d = dragging, p = P[d.i];
       if (d.part === 'pt') {
         p.x = c.px; p.y = c.py;
-        // keep the points in order left to right
-        while (d.i > 0 && P[d.i - 1].x > p.x) { [P[d.i - 1], P[d.i]] = [P[d.i], P[d.i - 1]]; d.i--; }
-        while (d.i + 1 < P.length && P[d.i + 1].x < p.x) { [P[d.i + 1], P[d.i]] = [P[d.i], P[d.i + 1]]; d.i++; }
         pathSel = d.i;
       } else {
         if (p.auto) Object.assign(p, handles(P, d.i), { auto: false });
@@ -1060,7 +1100,7 @@
           p[ox2] = -hx / l2 * len; p[oy2] = -hy / l2 * len;
         }
       }
-      if (!pathPending) { pathPending = true; requestAnimationFrame(() => { pathPending = false; layGuide(); }); }
+      if (!pathPending) { pathPending = true; requestAnimationFrame(() => { pathPending = false; if (dragging?.path) layGuide(true); }); }
     }
     function drawGuide() {
       const editing = tool === 'path';
@@ -1075,6 +1115,7 @@
           }
         }
         if (!editing) return;
+        if (on && P.length > 1) groundTicks(P);
         const hot = (i, part) => pathHover && !dragging && pathHover.p === k && pathHover.i === i && pathHover.part === part;
         P.forEach((p, i) => {
           if (on) {
@@ -1102,7 +1143,7 @@
       // where a click would add a point, and the curve it would make
       if (editing && hover && !pathHover && !dragging && !spaceDown) {
         const P = AP()?.pts || [], X = hover.px * Z, Y = hover.py * Z;
-        const i = P.findIndex((p) => p.x > hover.px), prev = P[(i < 0 ? P.length : i) - 1], next = i < 0 ? null : P[i];
+        const i = insertAt(P, hover), prev = P[i - 1], next = P[i];
         ox.setLineDash([5, 4]); ox.strokeStyle = 'rgba(255,61,139,0.8)'; ox.lineWidth = 1.5;
         ox.beginPath();
         if (prev) { ox.moveTo(prev.x * Z, prev.y * Z); ox.lineTo(X, Y); }
@@ -1130,6 +1171,15 @@
       say('Click to start a new path. The others keep their tiles; click one of their points to edit it.');
     }
     $('pathNew').onclick = newPath;
+    $('pathSwap').onclick = () => {
+      const g = AP();
+      if (!g || g.pts.length < 2) { say('Click a point of the path first.'); return; }
+      remember(true);
+      g.pts.reverse();
+      for (const p of g.pts) if (!p.auto) Object.assign(p, { ix: p.ox, iy: p.oy, ox: p.ix, oy: p.iy });
+      layGuide(); save();
+      say('The ground is now on the other side of the path.');
+    };
     $('pathForget').onclick = () => {
       if (!AP()) { say('Click a point of the path to forget first.'); return; }
       remember(); L.paths.splice(L.ap, 1); L.ap = -1; L.pathBase = null; pathSel = -1;
@@ -1294,7 +1344,6 @@
       if (!Array.isArray(pts) || !pts.length) return null;
       const ok = pts.filter((p) => p && num(p.x) && num(p.y)).map((p) => (p.auto === false && [p.ix, p.iy, p.ox, p.oy].every(num)
         ? { x: p.x, y: p.y, auto: false, ix: p.ix, iy: p.iy, ox: p.ox, oy: p.oy, ...(p.broken === true ? { broken: true } : {}) } : { x: p.x, y: p.y, auto: true }));
-      ok.sort((p, q) => p.x - q.x);
       return ok.length ? { pts: ok } : null;
     }
     /** The saved paths, checked: `paths` (lists of points), or an older file's one `path`. */
