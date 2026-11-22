@@ -83,6 +83,10 @@ function statsButtons(tall, extra = {}) {
     { rect: tall ? r(185, 404, 125, 44) : r(293, 254, 115, 28), label: 'No', action: 'resetNo', show: asking, ...extra },
   ];
 }
+/** The title's drop shadow colour. */
+const TITLE_SHADOW = '#7d5545';
+/** The title screen's sound switch, a speaker in the top right corner. */
+const SOUND_BUTTON = { wide: r(538, 8, 30, 26), tall: r(320, 6, 34, 30) };
 /** The title screen's buttons. Play opens the mode picker (the 'modes' screen) over it. */
 const MENU = [['Play', 'play'], ['Change Truck', 'garage'], ['High Scores', 'stats'], ['Options', 'options'], ['How to Play', 'help']];
 /** The game modes, in the mode picker: [label, action, what it is]. */
@@ -186,7 +190,7 @@ function sandboxButtons(tall, tweaks, extra = {}) {
 }
 
 export const BUTTONS = {
-  title: MENU.map(([label, action], i) => ({ rect: r(223, 248 + 29 * i, 130, 25), label, action })),
+  title: [...MENU.map(([label, action], i) => ({ rect: r(223, 248 + 29 * i, 130, 25), label, action })), { rect: SOUND_BUTTON.wide, action: 'sound' }],
   modes: [
     ...MODES.map(([label, action], i) => ({ rect: modeRow(i, false), label, action })),
     { rect: modesBack(false), label: 'Back', action: 'back' },
@@ -233,7 +237,7 @@ const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
 const tallStage = (i) => ({ x: 64 + 80 * (i % 3), y: 80 + 80 * Math.floor(i / 3) });
 
 export const TALL_BUTTONS = {
-  title: MENU.map(([label, action], i) => ({ rect: r(60, 262 + 54 * i, 240, 42), label, action, ...T_BIG })),
+  title: [...MENU.map(([label, action], i) => ({ rect: r(60, 262 + 54 * i, 240, 42), label, action, ...T_BIG })), { rect: SOUND_BUTTON.tall, action: 'sound' }],
   modes: [
     ...MODES.map(([label, action], i) => ({ rect: modeRow(i, true), label, action, ...T_BIG })),
     { rect: modesBack(true), label: 'Back', action: 'back', ...T_BIG },
@@ -934,23 +938,63 @@ export class Renderer {
 
   /** The title screen. Its truck is drawn last, so knocked up high it goes in front of the words. */
   title(game, v) {
-    const shadow = 'rgba(38,38,38,0.85)';
+    const shadow = TITLE_SHADOW;
     const version = `v${VERSION}${BUILD === 'dev' ? '' : `  ·  ${BUILD}`}`;
     const small = { size: 12, weight: '700', color: 'rgba(255,255,255,0.8)', align: 'right', shadow: 'rgba(38,38,38,0.5)' };
     const P = this.tall ? TITLE_TRUCK.tall : TITLE_TRUCK.wide;
+    const big = { weight: '900', color: '#f5f5f5', shadow };
+    // Redux!, tilted, in the paint of the truck you've chosen
+    const redux = (x, y, size) => {
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(-14 * Math.PI / 180);
+      this.text('Redux!', 0, 0, { size, weight: '900', color: BODY_PAINTS[(game.look?.paint ?? 0) * 2] || BODY_PAINTS[0], shadow });
+      ctx.restore();
+    };
     if (this.tall) {
       const cx = TALL_W / 2;
-      this.fitText('funky truck', cx, 22, 340, { size: 54, weight: '900', color: '#f5f5f5', shadow });
-      this.text('UTAH', 334, 84, { size: 26, weight: '900', color: '#f5f5f5', shadow, align: 'right' });
+      this.fitText('funky truck', cx, 40, 340, { size: 54, ...big });
+      this.text('ARIZONA', 336, 98, { size: 34, ...big, align: 'right' });
+      redux(306, 140, 26);
       this.buttons('title', game);
+      this.soundIcon(SOUND_BUTTON.tall, game.soundOn);
       this.text(version, TALL_W - 8, 656, { ...small, size: 14 });
     } else {
-      this.text('funky truck', STAGE_W / 2, 18, { size: 62, weight: '900', color: '#f5f5f5', shadow });
-      this.text('UTAH', 470, 94, { size: 28, weight: '900', color: '#f5f5f5', shadow, align: 'right' });
+      this.text('funky truck', STAGE_W / 2, 18, { size: 62, ...big });
+      this.text('ARIZONA', 486, 88, { size: 38, ...big, align: 'right' });
+      redux(476, 130, 28);
       this.buttons('title', game);
+      this.soundIcon(SOUND_BUTTON.wide, game.soundOn);
       this.text(version, STAGE_W - 8, 430, small);
     }
     this.showTruck(game, v, P.x, P.y, P.k);
+  }
+
+  /** A speaker in the box `rect`: with sound waves when the sound is on, crossed out when it's off. */
+  soundIcon(rect, on) {
+    const ctx = this.ctx, k = rect.h / 26, x = rect.x + rect.w / 2 - 11 * k, y = rect.y + rect.h / 2;
+    for (const [dx, colour] of [[1.5 * k, TITLE_SHADOW], [0, '#f5f5f5']]) {
+      ctx.save();
+      ctx.translate(x + dx, y + dx);
+      ctx.scale(k, k);
+      ctx.fillStyle = colour; ctx.strokeStyle = colour;
+      ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(0, -4); ctx.lineTo(5, -4); ctx.lineTo(11, -9.5); ctx.lineTo(11, 9.5); ctx.lineTo(5, 4); ctx.lineTo(0, 4);
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      if (on) {
+        ctx.arc(12, 0, 5, -Math.PI / 3.2, Math.PI / 3.2);
+        ctx.moveTo(12 + 9.5 * Math.cos(Math.PI / 3), -9.5 * Math.sin(Math.PI / 3));
+        ctx.arc(12, 0, 9.5, -Math.PI / 3, Math.PI / 3);
+      } else {
+        ctx.moveTo(15, -5); ctx.lineTo(23, 5);
+        ctx.moveTo(23, -5); ctx.lineTo(15, 5);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   /** The mode picker: the title screen, dimmed, with a box of the modes over it. */

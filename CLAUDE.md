@@ -1,4 +1,4 @@
-# Funky Truck (web)
+# Funky Truck Arizona Redux (web)
 
 Browser monster-truck game hosted on GitHub Pages: https://petercdavidson.github.io/funky-truck-utah/
 Repo: petercdavidson/funky-truck-utah (public). Plain ES modules + 2D canvas. No build step, no

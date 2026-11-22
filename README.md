@@ -1,6 +1,6 @@
-# Funky Truck (web)
+# Funky Truck Arizona Redux
 
-A bouncy monster-truck game for the browser: drive across nine stages of Utah hills without
+A bouncy monster-truck game for the browser: drive across nine stages of desert hills without
 wrecking your truck. It works with a keyboard, a touchscreen or a gamepad, and runs as a static
 site on GitHub Pages.
 
@@ -236,6 +236,7 @@ saved to storage while a test parameter is set.
 | `src/render.js` | Draws everything on the canvas, and defines the clickable menu areas. |
 | `src/endless.js` | Endless Mode's course generator. |
 | `tools/editor.html` | A level editor for trying tile combinations (not part of the game): serve the repo and open `/tools/editor.html`. Paint tiles from the tile sheet, start from any stage or stunt track, see which tiles sit next to each one in the stages, show the collision lines and each tile's number, copy and stamp areas, shift the whole level by any number of tiles, shape the ground with the **Path** tool (a curve with draggable points and handles, kept on screen to compare with the ground; it picks the tiles that follow the curve and the fill below them, learned from the stages), and **Play** the level in the game (`index.html?test=custom`). Save and open levels as JSON files. |
+| `tools/make-icons.mjs` | Draws the site and app icons (`assets/icon-*.png`, `assets/favicon-32.png`) from the game's own truck, sky and ground tiles: serve the repo, then `node tools/make-icons.mjs`. |
 | `tools/map.html` | Draws whole tracks as maps, to scale, with the start, the finish (or a looping track's repeats), distance marks and the path a simulated driver takes: serve the repo and open `/tools/map.html` (the stunt tracks) or `/tools/map.html?stages=0,1,2`. |
 | `tools/make-stunts.mjs` | Builds Practice's stunt tracks into `assets/stunts.json` (stored a column at a time) from the stages' column shapes: `node tools/make-stunts.mjs`. |
 | `tools/tune-stunts.mjs` | Tries Mega Ramp designs in the game's physics with a simulated driver and ranks them by air time and speed. |

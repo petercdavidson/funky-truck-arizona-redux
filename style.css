@@ -58,7 +58,7 @@ html, body {
 .loading-title {
   font-size: clamp(36px, 9vw, 64px);
   font-weight: 900;
-  text-shadow: 3px 3px 0 rgba(38, 38, 38, 0.85);
+  text-shadow: 3px 3px 0 #7d5545;
 }
 .loading-track {
   width: min(60vw, 280px);

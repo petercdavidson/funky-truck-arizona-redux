@@ -1,8 +1,8 @@
 {
   "name": "funky-truck",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "private": true,
-  "description": "Funky Truck: a bouncy monster-truck game for the browser.",
+  "description": "Funky Truck Arizona Redux: a bouncy monster-truck game for the browser.",
   "type": "module",
   "scripts": {
     "start": "node tools/serve.mjs",
