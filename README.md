@@ -14,22 +14,28 @@ site on GitHub Pages.
 | **Practice** | One stage of your choice, played like Play, or one of three **stunt tracks** (Mega Ramp, Kicker Run, Sky Launch): huge speed and airtime for flips, where tricks always score. Options on the stage screen switch **Damage** off and play by **Classic** rules. Finishing offers **Again**, **Next**, **Stages** and **Menu**. |
 
 Outside Classic, the driving view fills the window, on a phone held either way up (the
-on-screen controls sit over the bottom of it). Close in, it shows the same width of the
-world (the original 576 units), so everyone sees the same distance ahead; a taller window shows
-more sky and ground, a wider one less. The backdrop scales up evenly to cover it. Classic keeps
-the original 576×448 view. The menus' backdrop fills the window, with the menu centred on it. In a window at least as
+on-screen controls sit over the bottom of it). Close in, it never shows less of the world than
+Classic's 576×448: a taller window shows more sky and ground, and a wider one more to each side
+(the truck keeps Classic's place in the middle 576). The backdrop scales up evenly to cover it.
+Classic keeps the original 576×448 view. The menus' backdrop fills the window, with the menu centred on it. In a window at least as
 tall as it is wide (a phone held upright, say), every menu switches to a tall layout: one column,
 with the title screen's options under the game modes, Practice's stages in a 3×3 grid, and
 everything scaled up to fill the width, so the buttons are much bigger.
 
 **Dynamic camera** (outside Classic; a switch on the title screen turns it off): it follows the
 truck exactly as the original camera does, keeping it in the same place on screen, but pulls the
-frame back when the truck keeps up a good speed or has been high in the air for a while, up to
-1.8 times as much of the world. The pull-back moves like a spring and reacts to smoothed speed and
-height (height fades in over the first second in the air), so bumps and short hops don't move it.
-The settings are `CAMERA` in `src/game.js`.
+frame back when the truck keeps up a good speed (mostly: full pull-back from speed comes at about
+120 km/h) or has been high in the air for a while, up to 1.8 times as much of the world. It never
+closes in tighter than the original view. The pull-back moves like a spring and reacts to smoothed
+speed and height (height fades in over the first second in the air), so bumps and short hops don't
+move it. While the truck rolls backwards, the frame also eases back a little (up to 100 units) to
+show where it's going. The settings are `CAMERA` in `src/game.js`.
 
-Outside Classic the HUD has a **speedometer** in km/h (64 px of the stage is 2.5 m).
+Outside Classic the HUD has a **speedometer** in km/h (64 px of the stage is 2.5 m). It reads 0
+while the truck is being dropped in at the start of a stage, until it first lands.
+
+The game-over box says how far the run got: the stage reached (Play and Classic), the stage
+(Practice), or the distance (Endless).
 
 **Garage**: choose the truck's body, paint, tyres and wheels. Choosing a body puts it in its own
 colour; Paint then gives it any other body's colour. Only the look changes: every body and tyre
@@ -46,10 +52,12 @@ truck stops looking stuck. A flip upright isn't a trick: tricks count again a se
 Outside Classic the body touching ground underneath it (the chassis bottoming out on a hard landing
 or a ramp) isn't a scrape: no damage, bail or scrape sound. Hitting the cab's roof or sides is.
 
-**One-button controls** (an option on the title screen, or Controls in the pause menu) use a
-single button: Space on a keyboard, or holding the middle of a touchscreen. On the ground it drives;
-in the air it tilts the truck back. On a touchscreen the right third drives while leaning forwards
-(for climbing) and the left third reverses. Classic always uses the original controls.
+**One Button / Touch Zones** (one option, on the title screen or as Controls in the pause menu;
+it's called One Button on a keyboard and Touch Zones on a touchscreen). On a keyboard, Space is the
+one button: on the ground it drives, and in the air it tilts the truck back. On a touchscreen the
+pedals go and the screen is in three zones: the middle drives, the right drives and tilts forwards,
+and the left reverses on the ground and tilts back in the air. A finger that slides into another
+zone switches to it. Classic always uses the original controls.
 
 It's plain JavaScript (ES modules) and a 2D canvas, with no build step and no npm dependencies.
 
@@ -66,7 +74,7 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | --- | --- | --- | --- |
 | Forwards / reverse | ↑ / ↓ (or W / S) | right-hand pedals | A or RT / B or LT |
 | Tilt back / forwards | ← / → (or A / D) | left-hand buttons | stick or d-pad |
-| One-button controls | Space | hold the middle (right: climb, left: reverse) | A |
+| One Button / Touch Zones | Space | middle: drive; right: drive + tilt forwards; left: reverse (tilt back in the air) | A |
 | Pause | P | ⏸ button | Start |
 | Flip upright (when offered) | R | Flip button | Y |
 | Play again (game over) | Space, Enter or Ctrl | Play Again button | A |
@@ -79,7 +87,7 @@ version is in the title screen's bottom-right corner; on the live site it's foll
 commit it was built from.
 
 The pause screen names the run (mode and stage, or distance in Endless) and has switches for
-sound and, outside Classic, the controls (Standard or One Button).
+sound and, outside Classic, the controls (Standard or One Button; on a touchscreen, Pedals or Touch Zones).
 
 The best scores, the options and the truck chosen in the garage (with each body's paint) are saved in the browser
 (`localStorage`).
@@ -161,6 +169,7 @@ saved to storage while a test parameter is set.
 | `src/game.js` | All game logic: truck physics, collisions, scoring, stages and the screen state machine. No DOM access, so tests run it under Node. |
 | `src/render.js` | Draws everything on the canvas, and defines the clickable menu areas. |
 | `src/endless.js` | Endless Mode's course generator. |
+| `tools/map.html` | Draws whole tracks as maps, to scale, with the start, finish and every 50 m: serve the repo and open `/tools/map.html` (the stunt tracks) or `/tools/map.html?stages=0,1,2`. |
 | `tools/make-stunts.mjs` | Builds Practice's stunt tracks into `assets/stunts.json` from the stages' column shapes: `node tools/make-stunts.mjs`. |
 | `src/audio.js`, `src/sound-events.js` | Synthesised sound, and the watcher that turns game events into sound cues. |
 | `sounds.html` | A page for hearing every sound. |

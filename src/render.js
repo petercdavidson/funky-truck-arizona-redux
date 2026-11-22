@@ -31,7 +31,7 @@ const option = (y, label, action) => ({ rect: r(428, y, 132, 20), label, action,
 
 const TITLE_OPTIONS = [
   [(g) => `♪ Sound: ${onOff(g.soundOn)}`, 'sound'],
-  [(g) => `One Button: ${onOff(g.oneButton)}`, 'oneButton'],
+  [(g, r) => `${r?.touchMode ? 'Touch Zones' : 'One Button'}: ${onOff(g.oneButton)}`, 'oneButton'],
   [(g) => `Dynamic Camera: ${onOff(g.dynamicCamera)}`, 'dynamicCamera'],
 ];
 const MODES = [['Play', 'play'], ['Classic', 'classic'], ['Endless', 'endless'], ['Practice', 'practice'], ['Change Truck', 'garage']];
@@ -48,6 +48,9 @@ const stuntButtons = (place, extra = {}) => Array.from({ length: STUNTS }, (_, i
 /** The garage's note that the truck's look is only a look. */
 const COSMETIC = 'Looks only: every truck drives exactly the same';
 
+/** The controls in use, by the names the player sees: on a touch screen the pedals or the touch zones. */
+const controlsName = (g, r) => (r?.touchMode ? (g.oneButton ? 'Touch Zones' : 'Pedals') : (g.oneButton ? 'One Button' : 'Standard'));
+
 /**
  * The pause menu's buttons, placed by `place(i)`. Each kind of run gets its own column: Endless
  * can end the run, and Classic has no controls switch (it always uses the original controls).
@@ -59,7 +62,7 @@ function pauseButtons(place) {
     kind === 'endless' && { label: 'End Run', action: 'endRun' },
     { label: 'Quit to Menu', action: 'menu' },
     { label: (g) => `Sound: ${onOff(g.soundOn)}`, action: 'sound' },
-    kind !== 'classic' && { label: (g) => `Controls: ${g.oneButton ? 'One Button' : 'Standard'}`, action: 'oneButton' },
+    kind !== 'classic' && { label: (g, r) => `Controls: ${controlsName(g, r)}`, action: 'oneButton' },
   ].filter(Boolean).map((b, i) => ({ ...b, rect: place(i), show: when })));
 }
 
@@ -156,6 +159,18 @@ export function runName(game) {
   return `Practice  ·  ${stage}${rules.length ? `  (${rules.join(', ')})` : ''}`;
 }
 
+/**
+ * For the game-over box: where the run got to. A wreck in Play or Classic says how far through the
+ * nine stages it got; Practice names its stage. Endless already shows its distance.
+ */
+export function reachedLine(game) {
+  if (game.mode === 'endless') return '';
+  const stage = game.stageName(game.level);
+  const n = game.data.levels.length;
+  if (game.mode === 'campaign') return game.wrecked ? `Got to stage ${game.level + 1} of ${n}` : `All ${n} stages`;
+  return stage;
+}
+
 /** The button at (x, y) in menu coordinates (see Renderer.toMenu), or null. */
 export function hitButton(screen, x, y, game, tall = false) {
   return buttonsFor(screen, tall).find((b) => (!b.show || b.show(game))
@@ -184,33 +199,35 @@ export class Renderer {
 
   /**
    * Work out how the view fits the canvas. Driving in Classic shows the original 576x448 stage,
-   * letterboxed. Everything else fills the window: it always shows the same 576 units across
-   * (what matters for seeing the terrain ahead), and as much height as the window's shape gives.
-   * Menus are drawn on a page centred in that view: the original 576x448 stage, or in a view at
-   * least as tall as it is wide, the screen's tall layout (TALL_W across), scaled up to fill the
-   * width. Sets game.viewH so the camera knows.
+   * letterboxed. Everything else fills the window: it never shows less than Classic's 576x448,
+   * and shows more one way to match the window's shape (more sky and ground in a tall window,
+   * more to each side in a wide one). Menus are drawn on a page centred in that view: the original
+   * 576x448 stage, or in a view at least as tall as it is wide, the screen's tall layout (TALL_W
+   * across), scaled up to fill the width. Sets game.viewW and viewH so the camera knows.
    */
   layout(game) {
     const W = this.canvas.width, H = this.canvas.height;
     const screen = game ? game.screen : 'title';
     const letterbox = !!game && game.rules.classic && FILL_SCREENS.has(screen);
+    const fill = Math.min(W / STAGE_W, H / STAGE_H);
+    this.scale = fill;
     if (!letterbox) {
-      this.scale = W / STAGE_W;
-      this.viewH = H / this.scale;
+      this.viewW = W / fill;
+      this.viewH = H / fill;
       this.offX = 0; this.offY = 0;
     } else {
-      this.scale = Math.min(W / STAGE_W, H / STAGE_H);
+      this.viewW = STAGE_W;
       this.viewH = STAGE_H;
       this.offX = Math.round((W - STAGE_W * this.scale) / 2);
       this.offY = Math.round((H - STAGE_H * this.scale) / 2);
     }
     this.tall = this.viewH >= TALL_FROM && screen in TALL_H;
     this.page = this.tall ? { w: TALL_W, h: TALL_H[screen] } : { w: STAGE_W, h: STAGE_H };
-    // The page fills the width if it can, and shrinks to fit a short view.
-    this.menuK = Math.min(STAGE_W / this.page.w, this.viewH / this.page.h);
-    // The camera always knows the filled view's height (Classic uses 448 regardless), so a stage
-    // started from a menu begins with its camera in the right place.
-    if (game) game.viewH = H * STAGE_W / W;
+    // The page is as big as fits.
+    this.menuK = Math.min(this.viewW / this.page.w, this.viewH / this.page.h);
+    // The camera always knows the filled view's size (Classic uses 576x448 regardless), so a
+    // stage started from a menu begins with its camera in the right place.
+    if (game) { game.viewW = W / fill; game.viewH = H / fill; }
   }
 
   /** Convert a point in canvas CSS pixels to menu (page) coordinates. */
@@ -218,13 +235,13 @@ export class Renderer {
     const dx = cssX / this.cssPerDevice, dy = cssY / this.cssPerDevice;
     const x = (dx - this.offX) / this.scale, y = (dy - this.offY) / this.scale;
     const k = this.menuK, P = this.page;
-    return [(x - STAGE_W / 2) / k + P.w / 2, (y - this.viewH / 2) / k + P.h / 2];
+    return [(x - this.viewW / 2) / k + P.w / 2, (y - this.viewH / 2) / k + P.h / 2];
   }
 
   /** The inverse of toMenu: a point in menu coordinates to canvas CSS pixels. */
   fromMenu(x, y) {
     const k = this.menuK, P = this.page;
-    const sx = (x - P.w / 2) * k + STAGE_W / 2, sy = (y - P.h / 2) * k + this.viewH / 2;
+    const sx = (x - P.w / 2) * k + this.viewW / 2, sy = (y - P.h / 2) * k + this.viewH / 2;
     return [(sx * this.scale + this.offX) * this.cssPerDevice, (sy * this.scale + this.offY) * this.cssPerDevice];
   }
 
@@ -237,7 +254,7 @@ export class Renderer {
   /** Switch to menu coordinates: the page, centred (and scaled to fit) in the view. */
   menuTransform() {
     const ctx = this.ctx, k = this.menuK, P = this.page;
-    ctx.translate(STAGE_W / 2, this.viewH / 2);
+    ctx.translate(this.viewW / 2, this.viewH / 2);
     ctx.scale(k, k);
     ctx.translate(-P.w / 2, -P.h / 2);
   }
@@ -329,7 +346,7 @@ export class Renderer {
       if (b.show && !b.show(game)) continue;
       const { x, y, w, h } = b.rect;
       if (b.label) {
-        const label = typeof b.label === 'function' ? b.label(game) : b.label;
+        const label = typeof b.label === 'function' ? b.label(game, this) : b.label;
         const size = b.size || (b.small ? 10 : 11.5);
         this.roundRect(x, y, w, h, this.tall ? 6 : 4, b.small ? 'rgba(107, 74, 64, 0.7)' : BUTTON_FILL);
         this.fitText(label.toUpperCase(), x + w / 2, y + h / 2 - size * 0.55, w - 8, { size, weight: '800' });
@@ -425,14 +442,14 @@ export class Renderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.save();
     ctx.beginPath();
-    ctx.rect(this.offX, this.offY, Math.round(STAGE_W * this.scale), Math.round(this.viewH * this.scale));
+    ctx.rect(this.offX, this.offY, Math.round(this.viewW * this.scale), Math.round(this.viewH * this.scale));
     ctx.clip();
     const s = this.scale / zoom;
     const tx0 = Math.floor(camX / TILE), ty0 = Math.floor(camY / TILE);
     const edgeX = (gx) => Math.round((gx * TILE - camX) * s) + this.offX;
     const edgeY = (gy) => Math.round((gy * TILE - camY) * s) + this.offY;
     const rows = Math.ceil(this.viewH * zoom / TILE) + 1;
-    const cols = Math.ceil(STAGE_W * zoom / TILE) + 1;
+    const cols = Math.ceil(this.viewW * zoom / TILE) + 1;
     for (let c = 0; c < cols; c++) {
       const gx = tx0 + c;
       if (gx < 0 || gx >= level.width) continue;
@@ -458,14 +475,14 @@ export class Renderer {
 
   world(game, v) {
     const ctx = this.ctx;
-    // The backdrop is scaled up evenly to cover a taller view, and centred.
-    const bg = this.a.images['bg.jpg'], k = Math.max(1, this.viewH / STAGE_H);
-    ctx.drawImage(bg, (STAGE_W - STAGE_W * k) / 2, (this.viewH - STAGE_H * k) / 2, STAGE_W * k, STAGE_H * k);
+    // The backdrop is scaled up evenly to cover a taller or wider view, and centred.
+    const bg = this.a.images['bg.jpg'], k = Math.max(1, this.viewH / STAGE_H, this.viewW / STAGE_W);
+    ctx.drawImage(bg, (this.viewW - STAGE_W * k) / 2, (this.viewH - STAGE_H * k) / 2, STAGE_W * k, STAGE_H * k);
     const zoom = game.rules.classic ? 1 : v.zoom || 1;
     this.tiles(game.levelData, v.camX, v.camY, zoom);
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, STAGE_W, this.viewH);
+    ctx.rect(0, 0, this.viewW, this.viewH);
     ctx.clip();
     ctx.scale(1 / zoom, 1 / zoom);
     ctx.translate(-v.camX, -v.camY);
@@ -488,6 +505,7 @@ export class Renderer {
     // The label's left edge lines up with the bar's.
     const label = { size: 15, font: HUD_FONT, weight: '800', align: 'left' };
     ctx.font = `${label.weight} ${label.size}px ${label.font}`;
+    ctx.textAlign = 'left'; // the measurement below depends on it
     this.text(name, 13.1 + ctx.measureText(name).actualBoundingBoxLeft, y, label);
     if (reading) this.text(reading, 99, y + 16.2, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', color: 'rgba(255,255,255,0.9)' });
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
@@ -497,25 +515,27 @@ export class Renderer {
   }
 
   hud(game) { // Symbol 305 / X3323
+    // The right-hand readouts keep to the view's right edge, however wide it is.
+    const R = this.viewW - 10;
     let y = 7.5;
     if (game.rules.damage) { this.meter('damage', game.damage / 1000, y); y += 34; }
     // Outside Classic: the speedometer, in km/h (the bar is full at SPEEDO_MAX).
     if (!game.rules.classic) this.meter('speed', game.speedKmh / SPEEDO_MAX, y, `${Math.round(game.speedKmh)} km/h`);
-    this.text('score', 566.5, 9, { size: 12.5, font: HUD_FONT, weight: '800', align: 'right' });
+    this.text('score', R + 0.5, 9, { size: 12.5, font: HUD_FONT, weight: '800', align: 'right' });
     const hud = { size: 12.85, font: HUD_FONT, weight: '800', align: 'right' };
-    this.text(String(game.score), 566, 22, hud);
-    if (game.mode === 'endless') this.text(`${game.metres} m`, 566, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
-    else this.text(`+${game.bonus}`, 566, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
+    this.text(String(game.score), R, 22, hud);
+    if (game.mode === 'endless') this.text(`${game.metres} m`, R, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
+    else this.text(`+${game.bonus}`, R, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
     const chain = game.tricks.chain;
     if (game.rules.classic) {
-      if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, 566, 46, { ...hud, color: 'rgba(255,255,255,0.9)' });
+      if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, R, 46, { ...hud, color: 'rgba(255,255,255,0.9)' });
     } else if (chain.length && game.screen !== 'gameOver') {
       const m = game.tricks.multiplier;
-      this.text(`+${game.tricks.chainPoints}${m > 1 ? `  x${m}` : ''}`, 566, 46, { ...hud, color: 'rgba(255,255,255,0.6)' });
-    } else if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, 566, 46, { ...hud, color: 'rgba(255,255,255,0.9)' });
+      this.text(`+${game.tricks.chainPoints}${m > 1 ? `  x${m}` : ''}`, R, 46, { ...hud, color: 'rgba(255,255,255,0.6)' });
+    } else if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, R, 46, { ...hud, color: 'rgba(255,255,255,0.9)' });
     if (!game.rules.classic) this.trickNames(game);
     if (game.tickerTimer > 0 && game.screen !== 'gameOver') {
-      this.text(game.ticker, STAGE_W / 2, 82, { size: 15, font: HUD_FONT, weight: '800' });
+      this.text(game.ticker, this.viewW / 2, 82, { size: 15, font: HUD_FONT, weight: '800' });
     }
   }
 
@@ -529,7 +549,7 @@ export class Renderer {
       const age = TRICK.showFor - bail.timer;
       ctx.save();
       ctx.globalAlpha = 0.75 * Math.min(1, bail.timer / 20, age / 6);
-      this.text('bail', STAGE_W / 2, 126, { size: 14, font: HUD_FONT, weight: 'italic 700', color: '#e4e4e4', shadow: 'rgba(38,38,38,0.6)' });
+      this.text('bail', this.viewW / 2, 126, { size: 14, font: HUD_FONT, weight: 'italic 700', color: '#e4e4e4', shadow: 'rgba(38,38,38,0.6)' });
       ctx.restore();
     }
     if (!show) return;
@@ -537,7 +557,7 @@ export class Renderer {
     const pop = 1 + 0.3 * Math.max(0, 1 - age / 7) ** 2;
     ctx.save();
     ctx.globalAlpha = Math.min(1, show.timer / 20, age / 3 + 0.3);
-    ctx.translate(STAGE_W / 2, 112);
+    ctx.translate(this.viewW / 2, 112);
     ctx.scale(pop, pop);
     this.text(show.names.join('  +  '), 0, -9, { size: 17, font: HUD_FONT, weight: '800', shadow: 'rgba(38,38,38,0.55)' });
     ctx.restore();
@@ -552,7 +572,7 @@ export class Renderer {
 
   /** The hint about the controls, for the title screen. */
   controlsHint(game) {
-    if (game.oneButton) return this.touchMode ? 'Hold the middle to drive (and tilt back in the air), the right to climb, the left to reverse' : 'Hold Space to drive, and to tilt back in the air  ·  P pauses  ·  Esc returns to the menu';
+    if (game.oneButton) return this.touchMode ? 'Hold the middle to drive, the right to drive and tilt forwards, the left to reverse (or tilt back in the air)' : 'Hold Space to drive, and to tilt back in the air  ·  P pauses  ·  Esc returns to the menu';
     return this.touchMode ? 'Use the on-screen pedals and tilt buttons to drive' : 'Arrow keys drive and tilt  ·  P pauses  ·  M sound  ·  Esc returns to the menu';
   }
 
@@ -601,11 +621,12 @@ export class Renderer {
     this.text(version, STAGE_W - 8, 430, small);
   }
 
-  help() {
+  help(game) {
     const keys = ['Forwards', 'Reverse', 'Tilt Back', 'Tilt Forwards'];
     const lines = ['Your truck is four-wheel drive.',
       'To climb steep hills, tilt forwards so that your front wheel stays on the ground.',
-      'One Button: hold Space (or the middle of the screen) to drive, and to tilt back in the air. On a touch screen, hold the right side to climb and the left side to reverse.'];
+      'One Button: hold Space to drive, and to tilt back in the air.',
+      'Touch Zones (on a touch screen): hold the middle to drive, the right to drive and tilt forwards, and the left to reverse, or to tilt back in the air.'];
     if (this.tall) {
       const k = 1.25, x0 = 72, y0 = 36;
       this.piece('screen_help.png', 205, 45, 62, 145, x0, y0, 62 * k, 145 * k); // the four arrow keycaps
@@ -613,7 +634,7 @@ export class Renderer {
       let y = this.wrapText('Press P to Pause', TALL_W / 2, 250, 320, { size: 16, weight: '600' });
       y += 18;
       for (const line of lines) y = this.wrapText(line, TALL_W / 2, y, 320, { size: 16, weight: '600' }, 21) + 14;
-      this.buttons('help');
+      this.buttons('help', game);
       return;
     }
     this.piece('screen_help.png', 205, 45, 62, 145); // the four arrow keycaps
@@ -622,7 +643,7 @@ export class Renderer {
     this.text('Press P to Pause', STAGE_W / 2, 202, line);
     let y = 250;
     for (const l of lines) y = this.wrapText(l, STAGE_W / 2, y, 540, { ...line, size: 13.5 }, 17) + 10;
-    this.buttons('help');
+    this.buttons('help', game);
   }
 
   garage(game, v) {
@@ -639,7 +660,7 @@ export class Renderer {
         this.text(name, TALL_W / 2, y + 14, { size: 19, weight: '700' });
       });
       this.text(COSMETIC, TALL_W / 2, 498, { size: 13, weight: '600', color: 'rgba(255,255,255,0.78)' });
-      this.buttons('garage');
+      this.buttons('garage', game);
       return;
     }
     this.box('screen_garage.png', 10, 10, 556, 25, 10, 10, 556, 25, 12); // title bar
@@ -653,7 +674,7 @@ export class Renderer {
       this.text(name, STAGE_W / 2, y + 8, { size: 14, weight: '700' });
     });
     this.text(COSMETIC, STAGE_W / 2, 378, { size: 12, weight: '600', color: 'rgba(255,255,255,0.78)' });
-    this.buttons('garage');
+    this.buttons('garage', game);
   }
 
   practiceSelect(game) {
@@ -682,7 +703,7 @@ export class Renderer {
     this.ctx.fillStyle = `rgba(0,0,0,${alpha})`;
     this.ctx.save();
     this.stageTransform();
-    this.ctx.fillRect(0, 0, STAGE_W, this.viewH);
+    this.ctx.fillRect(0, 0, this.viewW, this.viewH);
     this.ctx.restore();
   }
 
@@ -694,21 +715,25 @@ export class Renderer {
     const lines = game.mode === 'endless'
       ? [`${game.metres} m  ·  ${game.lastScore}`, `Best: ${game.bestEndless} m`]
       : [`Score: ${game.lastScore}`, game.rules.damage ? `Best: ${game.bestForRules}` : ''];
+    const where = reachedLine(game);
+    const whereStyle = { weight: '700', color: 'rgba(255,255,255,0.85)' };
     const hint = this.touchMode ? '' : 'or press Space / Ctrl';
     const hintStyle = { size: 11, weight: '600', color: 'rgba(255,255,255,0.78)' };
     if (this.tall) {
       const cx = TALL_W / 2;
       this.roundRect(20, 10, TALL_W - 40, 310, 12, 'rgba(140,97,79,0.96)', 'rgba(255,255,255,0.6)');
-      this.fitText(title, cx, 32, 290, { size: 36, weight: '900' });
-      lines.forEach((l, i) => l && this.fitText(l, cx, 100 + 32 * i, 290, { size: 20, weight: '600' }));
-      this.buttons('gameOver');
+      this.fitText(title, cx, 28, 290, { size: 36, weight: '900' });
+      if (where) this.fitText(where, cx, 80, 290, { ...whereStyle, size: 17 });
+      lines.forEach((l, i) => l && this.fitText(l, cx, 112 + 30 * i, 290, { size: 20, weight: '600' }));
+      this.buttons('gameOver', game);
       if (hint) this.text(hint, cx, 298, { ...hintStyle, size: 12 });
       return;
     }
     this.roundRect(158, 112, 260, 232, 10, 'rgba(140,97,79,0.96)', 'rgba(255,255,255,0.6)');
-    this.text(title, STAGE_W / 2, 128, { size: 30, weight: '900' });
-    lines.forEach((l, i) => l && this.text(l, STAGE_W / 2, 182 + 24 * i, { size: 17, weight: '600' }));
-    this.buttons('gameOver');
+    this.text(title, STAGE_W / 2, 124, { size: 30, weight: '900' });
+    if (where) this.fitText(where, STAGE_W / 2, 164, 240, { ...whereStyle, size: 14 });
+    lines.forEach((l, i) => l && this.text(l, STAGE_W / 2, 188 + 24 * i, { size: 17, weight: '600' }));
+    this.buttons('gameOver', game);
     if (hint) this.text(hint, STAGE_W / 2, 316, hintStyle);
   }
 
@@ -744,19 +769,24 @@ export class Renderer {
     if (MENU_SCREENS.has(game.screen)) ctx.drawImage(this.a.images['screen_plain.png'], 0, 0, this.canvas.width, this.canvas.height);
     this.stageTransform();
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, 0, STAGE_W, this.viewH);
-    ctx.clip();
-    if (!MENU_SCREENS.has(game.screen)) this.world(game, v);
-    if (game.screen !== 'playing') this.menuTransform();
-    switch (game.screen) {
-      case 'title': this.title(game, v); break;
-      case 'help': this.help(); break;
-      case 'garage': this.garage(game, v); break;
-      case 'practiceSelect': this.practiceSelect(game); break;
-      case 'paused': this.paused(game); break;
-      case 'gameOver': this.gameOver(game); break;
+    // Always restore, so a mistake in one screen's drawing can't leave the canvas's state (its
+    // text alignment, transform, clip) wrong for every frame after.
+    try {
+      ctx.beginPath();
+      ctx.rect(0, 0, this.viewW, this.viewH);
+      ctx.clip();
+      if (!MENU_SCREENS.has(game.screen)) this.world(game, v);
+      if (game.screen !== 'playing') this.menuTransform();
+      switch (game.screen) {
+        case 'title': this.title(game, v); break;
+        case 'help': this.help(game); break;
+        case 'garage': this.garage(game, v); break;
+        case 'practiceSelect': this.practiceSelect(game); break;
+        case 'paused': this.paused(game); break;
+        case 'gameOver': this.gameOver(game); break;
+      }
+    } finally {
+      ctx.restore();
     }
-    ctx.restore();
   }
 }

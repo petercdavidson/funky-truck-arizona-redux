@@ -494,7 +494,12 @@ test('a flip upright is not a trick, and tricks count again a moment after it la
   assert.ok(g.tricks.done > done, 'tricks count again');
 });
 
-test('the dynamic camera keeps the truck where the original camera would on screen', () => {
+test('the dynamic camera keeps the truck where the original camera would on screen', (t) => {
+  // (Leaving out the look back while reversing, which the driver here does when it rolls back off
+  // a hill; that has its own test.)
+  const lookBack = CAMERA.lookBack;
+  CAMERA.lookBack = 0;
+  t.after(() => { CAMERA.lookBack = lookBack; });
   for (const stage of [0, 1, 4, 5]) {
     const run = (dynamic) => {
       const g = new Game(data);
@@ -539,19 +544,63 @@ test('Endless scrolling the world never makes the camera jump', () => {
   assert.ok(worst < 25, `the truck moved up to ${worst.toFixed(0)} across the screen in one step`);
 });
 
-test('the speedometer reads the truck speed in km/h', () => {
+test('the speedometer reads the truck speed in km/h, from when it first lands', () => {
   assert.ok(Math.abs(KMH_PER_PX_STEP - 9.84375) < 1e-9, '1 px/step is about 9.8 km/h');
   const g = new Game(data);
   g.startCampaign();
   g.keys.up = true;
-  let max = 0;
+  let max = 0, landedAt = -1;
   for (let i = 0; i < 400; i++) {
     g.step();
     const t = g.truck, raw = Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]) * KMH_PER_PX_STEP;
-    if (i > 30) assert.ok(Math.abs(g.speedKmh - raw) < 25, `reads ${g.speedKmh.toFixed(0)}, truck doing ${raw.toFixed(0)}`);
+    if (!g.landed) { assert.equal(g.speedKmh, 0, `reads 0 while the truck is dropped in (falling at ${raw.toFixed(0)})`); continue; }
+    if (landedAt < 0) landedAt = i;
+    if (i > landedAt + 30) assert.ok(Math.abs(g.speedKmh - raw) < 25, `reads ${g.speedKmh.toFixed(0)}, truck doing ${raw.toFixed(0)}`);
     max = Math.max(max, g.speedKmh);
   }
   assert.ok(max > 40 && max < 200, `a sensible top speed (${max.toFixed(0)} km/h)`);
+  assert.ok(landedAt > 0, 'the truck landed');
+});
+
+test('reversing, the dynamic camera eases back a little to show where the truck is going', () => {
+  const frameX = (dynamic, classic = false) => {
+    const g = new Game(data);
+    g.dynamicCamera = dynamic;
+    g.startCampaign(classic);
+    g.keys.up = true; // away from the start, where the camera can't go any further left
+    settle(g, 250);
+    g.keys.up = false;
+    settle(g, 100);
+    const x0 = (g.truck.T[0] - g.camX) / g.zoom;
+    g.keys.down = true;
+    for (let i = 0; i < 200; i++) g.step();
+    assert.ok(g.truck.P[0] > g.truck.T[0], 'it is reversing');
+    return { before: x0, after: (g.truck.T[0] - g.camX) / g.zoom, back: g.back };
+  };
+  const dyn = frameX(true);
+  assert.ok(dyn.back > 0.5 && dyn.back <= 1, `eased back (${dyn.back.toFixed(2)})`);
+  assert.ok(dyn.after > dyn.before + 40 && dyn.after < dyn.before + CAMERA.lookBack + 30,
+    `the truck sits further right on screen, but not much (${dyn.before.toFixed(0)} -> ${dyn.after.toFixed(0)})`);
+  for (const [name, r] of [['camera off', frameX(false)], ['Classic', frameX(true, true)]]) {
+    assert.equal(r.back, 0, `${name}: no look back`);
+  }
+});
+
+test('the view never shows less than Classic, and a wide one centres the usual frame', () => {
+  const g = new Game(data);
+  g.viewW = 1000; g.viewH = 448;
+  g.dynamicCamera = false;
+  g.startCampaign();
+  g.keys.up = true; // away from the start, where the camera can't go any further left
+  settle(g, 250);
+  g.keys.up = false;
+  settle(g, 100);
+  const x = g.truck.T[0] - g.camX;
+  assert.ok(Math.abs(x - (150 + (1000 - 576) / 2)) < 30, `the truck sits ${x.toFixed(0)} from the left of a 1000-wide view`);
+  const c = new Game(data);
+  c.viewW = 1000; c.viewH = 900;
+  c.startCampaign(true);
+  assert.equal(c.viewW, 576); assert.equal(c.viewH, 448);
 });
 
 test('Practice offers the stunt tracks after the nine stages; they can be finished and score only tricks', () => {
@@ -584,4 +633,48 @@ test('Practice offers the stunt tracks after the nine stages; they can be finish
   assert.ok(g.hasNextPractice, 'Stage Nine leads on to the first stunt track');
   g.nextPractice();
   assert.equal(g.levelData, stunts[0]);
+});
+
+test('touch zones: the left zone reverses on the ground and tilts back in the air', () => {
+  const g = new Game(data);
+  g.toggle('oneButton');
+  g.startCampaign();
+  g.keys.up = true;
+  settle(g, 250);
+  g.keys.up = false;
+  settle(g, 140);
+  const x0 = g.truck.T[0];
+  g.keys.back = true;
+  settle(g, 140);
+  assert.ok(g.truck.T[0] < x0 - 20, `reversed (${x0.toFixed(0)} -> ${g.truck.T[0].toFixed(0)})`);
+  g.keys.back = false;
+  settle(g, 140);
+  const t = g.truck;
+  for (let i = 1; i < 10; i += 2) t.P[i] = t.T[i] + 6; // throw it up into the air
+  for (let i = 0; i < 8; i++) g.step();
+  const r0 = t.bodyRot;
+  g.keys.back = true;
+  for (let i = 0; i < 15; i++) g.step();
+  assert.ok(t.bodyRot < r0 - 10, `tilted back (${r0.toFixed(1)} -> ${t.bodyRot.toFixed(1)})`);
+});
+
+test('every screen\'s buttons can be shown for every kind of run', async () => {
+  const { BUTTONS, TALL_BUTTONS, reachedLine } = await import('../src/render.js');
+  const g = new Game(data);
+  const runs = [() => g.startCampaign(), () => g.startCampaign(true), () => g.startEndless(), () => g.startPractice(2)];
+  for (const start of runs) {
+    start();
+    g.wrecked = true;
+    for (const layout of [BUTTONS, TALL_BUTTONS]) {
+      for (const [screen, list] of Object.entries(layout)) {
+        for (const b of list) {
+          if (b.show) b.show(g);
+          if (typeof b.label === 'function') assert.equal(typeof b.label(g, { touchMode: true }), 'string', `${screen} ${b.action}`);
+        }
+      }
+    }
+    assert.equal(typeof reachedLine(g), 'string');
+  }
+  g.startCampaign(); g.level = 2; g.wrecked = true;
+  assert.equal(reachedLine(g), 'Got to stage 3 of 9');
 });

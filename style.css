@@ -167,19 +167,28 @@ body[data-screen="playing"] #corner { display: flex; }
 }
 body[data-upright="1"] #corner #upright-button { display: grid !important; }
 
-/* One-button controls on a touch screen: hide the pedals, and the whole screen is the button. */
+/* Touch zones (the one-button option on a touch screen): hide the pedals; the whole screen is in three parts. */
 #tap { display: none; position: fixed; inset: 0; z-index: 2; touch-action: none; }
 body.touch-mode[data-onebutton="1"][data-screen="playing"] #tap { display: grid; }
-/* Its three parts (left reverses, middle is the one button, right climbs), labelled faintly. */
+/* Its three parts (left reverses or tilts back, middle drives, right drives and tilts forwards),
+   labelled faintly, with short dividers down at the labels only, clear of the driving view. */
 #tap { grid-template-columns: 1fr 1fr 1fr; }
 #tap .zone {
+  position: relative;
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding-bottom: calc(var(--edge-b) + 6px);
+  padding: 0 8px calc(var(--edge-b) + 6px);
   pointer-events: none;
 }
-#tap .zone + .zone { border-left: 1px dashed rgba(255, 255, 255, 0.18); }
+#tap .zone + .zone::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: var(--edge-b);
+  height: 34px;
+  border-left: 1px dashed rgba(255, 255, 255, 0.3);
+}
 #tap .zone span {
   font-size: 13px;
   font-weight: 700;

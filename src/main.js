@@ -171,27 +171,32 @@ for (const btn of touchUI.querySelectorAll('[data-key]')) {
   }
 }
 
-// One-button controls on a touch screen: the screen (apart from the buttons) is in three parts.
-// The middle is the one button: it drives on the ground and tilts back in the air. The right
-// third drives while leaning forwards, for climbing, and the left third reverses. Each finger
-// keeps the part it first touched.
+// Touch zones (the one-button option on a touch screen): the screen (apart from the buttons) is in
+// three parts. The middle drives (on the ground or in the air), the right drives and tilts forwards
+// (clockwise), and the left tilts back (anticlockwise) in the air and reverses on the ground (the
+// game decides which: the `back` key). A finger that slides into another part switches to it.
 {
   const tap = document.getElementById('tap');
   const pointers = new Map(); // pointerId -> 'left' | 'middle' | 'right'
+  const zoneAt = (e) => { const x = e.clientX / window.innerWidth; return x < 1 / 3 ? 'left' : x > 2 / 3 ? 'right' : 'middle'; };
   const update = () => {
     const zones = new Set(pointers.values());
-    touchKeys.one = zones.has('middle');
-    touchKeys.up = touchKeys.right = zones.has('right');
-    touchKeys.down = zones.has('left');
+    touchKeys.up = zones.has('middle') || zones.has('right');
+    touchKeys.right = zones.has('right');
+    touchKeys.back = zones.has('left');
     combineKeys();
   };
   tap.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     setTouchMode(true);
     tap.setPointerCapture?.(e.pointerId);
-    const x = e.clientX / window.innerWidth;
-    pointers.set(e.pointerId, x < 1 / 3 ? 'left' : x > 2 / 3 ? 'right' : 'middle');
+    pointers.set(e.pointerId, zoneAt(e));
     update();
+  });
+  tap.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    const zone = zoneAt(e);
+    if (pointers.get(e.pointerId) !== zone) { pointers.set(e.pointerId, zone); update(); }
   });
   for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) {
     tap.addEventListener(ev, (e) => { pointers.delete(e.pointerId); update(); });
@@ -280,7 +285,7 @@ let last = 0, acc = 0, prev = null, seenTeleport = -1, seenShift = 0;
 let viewKey = '';
 function placeView() {
   const rect = canvas.getBoundingClientRect(), k = renderer.cssPerDevice;
-  const x = rect.left + renderer.offX * k, y = rect.top + renderer.offY * k, w = 576 * renderer.scale * k;
+  const x = rect.left + renderer.offX * k, y = rect.top + renderer.offY * k, w = renderer.viewW * renderer.scale * k;
   const key = `${x.toFixed(1)},${y.toFixed(1)},${w.toFixed(1)}`;
   if (key === viewKey) return;
   viewKey = key;
@@ -320,11 +325,12 @@ function frame(now) {
   if (game.screen !== 'playing') { engineState = { on: false }; scrapeState = { on: false, speed: 0 }; }
   sound.updateEngine(engineState);
   sound.updateScrape(scrapeState);
+  // Tell the page which screen this is before drawing, so the on-screen controls always match it.
+  const ds = document.body.dataset;
+  if (ds.screen !== game.screen) ds.screen = game.screen;
   const cur = snapshot();
   const t = game.screen === 'playing' || game.screen === 'title' || game.screen === 'garage' ? Math.min(acc / DT, 1) : 1;
   renderer.draw(game, prev ? lerpView(prev, cur, t) : cur);
-  const ds = document.body.dataset;
-  if (ds.screen !== game.screen) ds.screen = game.screen;
   const one = game.oneButtonActive ? '1' : '0', up = game.canUpright && game.screen === 'playing' ? '1' : '0';
   if (ds.onebutton !== one) ds.onebutton = one;
   if (ds.upright !== up) ds.upright = up;

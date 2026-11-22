@@ -33,6 +33,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `assets/stunts.json`: Practice's stunt tracks (after the nine stages), built by
   `node tools/make-stunts.mjs` from the stages' own column shapes and joins. Edit the designs in
   that script and rerun it; don't hand-edit the JSON.
+- `tools/map.html`: draws whole tracks as maps (serve the repo, open `/tools/map.html?stages=9,10,11`).
 - `tests/bot.mjs`: a simulated driver (backs up for run-ups when it stalls) for checking that
   generated courses can be driven. Endless never climbs more than `MAX_RISE` tiles within
   `RISE_SPAN` columns (`src/endless.js`); keep it that way so there are no unclimbable walls.

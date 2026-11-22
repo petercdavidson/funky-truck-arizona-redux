@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Funky Truck maps</title>
+  <!--
+    Draws whole tracks as maps, true to scale: the stunt tracks by default, or ?stages=0,1,9 (an
+    index as Practice counts them: 0-8 the stages, 9 on the stunt tracks). ?width=2400 sets the
+    picture's width in pixels. Serve the repo (npm start) and open /tools/map.html.
+  -->
+  <style>
+    body { margin: 0; background: #1d1a19; color: #f2ece8; font: 600 15px "Avenir Next", system-ui, sans-serif; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="map"></canvas>
+  <script type="module">
+    import { loadAssets } from '../src/assets.js';
+    import { TILE, METRES_PER_TILE, STAGE_NAMES } from '../src/game.js';
+
+    const q = new URLSearchParams(location.search);
+    const a = await loadAssets('../assets/');
+    const all = [...a.levels.levels, ...a.levels.stunts];
+    const names = (i) => (i < 9 ? STAGE_NAMES[i] : all[i].name);
+    const picks = (q.get('stages') || '9,10,11').split(',').map(Number).filter((i) => all[i]);
+    const W = Number(q.get('width')) || 2400;
+    const PAD = 24, HEAD = 46, GAP = 30;
+
+    /** The rows from a little above the highest ground to a little below the lowest ground's surface. */
+    function rowsUsed(level) {
+      let top = level.height, bottom = 0;
+      for (let x = 0; x < level.width; x++) {
+        let y = 0;
+        while (y < level.height && !level.tiles[y][x]) y++;
+        if (y < level.height) { top = Math.min(top, y); bottom = Math.max(bottom, y); }
+      }
+      return [Math.max(0, top - 2), Math.min(level.height, bottom + 3)];
+    }
+
+    // One scale for every map, so they compare: the longest fills the width.
+    const k = (W - 2 * PAD) / Math.max(...picks.map((i) => all[i].width * TILE));
+    const blocks = picks.map((i) => {
+      const lv = all[i], [r0, r1] = rowsUsed(lv);
+      const sr = Math.min(r0, Math.floor(lv.start[1] / TILE) - 2); // keep the drop-in point in view
+      return { i, lv, r0: Math.max(0, sr), r1, h: (r1 - Math.max(0, sr)) * TILE * k };
+    });
+    const H = blocks.reduce((s, b) => s + HEAD + b.h + GAP, PAD);
+    const c = document.getElementById('map');
+    c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#1d1a19'; ctx.fillRect(0, 0, W, H);
+
+    let y = PAD;
+    for (const b of blocks) {
+      const { lv, r0, r1 } = b, w = lv.width * TILE * k;
+      const metres = Math.round((lv.width - 9) * METRES_PER_TILE);
+      ctx.fillStyle = '#f2ece8'; ctx.font = '800 22px "Avenir Next", system-ui, sans-serif'; ctx.textBaseline = 'top';
+      ctx.fillText(`${names(b.i)}`, PAD, y);
+      ctx.font = '600 15px "Avenir Next", system-ui, sans-serif'; ctx.fillStyle = 'rgba(242,236,232,0.7)';
+      ctx.fillText(`${metres} m to the finish  ·  ${(r1 - r0) * METRES_PER_TILE} m top to bottom shown`, PAD + ctx.measureText(names(b.i)).width * 1.5 + 24, y + 6);
+      y += HEAD;
+      const ox = PAD, oy = y - r0 * TILE * k;
+      // sky
+      const sky = ctx.createLinearGradient(0, y, 0, y + b.h);
+      sky.addColorStop(0, '#6f8fae'); sky.addColorStop(1, '#c9a48a');
+      ctx.fillStyle = sky; ctx.fillRect(ox, y, w, b.h);
+      // tiles
+      ctx.save();
+      ctx.beginPath(); ctx.rect(ox, y, w, b.h); ctx.clip();
+      for (let r = r0; r < r1; r++) {
+        for (let x = 0; x < lv.width; x++) {
+          const id = lv.tiles[r][x];
+          if (id) ctx.drawImage(a.tiles[id], ox + x * TILE * k, oy + r * TILE * k, TILE * k + 0.5, TILE * k + 0.5);
+        }
+      }
+      // every 50 m
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1;
+      ctx.font = '700 12px "Avenir Next", system-ui, sans-serif';
+      for (let m = 50; m < metres; m += 50) {
+        const x = ox + (m / METRES_PER_TILE) * TILE * k;
+        ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(x + 0.5, y); ctx.lineTo(x + 0.5, y + b.h); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillText(`${m} m`, x + 4, y + 4);
+      }
+      // start (where the truck is dropped in) and finish line
+      const sx = ox + lv.start[0] * k, sy = oy + lv.start[1] * k;
+      ctx.fillStyle = '#ffd54a'; ctx.beginPath(); ctx.arc(sx, sy, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = '800 13px "Avenir Next", system-ui, sans-serif'; ctx.fillText('START', sx + 10, Math.max(y + 22, sy - 7));
+      const fx = ox + (lv.width - 9) * TILE * k;
+      ctx.strokeStyle = '#ffd54a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(fx, y); ctx.lineTo(fx, y + b.h); ctx.stroke();
+      ctx.fillText('FINISH', fx + 6, y + 4);
+      ctx.restore();
+      y += b.h + GAP;
+    }
+    document.title = 'ready';
+  </script>
+</body>
+</html>

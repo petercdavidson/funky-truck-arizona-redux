@@ -420,8 +420,9 @@ function validCount(v) {
 }
 
 export function emptyKeys() {
-  // `one` is the single button of the one-button controls.
-  return { up: false, down: false, left: false, right: false, pause: false, restart: false, one: false, upright: false };
+  // `one` is the single button of the one-button controls. `back` is the touch zones' left zone:
+  // reverse on the ground, tilt back in the air.
+  return { up: false, down: false, left: false, right: false, pause: false, restart: false, one: false, back: false, upright: false };
 }
 
 /**
@@ -438,9 +439,11 @@ export const RULES = {
 
 /**
  * The dynamic camera (outside Classic, when switched on): it pulls back to show more when the
- * truck is going fast or has been high above the ground for a while, and closes in again when it
- * settles. `zoom` is how many times the usual view it shows (1 = the original 576 across). It
- * follows the truck just as the original camera does, with the frame scaled by the zoom.
+ * truck is going fast (mostly) or has been high above the ground for a while, and closes in again
+ * when it settles. `zoom` is how many times the usual view it shows (1 = the usual view, never
+ * less than Classic's 576x448). It follows the truck just as the original camera does, with the
+ * frame scaled by the zoom. While the truck rolls backwards it also eases the frame back a little
+ * (`lookBack` stage units at most), so you can see where you're reversing to.
  *
  * The zoom moves like a spring, so it never starts or stops suddenly: speed, height and zoom are
  * each followed by a critically damped spring, and height fades in over the first second in the
@@ -449,11 +452,12 @@ export const RULES = {
  */
 export const CAMERA = {
   maxZoom: 1.8,
-  speedFrom: 5, speedTo: 13, speedZoom: 0.3,       // px per step: no pull-back at 5, full at 13
-  heightFrom: 80, heightTo: 600, heightZoom: 0.65, // px above the ground
+  speedFrom: 5, speedTo: 12, speedZoom: 0.65,      // px per step (~10 km/h each): none at 5, full at 12
+  heightFrom: 80, heightTo: 600, heightZoom: 0.35, // px above the ground
   airFrom: 10, airTo: 70,                          // height fades in between these steps in the air
   speedW: 0.035, heightW: 0.05, zoomW: 0.045,      // springs for the smoothed speed, height and zoom
   maxRate: 0.006,                                  // most the zoom changes in one step
+  lookBack: 100, backFrom: 1, backTo: 4, backW: 0.025, // reversing: px per step backwards, and its spring
 };
 
 /** Flip-upright assist: steps of being stuck before the button appears. */
@@ -469,7 +473,7 @@ export const TRICK_COOLDOWN = 70;
  */
 const UNDERSIDE = 0.42;
 const RIGHTING_STEPS = 80;
-const ONE_BUTTON_AIR = 4;        // steps off the ground before one-button controls tilt instead
+const ONE_BUTTON_AIR = 4;        // steps off the ground before one-button and touch-zone controls count as in the air
 
 /**
  * Screens: 'title' | 'help' | 'garage' | 'practiceSelect' | 'playing' | 'paused' | 'gameOver'
@@ -539,9 +543,12 @@ export class Game {
     this.ground = 0; this.groundV = 0;     // smoothed height above the ground
     this.camSpeed = 0; this.camSpeedV = 0; // smoothed speed
     this.zoomV = 0;
-    // How much of the world the driving view shows top to bottom (at zoom 1) when it fills the
-    // window: the renderer keeps it up to date with the window's shape, even on the menus, so a
-    // stage starts with its camera in the right place. Classic always shows 448 (see viewH).
+    this.back = 0; this.backV = 0;         // how far the camera has eased back for reversing (0-1)
+    // How much of the world the driving view shows across and top to bottom (at zoom 1) when it
+    // fills the window: never less than Classic's 576x448, and more one way to match the window's
+    // shape. The renderer keeps these up to date, even on the menus, so a stage starts with its
+    // camera in the right place. Classic always shows 576x448 (see viewW, viewH).
+    this.fillViewW = STAGE_W;
     this.fillViewH = STAGE_H;
     this.dirt = [];                   // Z5D11
     for (let i = 0; i < 16; i++) this.dirt.push({ life: 0, x: 0, y: 0, vx: 0, vy: 0, frame: 0, scale: 1, alpha: 1 });
@@ -562,6 +569,12 @@ export class Game {
   /** How much of the world shows top to bottom at zoom 1. It only moves the camera. */
   get viewH() { return this.rules.classic ? STAGE_H : this.fillViewH; }
   set viewH(h) { this.fillViewH = h; }
+  /** How much of the world shows across at zoom 1. It only moves the camera. */
+  get viewW() { return this.rules.classic ? STAGE_W : this.fillViewW; }
+  set viewW(w) { this.fillViewW = w; }
+  /** Where the camera keeps the truck across the view (at zoom 1): 150 from the left of a
+   *  Classic-sized view, centred in a wider one, and eased right a little while reversing. */
+  get camAnchorX() { return 150 + (this.viewW - STAGE_W) / 2 + this.back * CAMERA.lookBack; }
 
   get levelData() {
     if (this.mode === 'endless') return this.course.level;
@@ -574,7 +587,7 @@ export class Game {
   get isStunt() { return this.mode === 'practice' && this.level >= this.data.levels.length; }
   /** The name of stage `i` of Practice: "Stage One" ... "Stage Nine", then the stunt tracks. */
   stageName(i) { return i < this.data.levels.length ? STAGE_NAMES[i] : this.stunts[i - this.data.levels.length]?.name ?? ''; }
-  get maxCamX() { return this.levelData.width * TILE - STAGE_W * this.zoom; }   // N53D4
+  get maxCamX() { return this.levelData.width * TILE - this.viewW * this.zoom; }   // N53D4
   get maxCamY() { return this.levelData.height * TILE - this.viewH * this.zoom; }  // o64D4
 
   saveLook() { this.store.set('truckLook', { ...this.look }); }
@@ -639,13 +652,15 @@ export class Game {
     this.world = this.makeWorld();
     this.wreck = null;
     this.stuck = 0; this.canUpright = false; this.righting = 0; this.airSteps = 0;
+    this.landed = false; // the truck is dropped in at the start; until it lands it isn't driving
     this.uprightLinger = 0; this.trickCooldown = 0;
     const s = this.levelData.start;
     this.truck.reset(s[0], s[1]);
     this.truck.rearWheelRot = 0; this.truck.frontWheelRot = 0;
     this.speedKmh = 0;
     this.zoom = 1; this.zoomV = 0; this.ground = 0; this.groundV = 0; this.camSpeed = 0; this.camSpeedV = 0;
-    this.camX = Math.min(Math.max(s[0] - 150, 0), this.maxCamX);       // s4833
+    this.back = 0; this.backV = 0;
+    this.camX = Math.min(Math.max(s[0] - this.camAnchorX, 0), this.maxCamX);       // s4833
     this.camY = s[1] - this.viewH / 2;
     if (this.rules.classic) this.camY = Math.min(Math.max(this.camY, 0), this.maxCamY);
     this.updateCamera();
@@ -726,12 +741,12 @@ export class Game {
   updateCamera() { // T5933 + w6015
     const [fx, fy] = this.focus;
     if (this.dynamicCameraActive) this.updateZoom();
-    else this.zoom = 1;
+    else { this.zoom = 1; this.back = 0; this.backV = 0; }
     // The original camera: it keeps the truck 150 from the left and halfway down, moving a fifth
     // of the way there each step, at most a tile. The dynamic camera is the same with the frame
     // pulled back: distances on the stage scale with the zoom, so on screen it behaves alike.
     const z = this.zoom;
-    const dx = Math.max(Math.min((fx - 150 * z - this.camX) * 0.2, TILE * z), -TILE * z);
+    const dx = Math.max(Math.min((fx - this.camAnchorX * z - this.camX) * 0.2, TILE * z), -TILE * z);
     const dy = Math.max(Math.min((fy - this.viewH * z / 2 - this.camY) * 0.2, TILE * z), -TILE * z);
     this.camX = Math.min(Math.max(this.camX + dx, 0), this.maxCamX);
     // Classic stays inside the level. Elsewhere the camera follows the truck up and down wherever
@@ -753,9 +768,10 @@ export class Game {
     const smoothstep = (v, a, b) => { const x = Math.max(0, Math.min(1, (v - a) / (b - a))); return x * x * (3 - 2 * x); };
     // A critically damped spring: no overshoot, and no sudden starts or stops.
     const spring = (x, v, to, w) => { v += w * w * (to - x) - 2 * w * v; return [x + v, v]; };
-    let speed = 0, height = 0;
-    if (!this.wreck) { // a wreck: close in on it
+    let speed = 0, height = 0, backwards = 0;
+    if (!this.wreck && this.landed) { // a wreck: close in on it. Being dropped in at the start doesn't count.
       speed = Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]);
+      backwards = t.P[0] - t.T[0];
       // Height fades in over the first second in the air, so bumps and hops hardly count. Look
       // down from the wheel centres, which are always clear of the ground.
       const air = smoothstep(this.airSteps, C.airFrom, C.airTo);
@@ -771,6 +787,9 @@ export class Game {
     let [z, v] = spring(this.zoom, this.zoomV, target, C.zoomW);
     v = Math.max(-C.maxRate, Math.min(C.maxRate, v));
     this.zoom = Math.max(1, this.zoom + v); this.zoomV = v;
+    // Reversing: ease the frame back, slowly, and only as far as lookBack.
+    [this.back, this.backV] = spring(this.back, this.backV, ramp(backwards, C.backFrom, C.backTo), C.backW);
+    this.back = Math.max(0, Math.min(1, this.back));
   }
 
   spawnDirt(x, y, vx, vy) { // X7381
@@ -808,12 +827,16 @@ export class Game {
     }
   }
 
-  /** The keys the truck sees: with one-button controls, the button drives on the ground and tilts back in the air. */
+  /**
+   * The keys the truck sees. With one-button controls, the button drives on the ground and tilts
+   * back in the air; the touch zones' left zone (`back`) reverses on the ground and tilts back in
+   * the air.
+   */
   driveKeys() {
     const k = this.keys;
-    if (!this.oneButtonActive || !k.one) return k;
+    if (!this.oneButtonActive || !(k.one || k.back)) return k;
     const air = this.airSteps >= ONE_BUTTON_AIR;
-    return { ...k, up: k.up || !air, left: k.left || air };
+    return { ...k, up: k.up || (k.one && !air), down: k.down || (k.back && !air), left: k.left || ((k.one || k.back) && air) };
   }
 
   stepTruck(w) { // V7B33
@@ -822,6 +845,7 @@ export class Game {
     t.rearContact = false; t.frontContact = false;
     for (let i = 0; i < 2; i++) { t.constrain(); t.collideWheels(w); }
     this.airSteps = t.rearContact || t.frontContact ? 0 : this.airSteps + 1;
+    if (this.airSteps === 0) this.landed = true;
     const keys = this.driveKeys();
     t.drive(keys);
     t.spinWheels();
@@ -1018,10 +1042,11 @@ export class Game {
     }
   }
 
-  /** The speedometer reads the truck's speed, smoothed so it doesn't flicker; a wreck reads 0. */
+  /** The speedometer reads the truck's speed, smoothed so it doesn't flicker; a wreck, and a truck
+   *  still being dropped in at the start, read 0. */
   updateSpeedometer() {
     const t = this.truck;
-    const raw = this.wreck ? 0 : Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]) * KMH_PER_PX_STEP;
+    const raw = this.wreck || !this.landed ? 0 : Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]) * KMH_PER_PX_STEP;
     this.speedKmh += (raw - this.speedKmh) * 0.15;
   }
 
