@@ -1,9 +1,10 @@
-// Battle Mode: enemy trucks, truck collisions, missiles, explosions, pickups and waves.
+// Sandbox's cars (battle.js): enemy trucks, truck collisions, missiles and explosions, your boost and jump.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Game, TILE, emptyKeys } from '../src/game.js';
-import { BATTLE, ENEMY_KINDS, MirrorWorld, enemyLook, waveKinds, circles } from '../src/battle.js';
+import { BATTLE, ENEMY_KINDS, MirrorWorld, enemyLook, circles } from '../src/battle.js';
+import { defaultSandbox } from '../src/sandbox.js';
 import { SoundWatcher } from '../src/sound-events.js';
 import { CUES } from '../src/audio.js';
 import { memoryStore } from './helpers.mjs';
@@ -11,11 +12,11 @@ import { memoryStore } from './helpers.mjs';
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
 const seeded = (seed) => { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
 
-/** A Battle run, landed, with no waves coming unless `waves`. */
-function battle({ seed = 1, waves = false, store } = {}) {
+/** A Sandbox run on Endless's course, landed, with no cars unless asked for. */
+function battle({ seed = 1, store, rivals = 0, enemies = 0 } = {}) {
   const g = new Game(data, { random: seeded(seed), store });
-  g.startBattle();
-  if (!waves) g.battle.breakIn = Infinity;
+  g.sandbox = { ...defaultSandbox(), course: 0, rivals, enemies };
+  g.startSandbox();
   for (let i = 0; i < 150; i++) g.step();
   assert.ok(g.landed);
   return g;
@@ -88,15 +89,13 @@ test('a missile flies ahead, homes in, blows up the enemy and pays for the taked
   const store = memoryStore();
   const g = battle({ store });
   const e = enemyAt(g, 450);
-  const score = g.score, left = g.battle.missilesLeft;
+  const score = g.score;
   g.press('fire');
   g.step();
-  assert.equal(g.battle.missilesLeft, left - 1);
   assert.ok(g.battle.events.some((v) => v.type === 'missile'));
   for (let i = 0; i < 120 && !e.wreck; i++) g.step();
   assert.ok(e.wreck, 'one missile takes out a basher');
   assert.equal(g.battle.takedowns, 1);
-  assert.equal(g.stats.takedowns, 1);
   assert.ok(g.score >= score + BATTLE.points.takedown);
   assert.ok(g.damage < 50, 'your own missile does not hurt you');
   for (let i = 0; i < 100; i++) g.step();
@@ -119,9 +118,10 @@ test('a missile fired with the nose in the ground goes off there, not undergroun
   assert.ok(b.blasts.length > 0);
 });
 
-test('the jump throws you up, the boost speeds you up, and both run out', () => {
+test('the jump throws you up, the boost speeds you up, and (when they are not unlimited) both run out', () => {
   const g = battle();
   const b = g.battle, t = g.truck;
+  Object.assign(b.tune, { unlimited: false, unlimitedBoost: false });
   for (let i = 0; i < 60; i++) g.step();
   const jumps = b.jumps;
   g.press('jump');
@@ -148,58 +148,6 @@ test('the jump throws you up, the boost speeds you up, and both run out', () => 
   assert.equal(b.boosting, false);
 });
 
-test('driving through a pickup collects it', () => {
-  const g = battle();
-  const b = g.battle, t = g.truck;
-  for (const [kind, check] of [
-    ['missile', () => b.missilesLeft === BATTLE.start.missiles + 3],
-    ['jump', () => b.jumps === BATTLE.start.jumps + 2],
-    ['shield', () => b.shield > 0],
-  ]) {
-    b.pickups = [];
-    b.placePickup(t.T[0] + 10, kind);
-    b.pickups[0].y = t.T[1];
-    g.step();
-    assert.ok(check(), `${kind} collected`);
-  }
-  g.damage = 600;
-  b.pickups = [];
-  b.placePickup(t.T[0], 'repair');
-  b.pickups[0].y = t.T[1];
-  g.step();
-  assert.ok(g.damage <= 600 - BATTLE.repair + 10, 'repaired');
-});
-
-test('the shield keeps the damage off', () => {
-  const g = battle();
-  g.battle.shield = 500;
-  g.battle.hurtYou(300);
-  assert.equal(g.damage, 0);
-  g.battle.shield = 0;
-  g.battle.hurtYou(300);
-  assert.equal(g.damage, 300);
-});
-
-test('waves come one after another, each bigger, with new kinds of enemy', () => {
-  assert.deepEqual(waveKinds(1, seeded(1)).filter((k) => k !== 'basher'), []);
-  assert.ok(waveKinds(2, seeded(1)).includes('speeder'));
-  assert.ok(waveKinds(3, seeded(1)).includes('heavy'));
-  assert.ok(waveKinds(4, seeded(1)).includes('gunner'));
-  assert.ok(waveKinds(9, seeded(1)).length > waveKinds(1, seeded(1)).length);
-  const g = battle({ waves: true });
-  for (let i = 0; i < 200 && g.battle.wave === 0; i++) g.step();
-  assert.equal(g.battle.wave, 1);
-  assert.equal(g.milestone?.text, 'Wave 1');
-  // Clear it: take out everything as it comes.
-  const score = g.score;
-  for (let i = 0; i < 3000 && g.battle.wave === 1; i++) {
-    for (const e of g.battle.enemies) if (!e.wreck) g.battle.hit(e, 5000);
-    g.step();
-  }
-  assert.equal(g.battle.wave, 2);
-  assert.ok(g.score >= score + 2 * BATTLE.points.takedown + BATTLE.points.wave);
-});
-
 test('a gunner fires at you', () => {
   const g = battle();
   const e = enemyAt(g, 500, 'gunner');
@@ -212,44 +160,15 @@ test('a gunner fires at you', () => {
 test('everything moves with the world when the course scrolls', () => {
   const g = battle();
   const e = enemyAt(g, 400);
-  g.battle.placePickup(g.truck.T[0] + 200, 'boost');
-  const p = g.battle.pickups.at(-1);
-  const gap = () => e.centre[0] - g.truck.T[0], pg = () => p.x - g.truck.T[0];
-  const [a, b] = [gap(), pg()];
+  const gap = () => e.centre[0] - g.truck.T[0];
+  const a = gap();
   g.scrollWorld(48);
-  assert.ok(Math.abs(gap() - a) < 1e-6 && Math.abs(pg() - b) < 1e-6);
+  assert.ok(Math.abs(gap() - a) < 1e-6);
   for (let i = 0; i < 50; i++) g.step();
   assert.ok(finite(e.truck.T) && !e.wreck, 'and it drives on in the new world');
 });
 
-test('the run ends when your truck is wrecked, and keeps a best score', () => {
-  const store = memoryStore();
-  const g = battle({ store });
-  g.score = 4321;
-  g.damage = 1000;
-  for (let i = 0; i < 400 && g.screen === 'playing'; i++) g.step();
-  assert.equal(g.screen, 'gameOver');
-  assert.equal(g.bestBattle, 4321);
-  assert.equal(store.get('bestBattle'), 4321);
-  assert.equal(store.get('bestPlay'), null, 'Standard\'s best is left alone');
-  for (let i = 0; i < 20; i++) g.step(); // things go on behind the box
-  g.restart();
-  assert.equal(g.mode, 'battle');
-  assert.equal(g.damage, 0);
-  assert.equal(g.battle.takedowns, 0);
-  g.startEndless();
-  assert.equal(g.battle, null, 'other modes have no battle');
-});
-
-test('Battle allows the flip upright, and scraping does less damage than in Standard', () => {
-  const g = battle();
-  assert.equal(g.uprightAllowed, true);
-  assert.ok(BATTLE.scrape < 6);
-  g.startCampaign();
-  assert.equal(g.uprightAllowed, false);
-});
-
-test('Battle\'s sounds reach the sound watcher, and every cue exists', () => {
+test('the cars\' sounds reach the sound watcher, and every cue exists', () => {
   const g = battle(), w = new SoundWatcher();
   w.observe(g);
   enemyAt(g, 450);
@@ -257,10 +176,10 @@ test('Battle\'s sounds reach the sound watcher, and every cue exists', () => {
   const heard = [];
   for (let i = 0; i < 120; i++) { g.step(); heard.push(...w.observe(g).events.map((e) => e.type)); }
   assert.ok(heard.includes('missile') && heard.includes('boom') && heard.includes('takedown'), `heard ${heard}`);
-  for (const c of ['missile', 'enemyMissile', 'boom', 'crunch', 'pickup', 'jump', 'boost', 'takedown', 'wave']) assert.ok(CUES.includes(c), c);
+  for (const c of ['missile', 'enemyMissile', 'boom', 'crunch', 'jump', 'boost', 'takedown']) assert.ok(CUES.includes(c), c);
 });
 
-test('presses only count in a Battle that is being played', () => {
+test('presses only count in a Sandbox run that is being played', () => {
   const g = new Game(data);
   g.startEndless();
   g.press('fire'); // nothing to do it, no harm done
@@ -271,9 +190,10 @@ test('presses only count in a Battle that is being played', () => {
   assert.equal(emptyKeys().boost, false);
 });
 
-test('a long battle, with a simple driver firing and jumping, never breaks', () => {
+test('a long Sandbox run with rival and enemy cars, a simple driver firing and jumping, never breaks', () => {
   for (const seed of [1, 2, 3, 4]) {
-    const g = battle({ seed, waves: true });
+    const g = battle({ seed, rivals: 3, enemies: 4 });
+    let takedowns = 0;
     for (let i = 0; i < 5000 && g.screen === 'playing'; i++) {
       const t = g.truck;
       g.keys.up = true; g.keys.right = t.bodyRot < -15; g.keys.left = t.bodyRot > 35;
@@ -283,9 +203,11 @@ test('a long battle, with a simple driver firing and jumping, never breaks', () 
       g.step();
       if (g.canUpright) g.upright();
       assert.ok(finite(t.T) && Number.isFinite(g.camX) && Number.isFinite(g.camY) && Number.isFinite(g.score), `seed ${seed} step ${i}`);
-      for (const e of g.battle.enemies) assert.ok(finite(e.wreck ? e.wreck.T : e.truck.T));
+      for (const e of g.battle.bots) assert.ok(finite(e.wreck ? e.wreck.T : e.truck.T));
+      takedowns = g.battle.takedowns;
     }
-    assert.ok(g.battle.wave >= 2, `seed ${seed}: got to wave ${g.battle.wave}`);
+    assert.ok(takedowns >= 2, `seed ${seed}: took out ${takedowns} enemies (they keep coming back)`);
+    assert.equal(g.battle.racers.length, 3, 'the rivals are all still around');
   }
 });
 

@@ -1,12 +1,11 @@
-// battle.js — Battle Mode, and the trucks of Rally and Sandbox. No DOM access (runs under Node for tests).
+// battle.js — the other trucks on the track, and your boost, jump and missiles: Sandbox's rival
+// and enemy cars (see sandbox.js, which places them and sets the tuning). No DOM access (runs
+// under Node for tests). It was written for Battle Mode (enemy trucks in waves) and Rally Mode
+// (racers), which are kept on the feat/battle-rally branch.
 //
-// The Battle class also runs the other trucks in Rally (racers, see rally.js) and Sandbox (traffic,
-// and the boost, jump and missiles with your own tuning, see sandbox.js). Its `opts` say which
-// parts a mode uses.
-//
-// Battle is played on Endless's generated course, with damage. Enemy trucks come at you from the
-// right, in waves: get past them, or knock them out. You have missiles, a jump, a boost and the
-// pickups along the course (more missiles, jumps, boost, repairs and a shield).
+// Rival cars ('racer') drive your way; enemy cars (bashers, speeders, heavies and gunners) come
+// at you from the right. You can get past them, or knock the enemies out with missiles, rams and
+// stomps.
 //
 // Each enemy is a whole Truck, driven by the same physics as yours. Your truck faces right, so an
 // enemy is simulated in a mirror image of the world (x -> -x, see MirrorWorld): there it faces
@@ -26,9 +25,8 @@ import { Wreck } from './wreck.js';
 const TILE = 64;
 const PI = Math.PI;
 
-/** Battle's tuning. Speeds are px per step, times in steps (70 a second), damage out of 1000. */
+/** The tuning. Speeds are px per step, times in steps (70 a second), damage out of 1000. */
 export const BATTLE = {
-  scrape: 2.5,                         // damage a step while your cab scrapes (Standard: 6)
   start: { missiles: 3, jumps: 2, boost: 60 },
   boost: { use: 0.7, regen: 0.02, push: 0.14 },  // meter a step used / regained; push a step
   jump: 6.5,                           // upward speed added
@@ -37,34 +35,28 @@ export const BATTLE = {
   enemyMissile: { speed: 5, life: 260, turn: 0.012, hurt: 220, every: [200, 320], range: [180, 900] },
   blast: { radius: 95, power: 6.5 },     // a missile's explosion
   bigBlast: { radius: 120, power: 5.5, hurt: 450 }, // an enemy truck blowing up
-  ram: { from: 2.5, per: 32, bounce: 0.35, theyTake: 1.5, boost: 3, shield: 2, stomp: 2.5 },
+  ram: { from: 2.5, per: 32, bounce: 0.35, theyTake: 1.5, boost: 3, stomp: 2.5 },
   enemyScrape: 3,                      // an enemy's damage a step while its cab scrapes
-  shield: 560,                         // steps a shield lasts (8 s)
-  repair: 350,
-  pickupEvery: [650, 1150],            // px between pickups along the course
-  points: { takedown: 500, pass: 100, wave: 400 },
+  points: { takedown: 500, pass: 100 },
   comboFor: 210,                       // steps between takedowns for a combo
   stuckFor: 240,                       // steps without progress before an enemy backs up
 };
 
 /**
- * The kinds of enemy: drive power (1 = yours), mass (yours is 1), health, the speed it keeps to,
- * and the wave it first comes in. A gunner fires slow missiles at you.
+ * The kinds of car: drive power (1 = yours), mass (yours is 1), health and the speed it keeps to.
+ * A gunner fires slow missiles at you.
  */
 export const ENEMY_KINDS = {
-  basher: { power: 1, mass: 1, health: 1000, top: 6.5, from: 1 },
-  speeder: { power: 1.3, mass: 0.8, health: 600, top: 9, from: 2 },
-  heavy: { power: 1.15, mass: 2.2, health: 1800, top: 5, from: 3 },
-  gunner: { power: 0.95, mass: 1, health: 900, top: 5.5, from: 4, gun: true },
-  // Rally's racers and Sandbox's traffic: trucks like yours, going your way. Never in a wave.
-  racer: { power: 1, mass: 1, health: Infinity, top: Infinity, from: Infinity },
+  basher: { power: 1, mass: 1, health: 1000, top: 6.5 },
+  speeder: { power: 1.3, mass: 0.8, health: 600, top: 9 },
+  heavy: { power: 1.15, mass: 2.2, health: 1800, top: 5 },
+  gunner: { power: 0.95, mass: 1, health: 900, top: 5.5, gun: true },
+  // Rival cars: trucks like yours, going your way, that can't be wrecked.
+  racer: { power: 1, mass: 1, health: Infinity, top: Infinity },
 };
 
-/** Racers that get stuck: steps upside down before they flip back over, and their hop over a wall. */
+/** Rivals that get stuck: steps upside down before they flip back over, and their hop over a wall. */
 export const RACER = { flipAfter: 120, righting: 80, hopAfter: 1, hop: 5, hopMore: 1.5, hopBoost: 40, skipAfter: 2, skip: 6 };
-
-export const PICKUPS = ['missile', 'boost', 'jump', 'repair', 'shield'];
-const PICKUP_WEIGHT = { missile: 3, boost: 3, jump: 2, repair: 2, shield: 1 };
 
 /** A collision world seen in a mirror (x -> -x): what an enemy truck drives on. */
 export class MirrorWorld {
@@ -75,20 +67,6 @@ export class MirrorWorld {
     return h && { x: -h.x, y: h.y, nx: -h.nx, ny: h.ny, type: h.type };
   }
 }
-
-/** Waves: how many enemies, and of which kinds (new kinds come in as the waves go on). */
-export function waveKinds(n, random = Math.random) {
-  const count = Math.min(2 + Math.floor(n / 2), 10);
-  const kinds = Object.keys(ENEMY_KINDS).filter((k) => ENEMY_KINDS[k].from <= n);
-  const list = [];
-  // A kind's first wave has one of it in the middle.
-  const fresh = kinds.find((k) => ENEMY_KINDS[k].from === n);
-  for (let i = 0; i < count; i++) list.push(kinds[Math.floor(random() * kinds.length)]);
-  if (fresh && !list.includes(fresh)) list[Math.floor(count / 2)] = fresh;
-  return list;
-}
-/** How many enemies may be on the course at once in wave n. */
-export const maxAlive = (n) => Math.min(2 + Math.floor(n / 3), 5);
 
 /**
  * A look for an enemy: never your body, paint, tyres or wheels (and never a paint like yours:
@@ -169,7 +147,6 @@ export class Enemy {
     this.s = s;
     this.look = look;
     this.name = '';
-    this.finished = null;          // Rally: the race clock when it crossed the finish line
     this.tries = 0;                // times it has backed up without getting any further
     this.upsideDown = 0;           // steps on its roof (a racer flips back over)
     this.righting = 0;
@@ -196,11 +173,8 @@ export class Enemy {
   }
 }
 
-/**
- * What a mode uses: waves of enemies, pickups along the course, your weapons (boost, jump and
- * missiles), and `tune`, the weapons' settings (Sandbox's own; see BATTLE for Battle's).
- */
-const DEFAULT_OPTS = { waves: true, pickups: true, weapons: true };
+/** What a run uses: your weapons (boost, jump and missiles), and `tune`, their settings (Sandbox's own). */
+const DEFAULT_OPTS = { weapons: true };
 export const DEFAULT_TUNE = {
   boostPush: BATTLE.boost.push, jump: BATTLE.jump, fireCooldown: BATTLE.fireCooldown,
   unlimitedBoost: false, unlimited: false, airJumps: false,
@@ -213,9 +187,8 @@ export class Battle {
     this.opts = { ...DEFAULT_OPTS, ...opts };
     this.tune = { ...DEFAULT_TUNE, ...(opts.tune || {}) };
     this.enemies = [];
-    this.racers = [];             // Rally's racers, Sandbox's traffic
+    this.racers = [];             // rival cars
     this.missiles = [];
-    this.pickups = [];
     this.blasts = [];
     this.bits = [];               // particles: dirt, sparks, smoke and fire
     this.events = [];             // what happened this step, for the sound (cleared by Game.step)
@@ -224,20 +197,13 @@ export class Battle {
     this.missilesLeft = BATTLE.start.missiles;
     this.jumps = BATTLE.start.jumps;
     this.boost = BATTLE.start.boost;
-    this.shield = 0;
     this.boosting = false;
     this.fireCooldown = 0; this.jumpCooldown = 0;
-    this.wave = 0;
-    this.queue = [];              // enemies still to come this wave
-    this.spawnIn = 0;
-    this.breakIn = 90;            // steps before the next wave
-    this.cleared = true;
     this.takedowns = 0; this.passed = 0;
     this.combo = 0; this.lastTakedown = -1e9;
     this.steps = 0;
-    this.callout = null;          // { text, timer, gold }: a takedown, a pickup...
+    this.callout = null;          // { text, timer, gold }: a takedown, a stomp...
     this.hurt = 0;                // steps of the red flash after you're hit
-    this.nextPickup = null;       // where along the course the next pickup goes
     this.mirror = new MirrorWorld(() => game.world);
     this.mirrorThin = new MirrorWorld(() => game.thinWorld);
   }
@@ -263,13 +229,10 @@ export class Battle {
     for (const e of this.bots) this.stepEnemy(e, you);
     this.collideTrucks(you);
     this.stepMissiles(you);
-    if (this.opts.pickups) this.stepPickups(you);
     this.stepEffects();
-    if (live && this.opts.waves) this.updateWaves();
     this.cleanUp();
     if (this.fireCooldown > 0) this.fireCooldown--;
     if (this.jumpCooldown > 0) this.jumpCooldown--;
-    if (this.shield > 0) this.shield--;
     if (this.hurt > 0) this.hurt--;
     if (this.callout && --this.callout.timer <= 0) this.callout = null;
   }
@@ -331,10 +294,10 @@ export class Battle {
     if (h) this.blowMissile(m, h.x, h.y);
   }
 
-  /** Take damage (not after the run is over, and not through the shield). */
+  /** Take damage (not after the run is over). */
   hurtYou(amount) {
     const g = this.game;
-    if (amount <= 0 || g.endTimer > 0 || g.wreck || this.shield > 0) return;
+    if (amount <= 0 || g.endTimer > 0 || g.wreck) return;
     g.damage = Math.min(1000, g.damage + amount);
     if (amount > 15) this.hurt = 14;
   }
@@ -349,10 +312,7 @@ export class Battle {
     // climbs (as the test driver does), and backing up for another go when it's stuck.
     const rot = t.bodyRot, air = !t.rearContact && !t.frontContact;
     t.gravity = g.truck.gravity; // (Sandbox's gravity is everyone's)
-    if (g.race?.holding) {
-      // Rally's countdown: on the line, engines revving, going nowhere yet.
-      k.up = false; k.down = false; k.left = false; k.right = false;
-    } else if (e.righting > 0) {
+    if (e.righting > 0) {
       k.up = false; k.down = false; k.left = false; k.right = false;
       this.rightBot(e);
     } else if (e.backFor > 0) {
@@ -370,7 +330,7 @@ export class Battle {
       } else if (++e.since > BATTLE.stuckFor) {
         e.stuckAt ??= e.best;
         e.backFor = 50 + Math.floor(this.random * 40); e.since = 0; e.best = t.T[0];
-        // A racer that keeps getting stuck at a wall hops it, with a burst of boost, a bit
+        // A rival that keeps getting stuck at a wall hops it, with a burst of boost, a bit
         // harder each time. Still stuck where you can't see it, it's moved on past.
         if (e.racer && ++e.tries > RACER.hopAfter) {
           e.backFor = 0; e.tries = 0; e.hops = (e.hops || 0) + 1;
@@ -452,7 +412,7 @@ export class Battle {
     if (Math.abs(err) < 6 && (t.rearContact || t.frontContact)) e.righting = 0;
   }
 
-  /** A racer going your way at x (Rally's, or Sandbox's traffic), dropped in clear of the ground. */
+  /** A rival car going your way at x, dropped in clear of the ground. */
   addRacer(look, x, name = '') {
     const ys = [x - 40, x, x + 40].map((gx) => this.groundAt(gx));
     if (ys.includes(null)) return null;
@@ -492,7 +452,6 @@ export class Battle {
     e.health = 0;
     const [x, y] = e.centre;
     this.takedowns++;
-    g.stats.takedowns = (g.stats.takedowns || 0) + 1;
     this.combo = this.steps - this.lastTakedown < BATTLE.comboFor ? this.combo + 1 : 1;
     this.lastTakedown = this.steps;
     const points = BATTLE.points.takedown * this.combo;
@@ -502,16 +461,6 @@ export class Battle {
     this.events.push({ type: 'takedown', combo: this.combo });
     const B = BATTLE.bigBlast;
     this.explode(x, y, { radius: B.radius, power: B.power, hurtEnemies: B.hurt, big: true });
-    // Sometimes it leaves something behind.
-    if (this.random < 0.45) this.placePickup(x, this.pickPickup());
-  }
-
-  spawn(kind) {
-    const g = this.game, course = g.levelData;
-    let x = g.camX + g.viewW * g.zoom + 180;
-    for (const e of this.enemies) if (!e.wreck && Math.abs(e.centre[0] - x) < 220) x = e.centre[0] + 220;
-    if (x > (course.width - 4) * TILE) return false;
-    return !!this.addEnemy(kind, x);
   }
 
   /**
@@ -540,37 +489,6 @@ export class Battle {
       return y + hi;
     }
     return null;
-  }
-
-  updateWaves() {
-    const g = this.game;
-    if (!g.landed || g.wreck) return;
-    const alive = this.enemies.filter((e) => !e.wreck).length;
-    if (this.queue.length === 0 && alive === 0) {
-      if (!this.cleared) {
-        this.cleared = true;
-        const bonus = BATTLE.points.wave * this.wave;
-        g.score += bonus;
-        g.announce(`Wave ${this.wave} cleared!  +${bonus}`);
-        this.breakIn = 210;
-      }
-      if (--this.breakIn <= 0) this.startWave();
-      return;
-    }
-    if (this.queue.length && --this.spawnIn <= 0 && alive < maxAlive(this.wave)) {
-      if (this.spawn(this.queue[0])) {
-        this.queue.shift();
-        this.spawnIn = Math.max(50, Math.round(this.between([110, 220]) - this.wave * 8));
-      } else this.spawnIn = 20;
-    }
-  }
-
-  startWave() {
-    this.wave++;
-    this.cleared = false;
-    this.queue = waveKinds(this.wave, () => this.random);
-    this.spawnIn = 30;
-    this.game.announce(`Wave ${this.wave}`, { confetti: false, sound: 'wave' });
   }
 
   // ---- trucks hitting trucks
@@ -612,8 +530,7 @@ export class Battle {
     const [bx, by] = middle(B.T, B.s), [bpx, bpy] = middle(B.P, B.s);
     const vrel = (bx - bpx - (ax - apx)) * best.nx + (by - bpy - (ay - apy)) * best.ny;
     if (vrel >= 0) return; // already moving apart
-    const shield = (A.you || B.you) && this.shield > 0;
-    const j = -(1 + BATTLE.ram.bounce * (shield ? 2.5 : 1)) * vrel;
+    const j = -(1 + BATTLE.ram.bounce) * vrel;
     const kick = (body, vx, vy) => { for (let i = 0; i < 10; i += 2) { body.P[i] -= body.s * vx; body.P[i + 1] -= vy; } };
     kick(A, -best.nx * j * shareA, -best.ny * j * shareA);
     kick(B, best.nx * j * shareB, best.ny * j * shareB);
@@ -625,7 +542,7 @@ export class Battle {
       }
     }
     if (impact > 2.5) this.events.push({ type: 'crunch', force: Math.min(1, impact / 12) });
-    // (Racers only bump: there's no damage in Rally or Sandbox.)
+    // (Rivals only bump: they can't be wrecked.)
     if (A.you && !B.e.racer) this.ram(B, impact, best.nx, best.ny);
     else if (B.you && !A.e.racer) this.ram(A, impact, -best.nx, -best.ny);
   }
@@ -640,7 +557,6 @@ export class Battle {
     if (this.boosting) { them *= R.boost; you *= 0.25; }
     if (stomp) { them *= R.stomp; you *= 0.3; }
     this.hurtYou(you);
-    if (this.shield > 0) them *= R.shield;
     const e = E.e;
     if (stomp && them > 150 && them < e.health) this.say('Stomp!');
     this.hit(e, them);
@@ -725,53 +641,6 @@ export class Battle {
     if (hurtEnemies) for (const e of this.enemies) if (!e.wreck) this.hit(e, hurtEnemies * share(near(e.truck.T, -1)));
   }
 
-  // ---- pickups
-
-  pickPickup() {
-    const g = this.game, w = { ...PICKUP_WEIGHT };
-    if (g.damage > 500) w.repair *= 2.5;
-    if (this.missilesLeft === 0) w.missile *= 2;
-    const total = PICKUPS.reduce((a, k) => a + w[k], 0);
-    let r = this.random * total;
-    for (const k of PICKUPS) { r -= w[k]; if (r <= 0) return k; }
-    return 'missile';
-  }
-
-  /** Put a pickup on the ground at x (floating just above it), or none if there's no ground. */
-  placePickup(x, kind) {
-    const y = this.groundAt(x);
-    if (y === null) return;
-    this.pickups.push({ id: this.nextId++, x, y: y - 12, kind, age: Math.floor(this.random * 100), taken: 0 });
-  }
-
-  stepPickups(you) {
-    const g = this.game;
-    const ahead = g.camX + g.viewW * g.zoom + 300, end = (g.levelData.width - 2) * TILE;
-    if (this.nextPickup === null) this.nextPickup = g.truck.T[0] + 500;
-    while (this.nextPickup < ahead && this.nextPickup < end) {
-      this.placePickup(this.nextPickup, this.pickPickup());
-      this.nextPickup += this.between(BATTLE.pickupEvery);
-    }
-    for (const p of this.pickups) {
-      p.age++;
-      if (p.taken) { p.taken++; continue; }
-      if (!you) continue;
-      const by = p.y + Math.sin(p.age * 0.08) * 4;
-      if (circles(you.T, 1).some((c) => Math.hypot(c.x - p.x, c.y - by) < c.r + 16)) this.collect(p);
-    }
-  }
-
-  collect(p) {
-    const g = this.game;
-    p.taken = 1;
-    if (p.kind === 'missile') { this.missilesLeft += 3; this.say('+3 Missiles'); }
-    else if (p.kind === 'jump') { this.jumps += 2; this.say('+2 Jumps'); }
-    else if (p.kind === 'boost') { this.boost = Math.min(100, this.boost + 50); this.say('Boost!'); }
-    else if (p.kind === 'repair') { g.damage = Math.max(0, g.damage - BATTLE.repair); this.say('Repaired!'); }
-    else if (p.kind === 'shield') { this.shield = BATTLE.shield; this.say('Shield!'); }
-    this.events.push({ type: 'pickup', kind: p.kind });
-  }
-
   // ---- particles
 
   bit(kind, x, y, vx, vy, life) {
@@ -807,10 +676,9 @@ export class Battle {
       }
       return true;
     });
-    // A racer that falls out of the world (Sandbox's gravity can do that) is gone.
+    // A rival that falls out of the world (Sandbox's gravity can do that) is gone.
     if (this.racers.length) this.racers = this.racers.filter((e) => e.centre[1] < bottom && Number.isFinite(e.truck.T[0]));
     this.missiles = this.missiles.filter((m) => !m.dead);
-    this.pickups = this.pickups.filter((p) => p.taken < 16 && p.x > left - 100);
   }
 
   /** Move everything left by dx and up by dy (Endless scrolling the world: see Game.shiftWorld). */
@@ -822,8 +690,7 @@ export class Battle {
       if (e.wreck) { move(e.wreck.T); move(e.wreck.P); }
       e.best -= e.s * dx;
     }
-    for (const list of [this.missiles, this.pickups, this.blasts, this.bits]) for (const o of list) { o.x -= dx; o.y -= dy; }
-    if (this.nextPickup !== null) this.nextPickup -= dx;
+    for (const list of [this.missiles, this.blasts, this.bits]) for (const o of list) { o.x -= dx; o.y -= dy; }
   }
 
   /** What the renderer interpolates between steps: the enemies' points and the missiles. */

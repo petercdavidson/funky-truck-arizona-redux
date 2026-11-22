@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Game, TILE, BALANCE_ANGLE, STUCK_STEPS, CAMERA, UPRIGHT_LINGER, TRICK_COOLDOWN, KMH_PER_PX_STEP, unpackLevel } from '../src/game.js';
 import { turnOver, memoryStore } from './helpers.mjs';
+import { WRECK } from '../src/wreck.js';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
 const settle = (g, n = 120) => { for (let i = 0; i < n; i++) g.step(); };
@@ -124,6 +125,36 @@ test('outside Classic a wreck comes apart into pieces that fall and settle on th
   settle(c);
   c.damage = 1000; c.step();
   assert.equal(c.wreck, null, 'Classic wrecks stay in one piece');
+});
+
+test('a wreck\'s wheels hit each other and the body instead of passing through', () => {
+  const g = new Game(data, { random: () => 0.5 });
+  g.startCampaign();
+  settle(g);
+  g.damage = 1000;
+  g.step();
+  const w = g.wreck, T = w.T, [a, b] = w.wheels.map((h) => h.p), R = WRECK.wheelRadius;
+  // throw the front wheel at the rear one, and the rear one into the middle of the body
+  // (both stopped dead, so only the collisions can part them)
+  const box = w.body.slice(0, 4);
+  const mid = (k) => box.reduce((sum, i) => sum + T[i * 2 + k], 0) / 4;
+  const ax = mid(0), ay = mid(1);
+  for (const [p, x, y] of [[a, ax, ay], [b, ax + 10, ay]]) { T[p * 2] = w.P[p * 2] = x; T[p * 2 + 1] = w.P[p * 2 + 1] = y; }
+  let worst = 0;
+  for (let i = 0; i < 70; i++) {
+    w.step();
+    if (i < 3) continue; // (a few steps to push them out)
+    worst = Math.max(worst, 2 * R - Math.hypot(T[b * 2] - T[a * 2], T[b * 2 + 1] - T[a * 2 + 1]));
+  }
+  assert.ok(worst < 3, `the wheels overlapped by up to ${worst.toFixed(1)} px`);
+  const inBox = (x, y) => {
+    const pts = box.map((i) => [T[i * 2], T[i * 2 + 1]]);
+    let inside = false;
+    for (let i = 0, j = 3; i < 4; j = i++) if ((pts[j][1] > y) !== (pts[i][1] > y) && x < pts[j][0] + (y - pts[j][1]) / (pts[i][1] - pts[j][1]) * (pts[i][0] - pts[j][0])) inside = !inside;
+    return inside;
+  };
+  for (const p of [a, b]) assert.ok(!inBox(T[p * 2], T[p * 2 + 1]), 'no wheel ends up inside the body');
+  for (const v of T) assert.ok(Number.isFinite(v));
 });
 
 test('one-button controls: the button drives on the ground and tilts back in the air', () => {
@@ -446,7 +477,8 @@ test('the tall menu layouts keep every button on the page, apart from the others
   for (const [screen, list] of Object.entries(TALL_BUTTONS)) {
     if (!list.length) continue;
     for (const kind of [null, (b) => b.show({ mode: 'endless', rules: {} })]) {
-      const shown = list.filter((b) => !b.show || !kind || kind(b));
+      // (Sandbox's list of choices is checked on its own, below: it opens over the rest.)
+      const shown = list.filter((b) => !b.picker && (!b.show || !kind || kind(b)));
       shown.forEach((b, i) => {
         const { x, y, w, h } = b.rect;
         assert.ok(x >= 0 && y >= 0 && x + w <= TALL_W && y + h <= TALL_H[screen], `${screen} ${b.action} is on the page`);
@@ -459,6 +491,22 @@ test('the tall menu layouts keep every button on the page, apart from the others
       });
     }
   }
+  // Sandbox's list of choices, for every setting: on the page, and apart.
+  const { SANDBOX_ROWS } = await import('../src/sandbox.js');
+  for (const tall of [true, false]) for (const screen of ['sandbox', 'sandboxTweaks']) {
+    for (const row of SANDBOX_ROWS) {
+      g.sandboxPick = row.key;
+      const W = tall ? TALL_W : 576, H = tall ? TALL_H[screen] : 448;
+      const picks = (tall ? TALL_BUTTONS : BUTTONS)[screen].filter((b) => b.picker && !b.noHover && b.show(g)).map((b) => b.rect(g));
+      const n = row.key === 'course' ? g.sandboxCourses : row.choices.length;
+      assert.equal(picks.length, n, `${row.key}: every choice listed`);
+      picks.forEach((R, i) => {
+        assert.ok(R.x >= 0 && R.y >= 0 && R.x + R.w <= W && R.y + R.h <= H, `${row.key} choice ${i} is on the page (${tall ? 'tall' : 'wide'})`);
+        for (const O of picks.slice(i + 1)) assert.ok(R.x + R.w <= O.x || O.x + O.w <= R.x || R.y + R.h <= O.y || O.y + O.h <= R.y, `${row.key}: choices apart`);
+      });
+    }
+  }
+  g.sandboxPick = null;
   // Every action on the usual layout can be reached on the tall one too.
   for (const screen of Object.keys(BUTTONS)) {
     const actions = (l) => new Set(l.map((b) => b.action));

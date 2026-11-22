@@ -1,45 +1,25 @@
-// render-battle.js — drawing Battle Mode (battle.js): enemy trucks, missiles, explosions,
-// pickups, and the extra HUD; and Rally's racers and HUD, and Sandbox's. Called by Renderer
-// (render.js), in the same stage coordinates.
+// render-battle.js — drawing Sandbox's cars (battle.js): rival and enemy trucks, missiles,
+// explosions, and the extra HUD. Called by Renderer (render.js), in the same stage coordinates.
 //
 // Enemies are simulated in a mirror image of the world, so they're drawn flipped (scale -1, 1)
-// from their own points: the same truck sprites as yours, facing the other way. Racers go your
+// from their own points: the same truck sprites as yours, facing the other way. Rivals go your
 // way, so they're drawn as yours is.
 
-import { HUD_FONT, BODY_PAINTS } from './assets.js';
-import { formatTime } from './trial.js';
-import { ordinal } from './rally.js';
+import { HUD_FONT } from './assets.js';
 
 const INK = '#3b2f2a';            // outlines: the dark brown of the game's shadows
-const CRATE = 'rgba(107, 74, 64, 0.92)';
 const GOLD = '#ffe27a';
 const WARN = '#ff8a5c';
 
 /**
  * Icons, as SVG path data in a 24x24 box, drawn as round-capped white strokes like the on-screen
- * controls (index.html uses the same paths on Battle's buttons).
+ * controls (index.html uses the same paths on Sandbox's buttons).
  */
 export const ICONS = {
   missile: 'M3 9.5h11l5.5 2.5-5.5 2.5H3z M6 9.5L3.5 5.5 M6 14.5l-2.5 4',
   jump: 'M12 2.5v7 M8.5 6L12 2.5 15.5 6 M7 12.5h10l-10 3h10l-10 3h10 M6 21.5h12',
   boost: 'M13.5 2.5L5.5 13.5h6l-1 8 8-11.5h-6z',
-  repair: 'M12 5v14 M5 12h14',
-  shield: 'M12 3l7 2.8v5.4c0 4.6-3 7.8-7 9.8-4-2-7-5.2-7-9.8V5.8z',
 };
-const KIND_GLOW = { missile: '255, 138, 106', jump: '143, 240, 164', boost: '255, 211, 107', repair: '159, 216, 255', shield: '200, 170, 255' };
-
-let paths = null;
-function icon(ctx, name, x, y, size, color = '#fff', width = 2.6) {
-  paths ||= Object.fromEntries(Object.entries(ICONS).map(([k, d]) => [k, new Path2D(d)]));
-  ctx.save();
-  ctx.translate(x - size / 2, y - size / 2);
-  ctx.scale(size / 24, size / 24);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = width;
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  ctx.stroke(paths[name]);
-  ctx.restore();
-}
 
 /** Where to draw enemy `e` and missile `m` this frame: interpolated if the frame has them. */
 const enemyPose = (v, e) => v.B?.e.get(e.id) || { T: e.wreck ? e.wreck.T : e.truck.T, rr: e.truck.rearWheelRot, fr: e.truck.frontWheelRot };
@@ -47,10 +27,9 @@ const missilePos = (v, m) => v.B?.m.get(m.id) || [m.x, m.y];
 
 // ---- in the world (behind and in front of your truck)
 
-/** Pickups, enemy trucks and wrecks, and your boost flame: drawn before your truck. */
+/** Rival and enemy trucks and wrecks, and your boost flame: drawn before your truck. */
 export function battleBack(r, game, v) {
   const b = game.battle, ctx = r.ctx;
-  for (const p of b.pickups) pickup(r, p);
   for (const e of b.racers) {
     const d = enemyPose(v, e);
     if (e.hopFor > 0) flame(ctx, d.T);
@@ -72,19 +51,12 @@ export function battleBack(r, game, v) {
   if (b.boosting && !game.wreck) flame(ctx, v.T);
 }
 
-/** Your shield, missiles, explosions, particles and the enemies' health bars: drawn after your truck. */
+/** Missiles, explosions, particles and the enemies' health bars: drawn after your truck. */
 export function battleFront(r, game, v) {
   const b = game.battle, ctx = r.ctx;
-  if (b.shield > 0 && !game.wreck && (b.shield > 140 || Math.floor(b.shield / 8) % 2 === 0)) shieldBubble(ctx, v.T, b.steps);
   for (const m of b.missiles) missile(ctx, m, missilePos(v, m), b.steps);
   for (const bit of b.bits) particle(r, bit);
   for (const x of b.blasts) blast(ctx, x);
-  // Rally's racers' names, over their trucks.
-  if (game.mode === 'rally') for (const e of b.racers) {
-    const T = enemyPose(v, e).T;
-    const x = (T[0] + T[2] + T[4] + T[6] + T[8]) / 5, y = Math.min(T[7], T[9]) - 40;
-    r.text(e.name, x, y - 8, { size: 13, font: HUD_FONT, weight: '800', color: paintOf(e) });
-  }
   for (const e of b.enemies) {
     if (e.wreck || e.showHealth <= 0) continue;
     const T = enemyPose(v, e).T;
@@ -93,27 +65,6 @@ export function battleFront(r, game, v) {
   }
 }
 
-function pickup(r, p) {
-  const ctx = r.ctx;
-  const by = p.y + Math.sin(p.age * 0.08) * 4;
-  ctx.save();
-  ctx.translate(p.x, by);
-  if (p.taken) { const k = 1 + p.taken * 0.07; ctx.scale(k, k); ctx.globalAlpha = Math.max(0, 1 - p.taken / 16); }
-  const glow = ctx.createRadialGradient(0, 0, 4, 0, 0, 32);
-  glow.addColorStop(0, `rgba(${KIND_GLOW[p.kind]}, 0.55)`);
-  glow.addColorStop(1, `rgba(${KIND_GLOW[p.kind]}, 0)`);
-  ctx.fillStyle = glow;
-  ctx.fillRect(-32, -32, 64, 64);
-  ctx.rotate(Math.sin(p.age * 0.05) * 0.12);
-  r.roundRect(-14, -14, 28, 28, 6, CRATE, 'rgba(255,255,255,0.8)', 2);
-  icon(ctx, p.kind, 0, 0, 19);
-  ctx.restore();
-}
-
-/**
- * The extras that tell the kinds of enemy apart, in the body's frame (as Wreck's outline has it:
- * x from -10 at the back to 62 at the front, the roof at -26).
- */
 function kit(ctx, kind, T) {
   ctx.save();
   ctx.translate(T[6], T[7]);
@@ -172,22 +123,6 @@ function flame(ctx, T) {
   cone(L, 7, 'rgba(240, 120, 50, 0.85)');
   cone(L * 0.6, 4.5, 'rgba(255, 226, 122, 0.95)');
   cone(L * 0.25, 2.5, 'rgba(255, 255, 240, 0.95)');
-  ctx.restore();
-}
-
-function shieldBubble(ctx, T, steps) {
-  const x = (T[0] + T[2] + T[4] + T[6] + T[8]) / 5, y = (T[1] + T[3] + T[5] + T[7] + T[9]) / 5 - 6;
-  const R = 64 + Math.sin(steps * 0.2) * 2;
-  ctx.save();
-  const g = ctx.createRadialGradient(x, y, R * 0.6, x, y, R);
-  g.addColorStop(0, 'rgba(200, 170, 255, 0.04)');
-  g.addColorStop(1, 'rgba(200, 170, 255, 0.28)');
-  ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(x, y, R, 0, 7); ctx.fill();
-  ctx.strokeStyle = 'rgba(240, 230, 255, 0.8)'; ctx.lineWidth = 2.5;
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.arc(x, y, R - 9, -2.5, -1.7); ctx.stroke();
   ctx.restore();
 }
 
@@ -271,27 +206,9 @@ function healthBar(r, x, y, share, alpha) {
 
 // ---- the HUD (stage coordinates, the view `r.viewW` across)
 
-/** Battle's HUD: the boost meter, what you're carrying, the wave, warnings and callouts. */
-export function battleHud(r, game, y) {
-  const b = game.battle, ctx = r.ctx, R = r.viewW - 10;
-  r.meter('boost', b.tune.unlimitedBoost ? 1 : b.boost / 100, y, b.tune.unlimitedBoost ? '∞' : '');
-  // What you're carrying, in chips under the meters.
-  const U = b.tune.unlimited;
-  const items = [['missile', U ? '∞' : b.missilesLeft], ['jump', U ? '∞' : b.jumps]];
-  if (b.shield > 0) items.push(['shield', `${Math.ceil(b.shield / 70)}s`]);
-  let x = 10;
-  const cy = y + 50;
-  for (const [name, n] of items) {
-    r.roundRect(x, cy - 12, 54, 24, 12, 'rgba(70, 48, 40, 0.5)', 'rgba(255,255,255,0.45)', 1.5);
-    icon(ctx, name, x + 15, cy, 16, n === 0 ? 'rgba(255,255,255,0.4)' : '#fff', 2.4);
-    r.text(typeof n === 'number' ? `×${n}` : n, x + 27, cy - 7.5, { size: 13, font: HUD_FONT, weight: '800', align: 'left', color: n === 0 ? 'rgba(255,255,255,0.5)' : '#fff' });
-    x += 60;
-  }
-  const hud = { size: 12.85, font: HUD_FONT, weight: '800', align: 'right', color: 'rgba(255,255,255,0.9)' };
-  if (game.mode === 'battle') {
-    r.text(b.wave ? `wave ${b.wave}` : 'get ready', R, 60, hud);
-    r.text(`${b.takedowns} takedown${b.takedowns === 1 ? '' : 's'}`, R, 73, { ...hud, color: 'rgba(255,255,255,0.75)' });
-  } else r.text('sandbox', R, 60, { ...hud, color: 'rgba(255,255,255,0.75)' });
+/** Sandbox's HUD (boost, jumps and missiles never run out, so there's no meter): warnings, callouts and the keys. */
+export function battleHud(r, game) {
+  const b = game.battle, ctx = r.ctx;
   if (game.screen !== 'playing') return;
   warnings(r, game);
   if (b.callout) {
@@ -319,79 +236,6 @@ export function battleHud(r, game, y) {
   }
 }
 
-/** A racer's colour: its paint's main shade. */
-const paintOf = (e) => BODY_PAINTS[e.look.paint * 2];
-
-/** Rally's HUD: your place, the race clock, everyone's progress, the countdown, and markers for rivals off screen. */
-export function rallyHud(r, game) {
-  const race = game.race, ctx = r.ctx, R = r.viewW - 10;
-  if (!race || !game.battle) return;
-  const hud = { font: HUD_FONT, weight: '900', align: 'right' };
-  const place = race.place, n = race.field;
-  r.text('place', R + 0.5, 9, { size: 12.5, font: HUD_FONT, weight: '800', align: 'right' });
-  ctx.font = `900 30px ${HUD_FONT}`;
-  ctx.textAlign = 'right';
-  const of = `/${n}`;
-  r.text(of, R, 31, { ...hud, size: 15, color: 'rgba(255,255,255,0.8)' });
-  r.text(ordinal(place), R - ctx.measureText(' ').width - measure(ctx, of, 15), 20, { ...hud, size: 30, color: place === 1 ? '#ffe27a' : '#fff' });
-  r.text(formatTime(race.clock), R, 56, { size: 14, font: HUD_FONT, weight: '800', align: 'right', color: 'rgba(255,255,255,0.9)' });
-  if (race.championship) r.text(`${race.points.You} pts  ·  stage ${game.level + 1}/9`, R, 74, { size: 11.5, font: HUD_FONT, weight: '800', align: 'right', color: 'rgba(255,255,255,0.8)' });
-  if (game.tickerTimer > 0 && game.screen !== 'gameOver' && !race.holding) r.text(game.ticker, r.viewW / 2, 82, { size: game.ticker === 'GO!' ? 28 : 18, font: HUD_FONT, weight: '900', color: game.ticker === 'GO!' ? '#ffe27a' : '#fff' });
-  progressStrip(r, game);
-  if (game.screen !== 'playing') return;
-  // The countdown: 3, 2, 1, big in the middle.
-  if (race.holding) {
-    const n3 = Math.ceil(race.countdown / 70), age = 70 - (race.countdown % 70 || 70);
-    const k = 1 + 0.6 * Math.max(0, 1 - age / 10) ** 2;
-    ctx.save();
-    ctx.translate(r.viewW / 2, r.viewH * 0.32);
-    ctx.scale(k, k);
-    ctx.globalAlpha = Math.min(1, (race.countdown % 70 || 70) / 15);
-    r.text(String(n3), 0, -30, { size: 64, font: HUD_FONT, weight: '900', color: '#ffe27a' });
-    ctx.restore();
-  }
-  // Rivals off screen: a marker at the edge they're off, in their colour.
-  const z = game.zoom;
-  for (const e of game.battle.racers) {
-    const [ex, ey] = e.centre, sx = (ex - game.camX) / z;
-    const right = sx > r.viewW + 8, left = sx < -8;
-    if (!right && !left) continue;
-    const y = Math.max(90, Math.min(r.viewH - 110, (ey - game.camY) / z));
-    const x = right ? r.viewW - 20 : 20;
-    ctx.save();
-    ctx.translate(x, y);
-    if (left) ctx.scale(-1, 1);
-    ctx.beginPath();
-    ctx.moveTo(12, 0); ctx.lineTo(-6, -11); ctx.quadraticCurveTo(-11, -12, -11, -7); ctx.lineTo(-11, 7); ctx.quadraticCurveTo(-11, 12, -6, 11);
-    ctx.closePath();
-    ctx.fillStyle = paintOf(e); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.restore();
-    r.text(e.name, right ? x - 16 : x + 16, y - 6, { size: 11, font: HUD_FONT, weight: '800', align: right ? 'right' : 'left' });
-  }
-}
-
-const measure = (ctx, str, size) => { ctx.font = `900 ${size}px ${HUD_FONT}`; return ctx.measureText(str).width; };
-
-/** Everyone's way along the stage, as dots on a line at the bottom: yours white, the rivals' in their colours. */
-function progressStrip(r, game) {
-  const race = game.race, b = game.battle, finish = race.finishX, start = game.levelData.start[0];
-  // At the bottom; on a touch screen (where the pedals are at the bottom), just under the pause
-  // button, which is 8 + 44 CSS pixels down.
-  const css = 1 / (r.scale * r.cssPerDevice);
-  const w = Math.min(320, r.viewW * 0.45), x0 = (r.viewW - w) / 2, y = r.touchMode ? 59 * css : r.viewH - 24;
-  const at = (x) => x0 + w * Math.max(0, Math.min(1, (x - start) / (finish - start)));
-  r.roundRect(x0 - 4, y - 3, w + 8, 6, 3, 'rgba(0,0,0,0.3)');
-  const ctx = r.ctx;
-  // the finish flag
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(x0 + w + 2, y - 14, 2, 14);
-  for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { ctx.fillStyle = (i + j) % 2 ? '#2f2c2a' : '#fff'; ctx.fillRect(x0 + w + 4 + i * 3, y - 14 + j * 3, 3, 3); }
-  const dot = (x, color, rad) => { ctx.beginPath(); ctx.arc(x, y, rad, 0, 7); ctx.fillStyle = color; ctx.fill(); ctx.strokeStyle = 'rgba(38,38,38,0.7)'; ctx.lineWidth = 1.5; ctx.stroke(); };
-  for (const e of b.racers) dot(at(e.finished !== null ? finish : e.centre[0]), paintOf(e), 5);
-  dot(at(game.focus[0]), '#fff', 7);
-}
-
 /** A pointer at the right edge for each enemy coming that's not on screen yet. */
 function warnings(r, game) {
   const ctx = r.ctx, z = game.zoom;
@@ -415,5 +259,5 @@ function warnings(r, game) {
   }
 }
 
-/** For the help text and tests: what the keys do in Battle. */
+/** For the help text and tests: what the keys do in Sandbox. */
 export const BATTLE_KEYS = 'Z jumps, X fires a missile, C (or Shift) boosts';

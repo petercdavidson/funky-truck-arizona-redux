@@ -55,7 +55,7 @@ const KEY_MAP = {
   ArrowRight: 'right', KeyD: 'right',
   KeyP: 'pause',
   KeyR: 'upright',
-  KeyC: 'boost', ShiftLeft: 'boost', ShiftRight: 'boost', // Battle's boost (held)
+  KeyC: 'boost', ShiftLeft: 'boost', ShiftRight: 'boost', // Sandbox's boost (held)
   Space: ['restart', 'one'], Enter: 'restart', NumpadEnter: 'restart', ControlLeft: 'restart', ControlRight: 'restart',
 };
 
@@ -83,13 +83,14 @@ function chooseMode() {
  */
 function escape() {
   if (game.screen === 'playing' && game.selfWreck()) { sound.play('wreck'); return; }
+  if (game.sandboxPick) { doAction('sbPickClose'); return; }
   if (game.screen === 'pauseOptions') { doAction('pauseBack'); return; }
   if (game.screen === 'sandboxTweaks') { doAction('tweaksBack'); return; }
   if (game.screen === 'stats' && game.resetConfirm) { doAction('resetNo'); return; }
   if (game.screen !== 'title') goMenu();
 }
 
-/** Battle's presses: a missile, and the jump. */
+/** Sandbox's presses: a missile, and the jump. */
 const PRESS_KEYS = { KeyX: 'fire', KeyZ: 'jump' };
 
 function onKey(e, down) {
@@ -162,6 +163,9 @@ function doAction(a) {
   else if (a === 'sbGo') game.startSandbox();
   else if (a === 'sbReset') game.resetSandbox();
   else if (a.startsWith('sb:')) { const [, key, d] = a.split(':'); game.stepSandbox(key, Number(d)); }
+  else if (a.startsWith('sbPick:')) game.pickSandbox(a.slice(7));
+  else if (a.startsWith('sbSet:')) game.setSandbox(game.sandboxPick, Number(a.slice(6)));
+  else if (a === 'sbPickClose') game.pickSandbox(null);
   else if (a === 'tweaks') game.openTweaks();
   else if (a === 'tweaksBack') game.closeTweaks();
   else if (a === 'endRun') game.endRun();
@@ -173,7 +177,7 @@ function doAction(a) {
   else if (a === 'help') game.showMenu('help');
   else if (a === 'menu') goMenu();
   else if (a === 'again') game.restart();
-  else if (a === 'nextStage') { if (game.mode === 'trial') game.nextTrial(); else if (game.mode === 'rally') game.nextRally(); else game.nextPractice(); }
+  else if (a === 'nextStage') { if (game.mode === 'trial') game.nextTrial(); else game.nextPractice(); }
   else if (a === 'resume') game.togglePause();
   else if (a.startsWith('stage')) game.startPractice(Number(a.slice(5)));
   else {
@@ -237,7 +241,7 @@ for (const btn of touchUI.querySelectorAll('[data-key]')) {
   }
 }
 
-// Battle's fire and jump buttons: a press each (a quick tap still counts).
+// Sandbox's fire and jump buttons: a press each (a quick tap still counts).
 for (const btn of touchUI.querySelectorAll('[data-press]')) {
   btn.addEventListener('pointerdown', (e) => {
     e.preventDefault();
@@ -266,6 +270,13 @@ for (const btn of touchUI.querySelectorAll('[data-press]')) {
     tap.addEventListener(ev, (e) => { pointers.delete(e.pointerId); update(); });
   }
 }
+
+document.getElementById('sound-button').addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  doAction('sound');
+});
+document.getElementById('sound-button').addEventListener('pointerdown', (e) => e.stopPropagation());
 
 document.getElementById('pause-button').addEventListener('pointerdown', (e) => {
   e.preventDefault();
@@ -310,7 +321,7 @@ function pollGamepads() {
     padKeys.restart ||= b(0) || b(9);
     padKeys.one ||= b(0);
     padKeys.upright ||= b(3);                      // Y
-    padKeys.boost ||= b(5);                        // Battle: right bumper boosts,
+    padKeys.boost ||= b(5);                        // Sandbox: right bumper boosts,
     fireDown ||= b(2);                             // X fires a missile,
     jumpDown ||= b(4);                             // and the left bumper jumps
     pauseDown ||= b(9);                            // Start
@@ -432,6 +443,8 @@ function frame(now) {
   // Tell the page which screen this is before drawing, so the on-screen controls always match it.
   const ds = document.body.dataset;
   if (ds.screen !== game.screen) ds.screen = game.screen;
+  const snd = game.soundOn ? '1' : '0';
+  if (ds.sound !== snd) ds.sound = snd;
   const cur = snapshot();
   const t = ['playing', 'title', 'modes', 'garage'].includes(game.screen) ? Math.min(acc / DT, 1) : 1;
   renderer.draw(game, prev ? lerpView(prev, cur, t) : { ...cur, B: cur.B && lerpBattle(null, cur.B, 1) });
@@ -442,7 +455,7 @@ function frame(now) {
   if (game.battle?.opts.weapons) showCounts(game.battle);
 }
 
-/** Battle: what's left, on the touch buttons. */
+/** Sandbox: what's left (always ∞), on the touch buttons. */
 const fireCount = document.getElementById('fire-count'), jumpCount = document.getElementById('jump-count');
 function showCounts(b) {
   const U = b.tune.unlimited, f = U ? '∞' : String(b.missilesLeft), j = U ? '∞' : String(b.jumps);
@@ -458,7 +471,7 @@ function fit() {
 
 /**
  * Test hook for automated screenshots, e.g. ?test=play&stage=5&frames=400&touch=1
- *   test   = title | modes | stats | options | garage | help | practice | trials | rallies | sandboxSetup | play | trial
+ *   test   = title | modes | stats | options | garage | help | practice | trials | sandboxSetup | play | trial
  *            | endless | sandbox | paused | gameover
  *            (trial: a Time Trial of `stage`, 9 for All Nine)
  *   stage  = stage index for play (0-8), frames = steps to simulate with the gas held
@@ -502,7 +515,7 @@ function applyTestParams() {
     game.random = () => (s = (s * 16807) % 2147483647) / 2147483647;
     game.startEndless();
   } else if (test === 'sandbox') {
-    game.sandbox.track = Number(q.get('stage')) || 0;
+    game.sandbox.course = Number(q.get('course')) || 0; // 0 Endless, 1-9 the stages, then the stunt tracks
     game.startSandbox();
   } else if (test === 'trial') {
     game.startTrial(Number(q.get('stage')) || 0);

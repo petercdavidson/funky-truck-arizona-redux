@@ -185,10 +185,9 @@ body.touch-mode[data-onebutton="1"][data-screen="playing"] #tap { display: flex;
 }
 body[data-onebutton="1"] #touch .pad { visibility: hidden; }
 
-/* Battle and Sandbox's buttons: jump above the tilt buttons, fire and boost above the pedals. With one
+/* Sandbox's buttons: jump above the tilt buttons, fire and boost above the pedals. With one
    button they drop to the bottom corners and sit over the hold-anywhere area. */
 .actions { display: none; position: fixed; gap: var(--ctl-gap); z-index: 3; }
-body.touch-mode[data-screen="playing"][data-mode="battle"] .actions,
 body.touch-mode[data-screen="playing"][data-mode="sandbox"] .actions { display: flex; }
 .actions-left { left: var(--edge); bottom: calc(var(--edge-b) + var(--ctl-size) + var(--ctl-gap)); }
 .actions-right { right: var(--edge-r); bottom: calc(var(--edge-b) + var(--ctl-size) * 1.35 + var(--ctl-gap)); }
@@ -224,6 +223,34 @@ body[data-onebutton="1"] .actions-right { bottom: var(--edge-b); }
   border: 1.5px solid rgba(255, 255, 255, 0.8);
   font: 800 12px/19px "Arial Rounded MT Bold", "Nunito", system-ui, sans-serif;
 }
+
+/* The title screen's sound switch: a button in the top right corner of the game view (the frame
+   rate goes in the opposite corner). */
+#sound-button {
+  display: none;
+  position: fixed;
+  top: calc(var(--view-y, 0px) + 8px);
+  left: calc(var(--view-x, 0px) + var(--view-w, 100vw) - 52px);
+  width: 44px;
+  height: 44px;
+  z-index: 3;
+  place-items: center;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  border-radius: 22px;
+  background: rgba(70, 48, 40, 0.45);
+  color: #fff;
+  cursor: pointer;
+}
+#sound-button:hover { background: rgba(110, 76, 64, 0.7); }
+body[data-screen="title"] #sound-button { display: grid; }
+#sound-button svg {
+  grid-area: 1 / 1;
+  width: 24px; height: 24px;
+  fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
+}
+#sound-button svg path:first-child { fill: currentColor; }
+body[data-sound="1"] #sound-button .off, body:not([data-sound="1"]) #sound-button .on { display: none; }
 
 /* The frame rate (an option), in the bottom left corner of the game view; above the on-screen
    controls while driving on a touch screen. */

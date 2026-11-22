@@ -3,9 +3,11 @@
 // nothing is added. No DOM access (runs under Node for tests).
 //
 // Every piece is made of Verlet points like the truck itself, under the same gravity. The body is
-// a rigid box of four points, each bar is two points, and each wheel is one point that collides
+// a rigid box of four points, each bar is two points (one end pinned to the body), and each wheel
+// is one point that collides
 // with the normal (wheel-sized) collision world. The box and bars use a second collision world
 // built with a thin offset, so they rest on the ground rather than floating a wheel's height up.
+// The two wheels also hit each other and the body box (the bars pass through everything).
 
 const GRAVITY = 0.11;     // the truck's gravity per step (Truck.integrate)
 
@@ -20,7 +22,23 @@ const BODY_BOX = [[-10, -26], [62, -26], [62, 10], [-10, 10], [14, -26], [38, -2
 export const WRECK = {
   part: { bounce: 0.3, friction: 0.86, air: 0.998 },     // the body and bars scrape to a halt
   wheel: { bounce: 0.5, friction: 0.997, air: 0.9998 },  // the wheels roll on and bounce
+  wheelRadius: 22.5,                                      // the wheels hit each other and the body as circles this size
+  bodyShare: 0.3,                                         // how much of a wheel-body overlap the (heavier) body is moved
 };
+
+/** The point nearest (x, y) on the polygon `poly` ([[x, y], ...]), and whether (x, y) is inside it. */
+function nearestOnPolygon(poly, x, y) {
+  let best = null, bd = Infinity, inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [ax, ay] = poly[j], [bx, by] = poly[i];
+    if ((ay > y) !== (by > y) && x < ax + (y - ay) / (by - ay) * (bx - ax)) inside = !inside;
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1e-9;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2));
+    const px = ax + t * dx, py = ay + t * dy, d = Math.hypot(x - px, y - py);
+    if (d < bd) { bd = d; best = [px, py]; }
+  }
+  return { x: best[0], y: best[1], d: bd, inside };
+}
 
 export class Wreck {
   /**
@@ -70,14 +88,20 @@ export class Wreck {
     ];
     this.circumference = truck.circumference;
 
-    // Bars, from the chassis centre to each body mount and wheel (drawn as in Renderer.truck).
-    this.bars = [[6, 1], [8, 1], [2, 0], [4, 0]].map(([p, frameIndex]) => {
-      const a = add(cx, cy, P[0], P[1], true);
+    // Bars, from the chassis centre to each body mount and wheel (drawn as in Renderer.truck). They
+    // stay attached and flop about: on each side, the bar to the body mount hangs from its mount
+    // (held to three of the body's corners, so it keeps its place on the body but swings), and the
+    // bar to that side's wheel hangs from its lower end, a knee joint they share, its other end
+    // free where the wheel came off. So each side is a leg: mount, knee, loose end.
+    const knees = [add(cx, cy, P[0], P[1], true), add(cx, cy, P[0], P[1], true)]; // rear, front
+    this.bars = [[6, 1, 0], [8, 1, 1], [2, 0, 0], [4, 0, 1]].map(([p, frameIndex, side]) => {
+      const a = knees[side];
       const b = add(T[p], T[p + 1], P[p], P[p + 1], true);
       stick(a, b);
-      this.liftClear([a, b], refs);
-      return { a, b, frame: frameIndex };
+      return { a, b, frame: frameIndex, mount: frameIndex === 1 };
     });
+    this.liftClear([...knees, ...this.bars.map((bar) => bar.b)], refs);
+    for (const bar of this.bars) if (bar.mount) for (const c of this.body.slice(0, 3)) stick(bar.b, c);
     this.steps = 0;
     this.gravity = truck.gravity ?? GRAVITY; // (Sandbox can change it)
   }
@@ -105,6 +129,37 @@ export class Wreck {
         T[i * 2] += best[0]; T[i * 2 + 1] += best[1];
         P[i * 2] += best[0]; P[i * 2 + 1] += best[1];
       }
+    }
+  }
+
+  /**
+   * The loose wheels hit each other and the body: overlaps are pushed apart (positions only; the
+   * ground collisions after this keep anything from being pushed into the ground).
+   */
+  collidePieces() {
+    const T = this.T, R = WRECK.wheelRadius;
+    const [a, b] = this.wheels.map((w) => w.p);
+    // wheel against wheel: equal shares
+    let dx = T[b * 2] - T[a * 2], dy = T[b * 2 + 1] - T[a * 2 + 1], d = Math.hypot(dx, dy);
+    if (d < 2 * R) {
+      const nx = d > 1e-6 ? dx / d : 1, ny = d > 1e-6 ? dy / d : 0, o = (2 * R - d) / 2;
+      T[a * 2] -= nx * o; T[a * 2 + 1] -= ny * o;
+      T[b * 2] += nx * o; T[b * 2 + 1] += ny * o;
+    }
+    // wheel against the body's box (its four corners)
+    const corners = this.body.slice(0, 4);
+    for (const w of [a, b]) {
+      const x = T[w * 2], y = T[w * 2 + 1];
+      const h = nearestOnPolygon(corners.map((i) => [T[i * 2], T[i * 2 + 1]]), x, y);
+      if (!h.inside && h.d >= R) continue;
+      // out of the box along the line from the nearest edge point (through it, if it's inside)
+      let nx = x - h.x, ny = y - h.y;
+      const l = Math.hypot(nx, ny) || 1e-6;
+      nx /= l; ny /= l;
+      if (h.inside) { nx = -nx; ny = -ny; }
+      const o = h.inside ? R + h.d : R - h.d, k = WRECK.bodyShare;
+      T[w * 2] += nx * o * (1 - k); T[w * 2 + 1] += ny * o * (1 - k);
+      for (const i of this.body) { T[i * 2] -= nx * o * k; T[i * 2 + 1] -= ny * o * k; }
     }
   }
 
@@ -136,6 +191,7 @@ export class Wreck {
         T[a * 2] += dx; T[a * 2 + 1] += dy;
         T[b * 2] -= dx; T[b * 2 + 1] -= dy;
       }
+      this.collidePieces();
       for (let i = 0; i < this.thin.length; i++) {
         const w = this.thin[i] ? this.thinWorld : this.wheelWorld;
         const h = w.collide(from[i * 2], from[i * 2 + 1], T[i * 2], T[i * 2 + 1]);
