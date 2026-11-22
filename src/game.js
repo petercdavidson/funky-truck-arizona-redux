@@ -577,11 +577,12 @@ const UNDERSIDE = 0.42;
 const RIGHTING_STEPS = 80;
 const ONE_BUTTON_AIR = 4;        // steps off the ground before the one-button controls count as in the air
 /**
- * One-button balance assist: tipped more than `angle` degrees onto one wheel (nose down on the
- * front wheel, or a wheelie on the back wheel, with the other wheel off the ground), the button
- * also turns the truck back towards level, pushing the raised wheel `push` px per step towards it.
+ * One-button balance assist: on the ground and tipped more than this many degrees (nose down with
+ * the front wheel down, or nose up with the back wheel down), the button also presses the tilt key
+ * that turns the truck back towards level, just as Standard's arrow keys would (no harder: the
+ * tilt only acts as it does for them, through a wheel on the ground).
  */
-export const BALANCE = { angle: 45, push: 0.6 };
+export const BALANCE_ANGLE = 45;
 /** The cab of a truck wrecked on purpose (Esc) takes this much damage a step while it touches the ground (as scraping does). */
 const SELF_WRECK_DAMAGE = 6;
 /** Endless Mode's milestones: distances (then every `every` metres), and scores. */
@@ -1211,39 +1212,19 @@ export class Game {
   /**
    * The keys the truck sees. With one-button controls there's one button (Space, the up arrow, or
    * holding the touch screen): it drives on the ground and tilts back in the air. Nothing else
-   * drives or tilts.
+   * drives or tilts. On the ground, tipped past BALANCE_ANGLE, it also tilts back towards level.
    */
   driveKeys() {
     const k = this.keys;
     if (!this.oneButtonActive) return k;
     const one = k.one || k.up;
     const air = this.airSteps >= ONE_BUTTON_AIR;
-    return { ...k, up: one && !air, down: false, left: one && air, right: false };
-  }
-
-  /**
-   * One-button balance assist (see BALANCE): while the button drives with the truck tipped onto
-   * one wheel past the angle, it also turns the truck back, as tilting in the air does but pivoting
-   * on the wheel that's down. Nose down on the front wheel turns it anticlockwise; a wheelie on
-   * the back wheel turns it clockwise. Returns -1 (anticlockwise), 1 (clockwise) or 0.
-   */
-  balanceAssist(t) {
-    const T = t.T, P = t.P;
-    let dx = T[4] - T[2], dy = T[5] - T[3];
-    const l = Math.sqrt(dx * dx + dy * dy);
-    if (l === 0) return 0;
-    dx /= l; dy /= l;
-    const tilt = Math.atan2(dy, dx) * 180 / PI; // clockwise, -180..180
-    const px = -dy * BALANCE.push, py = dx * BALANCE.push;
-    if (tilt > BALANCE.angle && t.frontContact && !t.rearContact) {
-      P[2] -= px; P[3] -= py; // the back wheel comes down
-      return -1;
-    }
-    if (tilt < -BALANCE.angle && t.rearContact && !t.frontContact) {
-      P[4] -= px; P[5] -= py; // the front wheel comes down
-      return 1;
-    }
-    return 0;
+    if (air) return { ...k, up: false, down: false, left: one, right: false };
+    // On the ground, the balance assist (BALANCE_ANGLE) leans the truck back towards level.
+    const t = this.truck, tilt = Math.atan2(t.T[5] - t.T[3], t.T[4] - t.T[2]) * 180 / PI; // clockwise
+    const left = one && tilt > BALANCE_ANGLE && t.frontContact;
+    const right = one && tilt < -BALANCE_ANGLE && t.rearContact;
+    return { ...k, up: one, down: false, left, right };
   }
 
   stepTruck(w) { // V7B33
@@ -1262,7 +1243,6 @@ export class Game {
     if (t.rearContact) this.kickDirt(t.rearSpin, 1, t.rearN);
     if (t.frontContact) this.kickDirt(t.frontSpin, 2, t.frontN);
     t.tilt(keys);
-    if (this.oneButtonActive && keys.up) this.balanceAssist(t);
     const type = t.probeBody(w);
     // The cab (the truck above its wheels) is touching the ground. Outside Classic, ground under
     // the body doesn't count: that's the chassis bottoming out, not the cab scraping.
