@@ -29,6 +29,13 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   with Web Audio (sound is on/off, off by default). `sounds.html` plays every sound. No
   sound files.
 - `src/wreck.js` (no DOM): the ragdoll wreck, a wrecked truck's loose pieces.
+- `src/version.js`: the version on the title screen (the Pages deploy stamps in the commit).
+- `assets/stunts.json`: Practice's stunt tracks (after the nine stages), built by
+  `node tools/make-stunts.mjs` from the stages' own column shapes and joins. Edit the designs in
+  that script and rerun it; don't hand-edit the JSON.
+- `tests/bot.mjs`: a simulated driver (backs up for run-ups when it stalls) for checking that
+  generated courses can be driven. Endless never climbs more than `MAX_RISE` tiles within
+  `RISE_SPAN` columns (`src/endless.js`); keep it that way so there are no unclimbable walls.
 
 ## Modes and rules
 
@@ -60,6 +67,9 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 
 - Use a branch and pull request per feature. CI runs the tests on PRs, and merging to `main`
   deploys.
+- When sharing a preview of `dev`, give the commit-pinned githack link
+  (`https://raw.githack.com/petercdavidson/funky-truck-utah/<short-sha>/index.html`): the branch
+  link is cached for a while after a push.
 - Bump `VERSION` in `src/version.js` and `version` in `package.json` (a test checks they match)
   with every push, so the version on the title screen tells you which build you have.
 - Before finishing: run `npm test`, check the change in a browser (desktop and phone sizes), and
