@@ -141,6 +141,8 @@ export class Wreck {
         if (h) { T[i * 2] = h.x; T[i * 2 + 1] = h.y; touched[i] = h; }
       }
     }
+    // Whether the body is touching the ground (any side of it), for damage to a truck wrecked on purpose.
+    this.bodyTouching = this.body.some((i) => touched[i]);
     // Bounce and friction for the points that touched the ground.
     for (let i = 0; i < touched.length; i++) {
       const h = touched[i];

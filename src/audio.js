@@ -4,10 +4,11 @@
 //   engine            a continuous voice driven by { throttle, speed, airborne } (each 0..1),
 //                     with a quiet hiss of tyres on the ground while the truck is rolling
 //   scrape            a run of hard hits while the cab drags along the ground
-//   start, land, bump, flip, trick, stage, win, wreck, click     one-shot sounds
+//   start, land, bump, flip, trick, flipCount, milestone, stage, win, wreck, click, boing
+//                     one-shot sounds
 // SoundWatcher (sound-events.js) decides when cues happen; this file decides how they sound.
 
-export const CUES = ['start', 'land', 'bump', 'flip', 'trick', 'stage', 'win', 'wreck', 'click'];
+export const CUES = ['start', 'land', 'bump', 'flip', 'trick', 'flipCount', 'milestone', 'stage', 'win', 'wreck', 'click', 'boing'];
 
 
 const note = (n) => 440 * Math.pow(2, (n - 69) / 12); // MIDI note number -> Hz
@@ -142,6 +143,15 @@ const SET = {
     if (names.includes('Clean')) { bell(k, note(91), 0, 0.08, 0.5); return; }
     melody(k, [79, 84], 0.07, (f, t) => bell(k, f, t, 0.1, 0.5));
   },
+  /** A turn of a flip counted out in the air: a short blip, a step higher for each turn. */
+  flipCount(k, { turns = 1 } = {}) { bell(k, note(83 + 2 * Math.min(turns - 1, 8)), 0, 0.07, 0.3); },
+  /** An Endless milestone: a quick rising fanfare. */
+  milestone(k) {
+    melody(k, [67, 72, 76, 79, 84], 0.07, (f, t, i) => bell(k, f, t, 0.12, i === 4 ? 1.2 : 0.4));
+    noise(k, { t: 0.3, dur: 0.5, gain: 0.05, type: 'highpass', f: 5000 });
+  },
+  /** The title screen's truck, knocked into the air. */
+  boing(k) { tone(k, { type: 'triangle', f: 160, f2: 420, dur: 0.22, gain: 0.16, vibrato: 18, vibratoRate: 22 }); },
   stage(k) { melody(k, [72, 76, 79, 84], 0.13, (f, t, i) => bell(k, f, t, 0.15, i === 3 ? 1.4 : 0.6)); },
   win(k) { melody(k, [72, 76, 79, 84, 79, 84, 88], 0.12, (f, t, i) => bell(k, f, t, 0.15, i === 6 ? 1.8 : 0.5)); },
   wreck(k) {

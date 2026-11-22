@@ -73,12 +73,38 @@ try {
   check(await evaluate('document.body.classList.contains("touch-mode")'), 'touch mode is detected');
   await shot('phone-portrait-title');
 
-  // Tap PLAY on the canvas, wherever the current menu layout puts it.
-  const playAt = await evaluate(`(() => { const { renderer, game } = window.__funkyTruck; const r = document.getElementById('game').getBoundingClientRect();
-    const [x, y] = renderer.buttonCentre('title', 'play', game); return [r.x + x, r.y + y]; })()`);
-  await touch('touchStart', [playAt]); await touch('touchEnd', []);
+  // Tapping the title's truck knocks it up into the air.
+  const truckAt = await evaluate(`(() => { const { renderer, game } = window.__funkyTruck; const r = document.getElementById('game').getBoundingClientRect();
+    const t = game.garageTruck, P = renderer.tall ? { x: 180, y: 212, k: 1.15 } : { x: 288, y: 218, k: 1 };
+    const [x, y] = renderer.fromMenu((t.T[2] - 288) * P.k + P.x, (t.T[3] - 170) * P.k + P.y); return [r.x + x, r.y + y]; })()`);
+  const truckY0 = await evaluate('window.__funkyTruck.game.garageTruck.centre()[1]');
+  await touch('touchStart', [truckAt]); await touch('touchEnd', []);
+  await sleep(250);
+  const truckY1 = await evaluate('window.__funkyTruck.game.garageTruck.centre()[1]');
+  check(truckY1 < truckY0 - 20, `tapping the title truck knocks it up (${Math.round(truckY0)} -> ${Math.round(truckY1)})`);
+  check(await evaluate('window.__funkyTruck.game.screen') === 'title', 'and stays on the title screen');
+
+  // Tap PLAY on the canvas, wherever the current menu layout puts it: the mode picker opens.
+  const buttonAt = (screen, action) => evaluate(`(() => { const { renderer, game } = window.__funkyTruck; const r = document.getElementById('game').getBoundingClientRect();
+    const p = renderer.buttonCentre('${screen}', '${action}', game); return p && [r.x + p[0], r.y + p[1]]; })()`);
+  await touch('touchStart', [await buttonAt('title', 'play')]); await touch('touchEnd', []);
   await sleep(300);
-  check(await evaluate('window.__funkyTruck.game.screen') === 'playing', 'tapping PLAY starts the game');
+  check(await evaluate('window.__funkyTruck.game.screen') === 'modes', 'tapping PLAY opens the mode picker');
+  await shot('phone-portrait-modes');
+  await touch('touchStart', [[10, 10]]); await touch('touchEnd', []);
+  await sleep(300);
+  check(await evaluate('window.__funkyTruck.game.screen') === 'title', 'tapping away closes it');
+  await touch('touchStart', [await buttonAt('title', 'stats')]); await touch('touchEnd', []);
+  await sleep(300);
+  check(await evaluate('window.__funkyTruck.game.screen') === 'stats', 'HIGH SCORES opens the stats');
+  await shot('phone-portrait-stats');
+  await touch('touchStart', [await buttonAt('stats', 'menu')]); await touch('touchEnd', []);
+  await sleep(300);
+  await touch('touchStart', [await buttonAt('title', 'play')]); await touch('touchEnd', []);
+  await sleep(300);
+  await touch('touchStart', [await buttonAt('modes', 'standard')]); await touch('touchEnd', []);
+  await sleep(300);
+  check(await evaluate('window.__funkyTruck.game.screen') === 'playing', 'tapping STANDARD starts the game');
 
   // Hold the gas pedal and check the truck moves forwards.
   await sleep(1500);
@@ -129,50 +155,40 @@ try {
   const gasL = await center('[data-key="up"]');
   check(!!gasL && gasL[0] < 844 && gasL[1] < 390, 'gas pedal is on screen in landscape');
 
-  // Touch zones (the one-button option): the pedals go, and the screen is in three parts.
+  // One button: the pedals go, and holding anywhere on the screen is the button.
   await evaluate('(() => { const g = window.__funkyTruck.game; g.oneButton = true; g.startCampaign(); })()');
   await sleep(1500);
-  check(await evaluate('getComputedStyle(document.querySelector(".pad-right")).visibility') === 'hidden', 'zones: the pedals are hidden');
+  check(await evaluate('getComputedStyle(document.querySelector(".pad-right")).visibility') === 'hidden', 'one button: the pedals are hidden');
   const xa = await evaluate('window.__funkyTruck.game.truck.T[0]');
   const winW = await evaluate('window.innerWidth');
   const pressedNow = async () => {
     const k = JSON.parse(await evaluate('JSON.stringify(window.__funkyTruck.game.keys)'));
-    return ['up', 'down', 'left', 'right', 'one', 'back'].filter((n) => k[n]).join(' ');
+    return ['up', 'down', 'left', 'right', 'one'].filter((n) => k[n]).join(' ');
   };
-  for (const [x, want, name] of [[winW * 0.9, 'right', 'the right tilts forwards'], [winW * 0.1, 'back', 'the left reverses or tilts back'],
-    [winW * 0.5, 'up', 'the middle drives']]) {
+  for (const x of [winW * 0.1, winW * 0.5, winW * 0.9]) {
     await touch('touchStart', [[x, 250]]);
     await sleep(150);
     const pressed = await pressedNow();
-    check(pressed === want, `zones: ${name} (pressed: ${pressed || 'nothing'})`);
+    check(pressed === 'one', `one button: holding at ${Math.round(x)}px is the button (pressed: ${pressed || 'nothing'})`);
     await touch('touchEnd', []);
     await sleep(100);
   }
-  // A finger that slides into another zone switches to it.
-  await touch('touchStart', [[winW / 2, 250]]);
+  await touch('touchStart', [[winW * 0.2, 250], [winW * 0.8, 250]]);
   await sleep(100);
-  await touch('touchMove', [[winW * 0.9, 250]]);
-  await sleep(100);
-  const slid = await pressedNow();
-  check(slid === 'right', `zones: sliding from the middle to the right switches zone (pressed: ${slid || 'nothing'})`);
-  await touch('touchMove', [[winW / 2, 250], [winW * 0.1, 250]]);
-  await sleep(100);
-  const two = await pressedNow();
-  check(two === 'up back', `zones: middle and left together (pressed: ${two || 'nothing'})`);
-  check(await evaluate('(() => { const k = window.__funkyTruck.game.driveKeys(); return k.up && k.left && !k.down; })()'), 'zones: middle and left drive and tilt back');
   await touch('touchEnd', []);
   await sleep(100);
+  check(await pressedNow() === '', 'one button: lifting all fingers lets go');
   await touch('touchStart', [[winW / 2, 250]]);
   await sleep(1400);
-  check(await pressedNow() === 'up', 'zones: holding the middle drives');
-  await shot('phone-landscape-zones');
+  check(await evaluate('window.__funkyTruck.game.driveKeys().up'), 'one button: holding drives');
+  await shot('phone-landscape-one-button');
   await touch('touchEnd', []);
   const xb = await evaluate('window.__funkyTruck.game.truck.T[0]');
-  check(xb - xa > 50, `zones: the truck drove (moved ${Math.round(xb - xa)}px)`);
+  check(xb - xa > 50, `one button: the truck drove (moved ${Math.round(xb - xa)}px)`);
   const pauseL = await center('#pause-button');
   await touch('touchStart', [pauseL]); await touch('touchEnd', []);
   await sleep(200);
-  check(await evaluate('window.__funkyTruck.game.screen') === 'paused', 'zones: the pause button still works');
+  check(await evaluate('window.__funkyTruck.game.screen') === 'paused', 'one button: the pause button still works');
 
   // The game-over screen: no driving controls or pause button over it, and its buttons work.
   await evaluate('(() => { const g = window.__funkyTruck.game; g.togglePause(); g.damage = 1000; })()');
@@ -181,7 +197,7 @@ try {
   await shot('phone-landscape-game-over');
   check(await evaluate('document.body.dataset.screen') === 'gameOver', 'game over: the page knows the screen');
   check(await evaluate('getComputedStyle(document.getElementById("corner")).display') === 'none', 'game over: no pause button');
-  check(await evaluate('getComputedStyle(document.getElementById("tap")).display') === 'none', 'game over: the touch zones are gone');
+  check(await evaluate('getComputedStyle(document.getElementById("tap")).display') === 'none', 'game over: the one-button area is gone');
   const menuAt = await evaluate(`(() => { const { renderer, game } = window.__funkyTruck; const r = document.getElementById('game').getBoundingClientRect();
     const p = renderer.buttonCentre('gameOver', 'menu', game); return p && [r.x + p[0], r.y + p[1]]; })()`);
   check(!!menuAt, 'game over: there is a Menu button');

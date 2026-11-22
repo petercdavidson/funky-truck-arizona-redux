@@ -4,15 +4,28 @@ A bouncy monster-truck game for the browser: drive across nine stages of Utah hi
 wrecking your truck. It works with a keyboard, a touchscreen or a gamepad, and runs as a static
 site on GitHub Pages.
 
+## Menus
+
+The title screen has **Play**, **Change Truck**, **High Scores**, **Options** and **How to Play**.
+**Play** dims the title and opens a box of the modes (below); tap one, or **Back** or anywhere
+outside the box to close it (on a keyboard: ↑ / ↓ and Space or Enter; on a gamepad: d-pad and A).
+**High Scores** shows each mode's best and your records and totals across all your runs: longest
+airtime, top speed, most flips in one jump, longest wheelie, best and longest trick chain, distance
+and time driven, runs, stages finished, flips, each trick, bails and wrecks (`src/stats.js`).
+
+Tap or click the truck on the title screen to knock it into the air: where you hit it decides
+which way it turns over (the back wheel flips it forwards). Tap it as often as you like; up high it
+goes in front of the words.
+
 ## Modes
 
 | Mode | What it is |
 | --- | --- |
-| **Play** | The nine stages, with tricks, a ragdoll wreck, and no invisible ceiling. The camera follows the truck up and down anywhere, even above or below the stage. |
+| **Standard** | The nine stages, with tricks, a ragdoll wreck, and no invisible ceiling. The camera follows the truck up and down anywhere, even above or below the stage. |
 | **Classic** | The nine stages as the original game played: the original flip bonus, the ceiling, the original controls, and a wrecked truck stays in one piece. Only display fixes (live text, alignment) and the pause button are new. |
 | **Endless** | A course generated as you drive that never ends. No damage: it's free play. **End Run** in the pause menu finishes the run and saves your best distance. |
-| **Time Trial** | Any of the nine stages, or **All Nine** in a row, against the clock, by Play's rules (a wreck doesn't finish). The clock runs from when the truck first lands on each stage to its finish line. Your best run on each track comes back as a see-through **ghost** to race, and the clock's readout shows how far ahead (green) or behind (pink) of it you are at the same point on the track. The stage list shows each best time; a **Ghost** switch there turns the ghost off. Finishing offers **Retry**, **Next** and **Stages**; quitting (from the pause menu or the finish box) goes back to the stage list. |
-| **Practice** | One stage of your choice, played like Play, or one of three **stunt tracks**, where tricks always score and there's no finish line: **Mega Ramp** (a 450 m accelerator at 45°, a launch ramp good for about 470 km/h and 13 s in the air, then a long run-out ending in a quarter pipe), **Kicker Run** (a bumpy downhill of small kickers that goes on for ever) and **Halfpipe** (a bowl: walls nearly vertical at the lips, easing to a flat floor, with a ledge along each top). Options on the stage screen switch **Damage** off and play by **Classic** rules. The pause menu can **Restart** the stage. Finishing offers **Again**, **Next** and **Stages**; quitting goes back to the stage list. |
+| **Time Trial** | Any of the nine stages, or **All Nine** in a row, against the clock, by Standard's rules (a wreck doesn't finish). The clock runs from when the truck first lands on each stage to its finish line. Your best run on each track comes back as a see-through **ghost** to race, and the clock's readout shows how far ahead (green) or behind (pink) of it you are at the same point on the track. The stage list shows each best time; a **Ghost** switch there turns the ghost off. Finishing offers **Retry**, **Next** and **Stages**; quitting (from the pause menu or the finish box) goes back to the stage list. |
+| **Practice** | One stage of your choice, played like Standard, or one of three **stunt tracks**, where tricks always score and there's no finish line: **Mega Ramp** (a 450 m accelerator at 45°, a launch ramp good for about 470 km/h and 13 s in the air, then a long run-out ending in a quarter pipe), **Kicker Run** (a bumpy downhill of small kickers that goes on for ever) and **Halfpipe** (a bowl: walls nearly vertical at the lips, easing to a flat floor, with a ledge along each top). Options on the stage screen switch **Damage** off and play by **Classic** rules. The pause menu can **Restart** the stage. Finishing offers **Again**, **Next** and **Stages**; quitting goes back to the stage list. |
 
 Outside Classic, the driving view fills the window, on a phone held either way up (the
 on-screen controls sit over the bottom of it). Close in, it never shows less of the world than
@@ -32,19 +45,20 @@ speed and height (height fades in over the first second in the air), so bumps an
 move it. While the truck rolls backwards, the frame also eases back a little (up to 100 units) to
 show where it's going. The settings are `CAMERA` in `src/game.js`.
 
-Outside Classic the HUD has a **speedometer** in km/h (64 px of the stage is 2.5 m). It reads 0
-while the truck is being dropped in at the start of a stage, until it first lands.
+Outside Classic the HUD has a **speedometer** in km/h (64 px of the stage is 2.5 m). It reads the
+speed of the truck's centre of mass, so it stays steady while the truck turns over in the air. It
+reads 0 while the truck is being dropped in at the start of a stage, until it first lands.
 
-The game-over box says how far the run got: the stage reached (Play and Classic), the stage
+The game-over box says how far the run got: the stage reached (Standard and Classic), the stage
 (Practice), or the distance (Endless).
 
 **Garage**: choose the truck's body, paint, tyres and wheels. Choosing a body puts it in its own
 colour; Paint then gives it any other body's colour. Only the look changes: every body and tyre
 drives exactly the same (the garage says so).
 
-Play, Classic and Endless each keep their own best (score, score, distance), and Time Trial a
+Standard, Classic and Endless each keep their own best (score, score, distance), and Time Trial a
 best time and ghost per track (a ghost is about 30 KB a minute of driving). A Practice run with
-damage saves to Play's or Classic's best; a damage-free one saves none.
+damage saves to Standard's or Classic's best; a damage-free one saves none.
 
 In damage-free runs outside Classic (Endless, and Practice with damage off), a **Flip** button
 appears at the top of the screen when the truck has been stuck on its roof or side for two seconds.
@@ -54,13 +68,10 @@ truck stops looking stuck. A flip upright isn't a trick: tricks count again a se
 Outside Classic the body touching ground underneath it (the chassis bottoming out on a hard landing
 or a ramp) isn't a scrape: no damage, bail or scrape sound. Hitting the cab's roof or sides is.
 
-**One Button / Touch Zones** (one option, on the Options screen or as Controls in the pause menu;
-it's called One Button on a keyboard and Touch Zones on a touchscreen). On a keyboard, Space is the
-one button: on the ground it drives, and in the air it tilts the truck back. On a touchscreen the
-pedals go and the screen is in three zones: the middle drives, the right tilts forwards, and the
-left reverses on the ground and tilts back in the air. Held together, they combine: middle and right
-drive while tilting forwards, and middle and left drive while tilting back (on the ground too). A
-finger that slides into another zone switches to it. Classic always uses the original controls.
+**One Button** (on the Options screen, or as Controls in the pause menu): one button drives on the
+ground and tilts the truck back in the air. On a keyboard it's Space or the up arrow (the other
+arrow keys do nothing); on a touchscreen the pedals go and holding anywhere on the screen is the
+button. Classic always uses the original controls.
 
 It's plain JavaScript (ES modules) and a 2D canvas, with no build step and no npm dependencies.
 
@@ -77,7 +88,7 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | --- | --- | --- | --- |
 | Forwards / reverse | ↑ / ↓ (or W / S) | right-hand pedals | A or RT / B or LT |
 | Tilt back / forwards | ← / → (or A / D) | left-hand buttons | stick or d-pad |
-| One Button / Touch Zones | Space | middle: drive; right: tilt forwards; left: reverse (tilt back in the air, or with the middle) | A |
+| One Button | Space or ↑ | hold anywhere | A |
 | Pause | P | ⏸ button | Start |
 | Flip upright (when offered) | R | Flip button | Y |
 | Play again (game over) | Space, Enter or Ctrl | Play Again button | A |
@@ -86,18 +97,18 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Full screen | F | | |
 
 **Options** (a button next to How to Play on the title screen) has the switches for sound, the
-controls (One Button / Touch Zones), the dynamic camera, and **Show Frame Rate** (frames per second
+controls (One Button), the dynamic camera, and **Show Frame Rate** (frames per second
 in the bottom left corner). Options for one mode stay on that mode's screen (Practice's Damage and
 Classic, Time Trial's Ghost).
 
-**How to Play** is the small button under the controls hint on the title screen. The game's
+The game's
 version is in the title screen's bottom-right corner; on the live site it's followed by the
 commit it was built from.
 
 The pause screen names the run (mode and stage, or distance in Endless) and has switches for
-sound and, outside Classic, the controls (Standard or One Button; on a touchscreen, Pedals or Touch Zones).
+sound and, outside Classic, the controls (Standard or One Button; on a touchscreen, Pedals or One Button).
 
-The best scores, the options and the truck chosen in the garage (with each body's paint) are saved in the browser
+The best scores, the High Scores screen's stats, the options and the truck chosen in the garage (with each body's paint) are saved in the browser
 (`localStorage`).
 
 ## Endless Mode
@@ -116,7 +127,9 @@ The course never climbs more than 5 tiles within 4 columns, and the generator lo
 never wanders into a valley that can only be left by a steeper wall: every hill can be driven up.
 
 Score: 10 points for every new tile of ground, plus tricks as usual. The HUD shows the
-distance in metres.
+distance in metres. **Milestones** are celebrated as you pass them, in gold with a burst of
+confetti and a fanfare: 100, 250, 500, 750 and 1,000 m, then every 500 m; 5,000, 10,000, 25,000,
+50,000, 100,000, 250,000, 500,000 and 1,000,000 points; and beating your best distance.
 
 ## Sound
 
@@ -135,12 +148,12 @@ plays them.
 
 | Trick | How | Points |
 | --- | --- | --- |
-| Backflip / Frontflip | Turn over in the air and land (Double, Triple… for more turns) | the degrees turned, as in the original |
-| Big Air / Huge Air | 1 s / 2 s with no wheel on the ground | 3 per 1/70 s past half a second |
+| Backflip / Frontflip | Turn over in the air and land (Double, Triple… for more turns). Each turn is counted out over the truck as it's completed (+1, +2…), before the landing names the whole flip | the degrees turned, as in the original |
+| Big Air / Huge Air | 1 s / 2 s with no wheel on the ground; named with the airtime, e.g. *Big Air (1.7s)* | 3 per 1/70 s past half a second |
 | Wheelie / Nose Wheelie | Drive along on the back / front wheel for ¾ s or more | 2 per 1/70 s |
 | Clean | Land a jump on both wheels at once without scraping the cab | half the jump's points |
 
-Tricks score in Play, Endless and Practice (not Classic). Tricks done close together make a chain. The chain pays out about 1½ s after its last trick, worth
+Tricks score in Standard, Endless and Practice (not Classic). Tricks done close together make a chain. The chain pays out about 1½ s after its last trick, worth
 its points times the number of tricks in it (up to ×5). While a chain is open, its running total and
 multiplier show under the score. Scraping the cab is a **bail**: the chain pays out at once, without
 the multiplier, and a grey *bail* note appears under the trick names. A chain still open at the finish line is paid out there. Each trick name stays on
@@ -186,6 +199,7 @@ saved to storage while a test parameter is set.
 | `src/trial.js` | Time Trial: time formats, saved best times, and ghosts (recorded as the truck's pose every other step, packed small). No DOM. |
 | `src/wreck.js` | The ragdoll wreck: a wrecked truck's loose pieces (outside Classic). |
 | `src/tricks.js` | Spots tricks (flips, airtime, wheelies, clean landings) and scores them in chains. |
+| `src/stats.js` | The High Scores screen's records and totals: counting, and checking what's read back from storage. |
 | `src/version.js` | The version shown on the title screen (keep it in step with `package.json`). |
 | `src/main.js` | Startup, the fixed 70 steps/second loop with smooth interpolated drawing, and all input. |
 | `src/assets.js` | Loads the images and level data, prepares the terrain tiles, and repaints each body in every body's colour (leaving the window glass alone). The game uses fonts already on the device and ships no font files. |

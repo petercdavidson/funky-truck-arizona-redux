@@ -3,7 +3,7 @@
 // All drawing uses the original 576x448 stage coordinates (y down, clockwise rotation), scaled to
 // the canvas. Tiles are drawn in device pixels with snapped edges so they never show seams.
 
-import { TILE, STAGE_W, STAGE_H } from './game.js';
+import { TILE, STAGE_W, STAGE_H, STEP_HZ, MILESTONE_SHOW } from './game.js';
 import { HUD_FONT, TITLE_FONT } from './assets.js';
 import { TRICK } from './tricks.js';
 import { VERSION, BUILD } from './version.js';
@@ -12,11 +12,13 @@ import { TRIAL_ALL, formatTime, formatGap } from './trial.js';
 
 const DEG = Math.PI / 180;
 const FILL_SCREENS = new Set(['playing', 'paused', 'gameOver']);
-const MENU_SCREENS = new Set(['title', 'options', 'help', 'garage', 'practiceSelect', 'trialSelect']);
+const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'help', 'garage', 'practiceSelect', 'trialSelect']);
 const AHEAD = '#8ff0a4', BEHIND = '#ffb0a0'; // Time Trial gaps: ahead of / behind your best
 const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
 const SPEEDO_MAX = 160;  // km/h at which the speedometer's bar is full
+const BOX_FILL = 'rgba(140,97,79,0.96)', BOX_EDGE = 'rgba(255,255,255,0.6)'; // the game-over box and the mode picker
+const MILESTONE_GOLD = '#ffe27a';
 
 // ---------------------------------------------------------------------------------------------
 // Clickable areas per screen. `label` buttons are drawn by us; the rest are hotspots over the
@@ -34,13 +36,23 @@ const option = (y, label, action) => ({ rect: r(428, y, 132, 20), label, action,
 /** The Options screen: [label, action, what it does]. */
 const OPTIONS = [
   [(g) => `♪ Sound: ${onOff(g.soundOn)}`, 'sound', () => 'Engine, landings, tricks and crashes (M on a keyboard)'],
-  [(g, r) => `${r?.touchMode ? 'Touch Zones' : 'One Button'}: ${onOff(g.oneButton)}`, 'oneButton',
-    (g, r) => (r?.touchMode ? 'Drive by holding parts of the screen instead of the pedals' : 'Space drives, and tilts back in the air')],
+  [(g) => `One Button: ${onOff(g.oneButton)}`, 'oneButton',
+    (g, r) => (r?.touchMode ? 'Hold anywhere on the screen to drive, and to tilt back in the air' : 'Space (or the up arrow) drives, and tilts back in the air')],
   [(g) => `Dynamic Camera: ${onOff(g.dynamicCamera)}`, 'dynamicCamera', () => 'Pulls back to show more when you go fast or fly high'],
   [(g) => `Show Frame Rate: ${onOff(g.showFps)}`, 'showFps', () => 'Frames per second, in the bottom left corner'],
 ];
 const optionRow = (i, tall) => (tall ? r(50, 92 + 96 * i, 260, 40) : r(178, 82 + 66 * i, 220, 26));
-const MODES = [['Play', 'play'], ['Classic', 'classic'], ['Endless', 'endless'], ['Time Trial', 'trial'], ['Practice', 'practice'], ['Change Truck', 'garage']];
+/** The title screen's buttons. Play opens the mode picker (the 'modes' screen) over it. */
+const MENU = [['Play', 'play'], ['Change Truck', 'garage'], ['High Scores', 'stats'], ['Options', 'options'], ['How to Play', 'help']];
+/** The game modes, in the mode picker: [label, action, what it is]. */
+export const MODES = [
+  ['Standard', 'standard', 'The nine stages, with tricks and all the new extras'],
+  ['Classic', 'classic', 'The original game, exactly as it was'],
+  ['Endless', 'endless', 'A course that goes on for ever: how far can you get?'],
+  ['Time Trial', 'trial', 'Race the clock, and your best run\'s ghost'],
+  ['Practice', 'practice', 'Any one stage, and the stunt tracks'],
+];
+const modeRow = (i, tall) => (tall ? r(40, 112 + 82 * i, 280, 40) : r(112, 122 + 40 * i, 120, 28));
 const PRACTICE_OPTIONS = [
   [(g) => `Damage: ${onOff(g.practiceDamage)}`, 'practiceDamage'],
   [(g) => `Classic: ${onOff(g.practiceClassic)}`, 'practiceClassic'],
@@ -57,8 +69,8 @@ const stuntButtons = (place, extra = {}) => Array.from({ length: STUNTS }, (_, i
 /** The garage's note that the truck's look is only a look. */
 const COSMETIC = 'Looks only: every truck drives exactly the same';
 
-/** The controls in use, by the names the player sees: on a touch screen the pedals or the touch zones. */
-const controlsName = (g, r) => (r?.touchMode ? (g.oneButton ? 'Touch Zones' : 'Pedals') : (g.oneButton ? 'One Button' : 'Standard'));
+/** The controls in use, by the names the player sees. */
+const controlsName = (g, r) => (g.oneButton ? 'One Button' : r?.touchMode ? 'Pedals' : 'Standard');
 
 /**
  * The pause menu's buttons, placed by `place(i)`. Each kind of run gets its own column: Endless
@@ -105,11 +117,12 @@ function gameOverButtons(column, grid) {
 }
 
 export const BUTTONS = {
-  title: [
-    ...MODES.map(([label, action], i) => ({ rect: r(229, 247 + 25 * i, 120, 22), label, action })),
-    { rect: r(176, 428, 100, 16), label: 'How to Play', action: 'help', small: true },
-    { rect: r(300, 428, 100, 16), label: 'Options', action: 'options', small: true },
+  title: MENU.map(([label, action], i) => ({ rect: r(223, 248 + 29 * i, 130, 25), label, action })),
+  modes: [
+    ...MODES.map(([label, action], i) => ({ rect: modeRow(i, false), label, action })),
+    { rect: r(228, 330, 120, 24), label: 'Back', action: 'back' },
   ],
+  stats: [{ rect: r(229, 412, 120, 25), label: 'Menu', action: 'menu' }],
   options: [
     ...OPTIONS.map(([label, action], i) => ({ rect: optionRow(i, false), label, action })),
     { rect: r(229, 400, 120, 25), label: 'Menu', action: 'menu' },
@@ -140,18 +153,19 @@ export const BUTTONS = {
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 680, options: 560, help: 560, garage: 580, practiceSelect: 540, trialSelect: 540, paused: 410, gameOver: 330 };
+export const TALL_H = { title: 680, modes: 680, stats: 760, options: 560, help: 560, garage: 580, practiceSelect: 540, trialSelect: 540, paused: 410, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
 const tallStage = (i) => ({ x: 64 + 80 * (i % 3), y: 80 + 80 * Math.floor(i / 3) });
 
 export const TALL_BUTTONS = {
-  title: [
-    ...MODES.map(([label, action], i) => ({ rect: r(60, 246 + 43 * i, 240, 35), label, action, ...T_BIG })),
-    { rect: r(30, 606, 145, 30), label: 'How to Play', action: 'help', ...T_SMALL },
-    { rect: r(185, 606, 145, 30), label: 'Options', action: 'options', ...T_SMALL },
+  title: MENU.map(([label, action], i) => ({ rect: r(60, 262 + 54 * i, 240, 42), label, action, ...T_BIG })),
+  modes: [
+    ...MODES.map(([label, action], i) => ({ rect: modeRow(i, true), label, action, ...T_BIG })),
+    { rect: r(80, 562, 200, 38), label: 'Back', action: 'back', ...T_BIG },
   ],
+  stats: [{ rect: r(80, 700, 200, 38), label: 'Menu', action: 'menu', ...T_BIG }],
   options: [
     ...OPTIONS.map(([label, action], i) => ({ rect: optionRow(i, true), label, action, ...T_BIG })),
     { rect: r(80, 500, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
@@ -195,7 +209,7 @@ export function runName(game) {
   if (game.mode === 'endless') return `Endless  ·  ${game.metres} m`;
   if (game.mode === 'trial') return `Time Trial  ·  ${trialName(game, game.track)}`;
   const stage = game.stageName(game.level);
-  if (game.mode === 'campaign') return `${game.rules.classic ? 'Classic' : 'Play'}  ·  ${stage}`;
+  if (game.mode === 'campaign') return `${game.rules.classic ? 'Classic' : 'Standard'}  ·  ${stage}`;
   const rules = [game.rules.classic && 'Classic rules', !game.rules.damage && 'no damage'].filter(Boolean);
   return `Practice  ·  ${stage}${rules.length ? `  (${rules.join(', ')})` : ''}`;
 }
@@ -222,6 +236,52 @@ export function hitButton(screen, x, y, game, tall = false) {
     && x >= b.rect.x && x < b.rect.x + b.rect.w && y >= b.rect.y && y < b.rect.y + b.rect.h) || null;
 }
 
+/** The High Scores screen: [heading] or [label, value] rows, in two columns. */
+export function statsColumns(game) {
+  const S = game.stats, n = (v) => Math.round(v).toLocaleString('en-US');
+  const secs = (steps) => `${(steps / STEP_HZ).toFixed(1)} s`;
+  const none = '—', or = (v, f) => (v > 0 ? f(v) : none);
+  const dist = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
+  const mins = Math.floor(S.driveSteps / STEP_HZ / 60);
+  const time = mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h ${mins % 60} min`;
+  const T = S.tricks;
+  return [[
+    ['Best Scores'],
+    ['Standard', or(game.bestPlay, n)],
+    ['Classic', or(game.best, n)],
+    ['Endless', or(game.bestEndless, (v) => `${n(v)} m`)],
+    ['Time Trial (All Nine)', game.trialBests[TRIAL_ALL] ? formatTime(game.trialBests[TRIAL_ALL]) : none],
+    ['Records'],
+    ['Longest airtime', or(S.maxAir, secs)],
+    ['Top speed', or(S.topSpeed, (v) => `${n(v)} km/h`)],
+    ['Most flips in one jump', or(S.mostFlips, n)],
+    ['Longest wheelie', or(S.longestWheelie, secs)],
+    ['Best trick chain', or(S.bestChain, (v) => `${n(v)} pts`)],
+    ['Longest trick chain', or(S.longestChain, (v) => `${n(v)} tricks`)],
+  ], [
+    ['Totals'],
+    ['Distance driven', dist(S.distance)],
+    ['Time driving', time],
+    ['Runs', n(S.runs)],
+    ['Stages finished', n(S.stages)],
+    ['Flips', n(S.backflips + S.frontflips)],
+    ['Backflips', n(S.backflips)],
+    ['Frontflips', n(S.frontflips)],
+    ['Big Airs', n(T['Big Air'])],
+    ['Huge Airs', n(T['Huge Air'])],
+    ['Wheelies', n(T.Wheelie)],
+    ['Nose Wheelies', n(T['Nose Wheelie'])],
+    ['Clean landings', n(T.Clean)],
+    ['Bails', n(S.bails)],
+    ['Wrecks', n(S.wrecks)],
+    // the Esc easter egg: only listed once it's been found
+    ...(S.selfWrecks > 0 ? [['Wrecked on purpose', n(S.selfWrecks)]] : []),
+  ]];
+}
+
+/** Where the title screen's truck is drawn: its resting point (288, 170) goes to (x, y), scaled by k. */
+export const TITLE_TRUCK = { wide: { x: STAGE_W / 2, y: 218, k: 1 }, tall: { x: TALL_W / 2, y: 212, k: 1.15 } };
+
 // ---------------------------------------------------------------------------------------------
 
 export class Renderer {
@@ -233,6 +293,15 @@ export class Renderer {
     this.offX = 0; this.offY = 0;
     this.hover = null;
     this.touchMode = false;
+    this.confetti = [];      // Endless milestones' confetti: { x, y, vx, vy, rot, spin, color, life }
+    this.confettiFor = 0;    // the milestone it was thrown for
+    this.lastDraw = 0;
+  }
+
+  /** A point in menu coordinates, in the title truck's own coordinates (as Truck.T has them). */
+  toTitleTruck(x, y) {
+    const p = this.tall ? TITLE_TRUCK.tall : TITLE_TRUCK.wide;
+    return [(x - p.x) / p.k + STAGE_W / 2, (y - p.y) / p.k + 170];
   }
 
   resize(cssW, cssH, dpr) {
@@ -353,6 +422,22 @@ export class Renderer {
     this.text(str, x, y, w > maxW ? { ...o, size: o.size * maxW / w } : o);
   }
 
+  /**
+   * A line of text centred on (cx, cy) both ways, by the ink of its letters (not the font's line
+   * box, whose space above and below differs between fonts), shrunk to fit maxW.
+   */
+  centredLabel(str, cx, cy, maxW, { size = 13, font = TITLE_FONT, weight = '800', color = '#fff' } = {}) {
+    const ctx = this.ctx;
+    ctx.font = `${weight} ${size}px ${font}`;
+    const w = ctx.measureText(str).width;
+    if (w > maxW) { size *= maxW / w; ctx.font = `${weight} ${size}px ${font}`; }
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    const m = ctx.measureText(str);
+    ctx.fillStyle = color;
+    ctx.fillText(str, cx, cy + (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2);
+  }
+
   /** Centred text wrapped to lines no wider than maxW; returns the y below the last line. */
   wrapText(str, x, y, maxW, opts = {}, lineH = (opts.size || 13) * 1.3) {
     const ctx = this.ctx, o = { size: 13, font: TITLE_FONT, weight: '800', ...opts };
@@ -394,7 +479,7 @@ export class Renderer {
         const label = typeof b.label === 'function' ? b.label(game, this) : b.label;
         const size = b.size || (b.small ? 10 : 11.5);
         this.roundRect(x, y, w, h, this.tall ? 6 : 4, b.small ? 'rgba(107, 74, 64, 0.7)' : BUTTON_FILL);
-        this.fitText(label.toUpperCase(), x + w / 2, y + h / 2 - size * 0.55, w - 8, { size, weight: '800' });
+        this.centredLabel(label.toUpperCase(), x + w / 2, y + h / 2, w - 8, { size, weight: '800' });
       }
       if (this.hover === b) this.roundRect(x, y, w, h, this.tall ? 6 : 4, 'rgba(255,255,255,0.16)');
     }
@@ -574,7 +659,64 @@ export class Renderer {
     if (game.wreck && v.W) this.wreck(game.wreck, v.W, game.look);
     else this.truck(v.T, v.rr, v.fr, game.look);
     ctx.restore();
+    if (!game.rules.classic && !game.wreck) this.flipCount(game, v, zoom);
     this.hud(game);
+  }
+
+  /** A flip's turns counted out in the air (+1, +2...), popping up over the truck. */
+  flipCount(game, v, zoom) {
+    const pop = game.tricks.flipPop;
+    if (!pop || game.screen !== 'playing') return;
+    const ctx = this.ctx, T = v.T;
+    const x = (T[0] + T[2] + T[4] + T[6] + T[8]) / 5, y = (T[1] + T[3] + T[5] + T[7] + T[9]) / 5;
+    const age = TRICK.popFor - pop.timer;
+    const sx = (x - v.camX) / zoom, sy = (y - v.camY) / zoom - 62 / zoom - age * 0.5;
+    const k = 1 + 0.6 * Math.max(0, 1 - age / 8) ** 2;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, pop.timer / 15);
+    ctx.translate(sx, sy);
+    ctx.scale(k, k);
+    this.text(`+${pop.turns}`, 0, -12, { size: 24, font: HUD_FONT, weight: '900', shadow: 'rgba(38,38,38,0.6)' });
+    ctx.restore();
+  }
+
+  /** Endless milestones: the news in big gold letters, popping in, with a burst of confetti. */
+  milestone(game) {
+    const m = game.milestone, ctx = this.ctx;
+    const now = performance.now(), dt = Math.min(0.05, (now - (this.lastDraw || now)) / 1000);
+    this.lastDraw = now;
+    if (this.confettiRun !== game.teleportCount) { this.confettiRun = game.teleportCount; this.confetti = []; } // a new run
+    if (m && m.n !== this.confettiFor && game.screen === 'playing') {
+      this.confettiFor = m.n;
+      const colors = ['#ffe27a', '#ff8f6b', '#8ff0a4', '#7cc8ff', '#f5a3ff', '#ffffff'];
+      for (let i = 0; i < 70; i++) {
+        const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, sp = 120 + Math.random() * 260;
+        this.confetti.push({ x: this.viewW / 2 + (Math.random() - 0.5) * 60, y: 168, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          rot: Math.random() * 6, spin: (Math.random() - 0.5) * 14, color: colors[i % colors.length], life: 1.6 + Math.random() * 0.8 });
+      }
+    }
+    if (this.confetti.length && game.screen === 'playing') {
+      for (const c of this.confetti) { c.vy += 420 * dt; c.vx *= 1 - 1.2 * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.rot += c.spin * dt; c.life -= dt; }
+      this.confetti = this.confetti.filter((c) => c.life > 0 && c.y < this.viewH + 20);
+    }
+    for (const c of this.confetti) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, c.life * 2);
+      ctx.translate(c.x, c.y);
+      ctx.rotate(c.rot);
+      ctx.fillStyle = c.color;
+      ctx.fillRect(-3.5, -2, 7, 4);
+      ctx.restore();
+    }
+    if (!m || game.screen !== 'playing') return;
+    const age = MILESTONE_SHOW - m.timer;
+    const k = 1 + 0.5 * Math.max(0, 1 - age / 10) ** 2;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, m.timer / 25, age / 4 + 0.2);
+    ctx.translate(this.viewW / 2, 160);
+    ctx.scale(k, k);
+    this.text(m.text, 0, -16, { size: 30, font: HUD_FONT, weight: '900', color: MILESTONE_GOLD, shadow: 'rgba(38,38,38,0.7)' });
+    ctx.restore();
   }
 
   /** A HUD meter in the original damage bar's style: a label, a bar filled to `share`, and optionally a reading just right of the bar. */
@@ -585,11 +727,15 @@ export class Renderer {
     ctx.font = `${label.weight} ${label.size}px ${label.font}`;
     ctx.textAlign = 'left'; // the measurement below depends on it
     this.text(name, 13.1 + ctx.measureText(name).actualBoundingBoxLeft, y, label);
-    if (reading) this.text(reading, 99, y + 16.2, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', color: 'rgba(255,255,255,0.9)' });
+    if (reading) this.text(reading, 102, y + 16.2, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', color: 'rgba(255,255,255,0.9)' });
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.fillRect(13.1, y + 17.5, 80, 10);
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.fillRect(13.1, y + 17.5, 80 * Math.max(0, Math.min(1, share)), 10);
+    // the end bars either side, as the original's damage bar had
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.fillRect(13.1 - 4.5, y + 15, 2, 15);
+    ctx.fillRect(13.1 + 80 + 2.5, y + 15, 2, 15);
   }
 
   hud(game) { // Symbol 305 / X3323
@@ -613,6 +759,7 @@ export class Renderer {
       this.text(`+${game.tricks.chainPoints}${m > 1 ? `  x${m}` : ''}`, R, 46, { ...hud, color: 'rgba(255,255,255,0.6)' });
     } else if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, R, 46, { ...hud, color: 'rgba(255,255,255,0.9)' });
     if (!game.rules.classic) this.trickNames(game);
+    if (game.mode === 'endless') this.milestone(game);
     if (game.tickerTimer > 0 && game.screen !== 'gameOver') {
       this.text(game.ticker, this.viewW / 2, 82, { size: 15, font: HUD_FONT, weight: '800' });
     }
@@ -664,17 +811,8 @@ export class Renderer {
 
   /** The hint about the controls, for the title screen. */
   controlsHint(game) {
-    if (game.oneButton) return this.touchMode ? 'Hold the middle to drive, the right to tilt forwards, the left to reverse (or tilt back in the air)' : 'Hold Space to drive, and to tilt back in the air  ·  P pauses  ·  Esc returns to the menu';
+    if (game.oneButton) return this.touchMode ? 'Hold anywhere on the screen to drive, and to tilt back in the air' : 'Hold Space to drive, and to tilt back in the air  ·  P pauses  ·  Esc returns to the menu';
     return this.touchMode ? 'Use the on-screen pedals and tilt buttons to drive' : 'Arrow keys drive and tilt  ·  P pauses  ·  M sound  ·  Esc returns to the menu';
-  }
-
-  bestsLine(game) {
-    const bests = [];
-    if (game.bestPlay > 0) bests.push(`Play: ${game.bestPlay}`);
-    if (game.best > 0) bests.push(`Classic: ${game.best}`);
-    if (game.bestEndless > 0) bests.push(`Endless: ${game.bestEndless} m`);
-    if (game.trialBests[TRIAL_ALL]) bests.push(`Time Trial: ${formatTime(game.trialBests[TRIAL_ALL])}`);
-    return bests.length ? `Best  ·  ${bests.join('   ·   ')}` : '';
   }
 
   /** The garage truck, with its resting point (288, 170) moved to (x, y) and scaled by k. */
@@ -688,38 +826,85 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** The title screen. Its truck is drawn last, so knocked up high it goes in front of the words. */
   title(game, v) {
     const shadow = 'rgba(38,38,38,0.85)';
     const version = `v${VERSION}${BUILD === 'dev' ? '' : `  ·  ${BUILD}`}`;
     const small = { size: 12, weight: '700', color: 'rgba(255,255,255,0.8)', align: 'right', shadow: 'rgba(38,38,38,0.5)' };
     const hintStyle = { weight: '600', color: 'rgba(255,255,255,0.78)' };
-    const best = this.bestsLine(game);
+    const P = this.tall ? TITLE_TRUCK.tall : TITLE_TRUCK.wide;
     if (this.tall) {
       const cx = TALL_W / 2;
       this.fitText('funky truck', cx, 22, 340, { size: 54, weight: '900', color: '#f5f5f5', shadow });
       this.text('UTAH', 334, 84, { size: 26, weight: '900', color: '#f5f5f5', shadow, align: 'right' });
-      this.showTruck(game, v, cx, 212, 1.15);
       this.buttons('title', game);
-      if (best) this.fitText(best, cx, 528, 340, { size: 13, weight: '600' });
       this.wrapText(this.controlsHint(game), cx, 552, 330, { size: 12, ...hintStyle }, 15);
       this.text(version, TALL_W - 8, 656, { ...small, size: 14 });
-      return;
+    } else {
+      this.text('funky truck', STAGE_W / 2, 18, { size: 62, weight: '900', color: '#f5f5f5', shadow });
+      this.text('UTAH', 470, 94, { size: 28, weight: '900', color: '#f5f5f5', shadow, align: 'right' });
+      this.buttons('title', game);
+      this.text(this.controlsHint(game), STAGE_W / 2, 409, { size: 11, ...hintStyle });
+      this.text(version, STAGE_W - 8, 430, small);
     }
-    this.text('funky truck', STAGE_W / 2, 18, { size: 62, weight: '900', color: '#f5f5f5', shadow });
-    this.text('UTAH', 470, 94, { size: 28, weight: '900', color: '#f5f5f5', shadow, align: 'right' });
-    this.showTruck(game, v, STAGE_W / 2, 218);
-    this.buttons('title', game);
-    if (best) this.fitText(best, STAGE_W / 2, 397, 560, { size: 14, weight: '600' });
-    this.text(this.controlsHint(game), STAGE_W / 2, 413, { size: 11, ...hintStyle });
-    this.text(version, STAGE_W - 8, 430, small);
+    this.showTruck(game, v, P.x, P.y, P.k);
+  }
+
+  /** The mode picker: the title screen, dimmed, with a box of the modes over it. */
+  modes(game, v) {
+    this.title(game, v);
+    this.overlayDim(0.5);
+    const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
+    const about = { weight: '600', color: 'rgba(255,255,255,0.85)' };
+    if (tall) {
+      this.roundRect(16, 40, TALL_W - 32, 584, 12, BOX_FILL, BOX_EDGE);
+      this.text('Choose a Mode', cx, 60, { size: 26, weight: '900' });
+    } else {
+      this.roundRect(96, 76, 384, 292, 10, BOX_FILL, BOX_EDGE);
+      this.text('Choose a Mode', cx, 88, { size: 20, weight: '900' });
+    }
+    MODES.forEach(([, , text], i) => {
+      const b = modeRow(i, tall);
+      if (tall) this.fitText(text, cx, b.y + b.h + 7, 290, { ...about, size: 13 });
+      else this.fitText(text, b.x + b.w + 12, b.y + b.h / 2 - 6.5, 220, { ...about, size: 11.5, align: 'left' });
+    });
+    this.buttons('modes', game);
+  }
+
+  /** High Scores and stats: two columns on the usual page, one on the tall page. */
+  stats(game) {
+    const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
+    const cols = statsColumns(game);
+    const head = { weight: '800', align: 'left', color: MILESTONE_GOLD, shadow: 'rgba(38,38,38,0.5)' };
+    const label = { weight: '600', align: 'left', color: 'rgba(255,255,255,0.9)' };
+    const value = { weight: '800', align: 'right' };
+    const column = (rows, x0, x1, y, rowH, size) => {
+      for (const [name, val] of rows) {
+        if (val === undefined) { if (y > 70) y += rowH * 0.35; this.text(name, x0, y, { ...head, size: size + 1.5 }); y += rowH * 1.1; continue; }
+        this.text(name, x0, y, { ...label, size });
+        this.text(val, x1, y, { ...value, size });
+        y += rowH;
+      }
+      return y;
+    };
+    if (tall) {
+      this.text('High Scores', cx, 18, { size: 26, weight: '900' });
+      const y = column(cols[0], 30, 330, 62, 21, 14);
+      column(cols[1], 30, 330, y, 21, 14);
+    } else {
+      this.text('High Scores', cx, 12, { size: 22, weight: '900' });
+      column(cols[0], 34, 262, 50, 19.5, 12.5);
+      column(cols[1], 314, 542, 50, 19.5, 12.5);
+    }
+    this.buttons('stats', game);
   }
 
   help(game) {
     const keys = ['Forwards', 'Reverse', 'Tilt Back', 'Tilt Forwards'];
     const lines = ['Your truck is four-wheel drive.',
       'To climb steep hills, tilt forwards so that your front wheel stays on the ground.',
-      'One Button: hold Space to drive, and to tilt back in the air.',
-      'Touch Zones (on a touch screen): hold the middle to drive and the right to tilt forwards. The left reverses, or tilts back in the air or while you hold the middle too.'];
+      'One Button (an option): hold Space or the up arrow (on a touch screen, hold anywhere) to drive, and to tilt back in the air.',
+      'Tricks: flips, Big Air, wheelies and clean landings. Chain them together for a multiplier.'];
     if (this.tall) {
       const k = 1.25, x0 = 72, y0 = 36;
       this.piece('screen_help.png', 205, 45, 62, 145, x0, y0, 62 * k, 145 * k); // the four arrow keycaps
@@ -861,7 +1046,7 @@ export class Renderer {
     const hintStyle = { size: 11, weight: '600', color: 'rgba(255,255,255,0.78)' };
     if (this.tall) {
       const cx = TALL_W / 2;
-      this.roundRect(20, 10, TALL_W - 40, 310, 12, 'rgba(140,97,79,0.96)', 'rgba(255,255,255,0.6)');
+      this.roundRect(20, 10, TALL_W - 40, 310, 12, BOX_FILL, BOX_EDGE);
       this.fitText(title, cx, 28, 290, { size: 36, weight: '900' });
       if (where) this.fitText(where, cx, 80, 290, { ...whereStyle, size: 17 });
       lines.forEach((l, i) => l && this.fitText(l, cx, 112 + 30 * i, 290, { size: i && gapColor ? 17 : 20, weight: '600', color: i && gapColor ? gapColor : '#fff' }));
@@ -869,7 +1054,7 @@ export class Renderer {
       if (hint) this.text(hint, cx, 298, { ...hintStyle, size: 12 });
       return;
     }
-    this.roundRect(158, 112, 260, 232, 10, 'rgba(140,97,79,0.96)', 'rgba(255,255,255,0.6)');
+    this.roundRect(158, 112, 260, 232, 10, BOX_FILL, BOX_EDGE);
     this.text(title, STAGE_W / 2, 124, { size: 30, weight: '900' });
     if (where) this.fitText(where, STAGE_W / 2, 164, 240, { ...whereStyle, size: 14 });
     lines.forEach((l, i) => l && this.fitText(l, STAGE_W / 2, 188 + 24 * i, 240, { size: i && gapColor ? 14 : 17, weight: '600', color: i && gapColor ? gapColor : '#fff' }));
@@ -919,6 +1104,8 @@ export class Renderer {
       if (game.screen !== 'playing') this.menuTransform();
       switch (game.screen) {
         case 'title': this.title(game, v); break;
+        case 'modes': this.modes(game, v); break;
+        case 'stats': this.stats(game); break;
         case 'help': this.help(game); break;
         case 'options': this.options(game); break;
         case 'garage': this.garage(game, v); break;

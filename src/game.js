@@ -8,6 +8,7 @@ import { buildGrammar, EndlessCourse, ENDLESS_WIDTH, ENDLESS_SHIFT } from './end
 import { TrickTracker } from './tricks.js';
 import { Wreck } from './wreck.js';
 import { TRIAL_ALL, GHOST_EVERY, validBests, loadGhost, saveGhost, ghostPose } from './trial.js';
+import { validStats, countTrick, countChain } from './stats.js';
 
 export const TILE = 64;          // s4c2
 export const STAGE_W = 576;      // Z7552
@@ -399,7 +400,20 @@ export class Truck {
     }
   }
 
-  // u6a33 / g0406: idle bounce used on the title and garage screens.
+  /** The truck's centre of mass (the average of its five points, which all weigh the same), now and a step ago. */
+  centre(A = this.T) {
+    let x = 0, y = 0;
+    for (let i = 0; i < 10; i += 2) { x += A[i]; y += A[i + 1]; }
+    return [x / 5, y / 5];
+  }
+
+  /** How fast the centre of mass is moving, in pixels per step. */
+  get speed() {
+    const [x, y] = this.centre(), [px, py] = this.centre(this.P);
+    return Math.hypot(x - px, y - py);
+  }
+
+  // u6a33 / g0406: idle bounce used on the garage screen.
   garageStep() {
     this.integrate();
     for (let i = 0; i < 2; i++) {
@@ -410,7 +424,69 @@ export class Truck {
     this.rearWheelRot += 4; this.frontWheelRot += 4;
     this.updateBodyRot();
   }
+
+  /**
+   * The title screen's truck: the garage's idle bounce, but it can be knocked into the air (see
+   * kick) and tumble. The floor holds up the whole truck, not just its wheels, so it can land on
+   * its roof or its side, and it's kept in the middle across.
+   */
+  titleStep() {
+    const T = this.T, P = this.P;
+    this.integrate();
+    for (let i = 0; i < 2; i++) {
+      this.constrain();
+      if (T[3] > 170) T[3] = 170;
+      if (T[5] > 170) T[5] = 170;
+      // The body: its outline's lowest corner rests on the floor (the wheels' bottoms, 192.5).
+      const ang = Math.atan2(T[9] - T[7], T[8] - T[6]), c = Math.cos(ang), sn = Math.sin(ang);
+      let low = -Infinity;
+      for (const [x, y] of TITLE_BODY) low = Math.max(low, T[7] + x * sn + y * c);
+      if (low > TITLE_FLOOR) {
+        for (const p of [0, 3, 4]) { T[p * 2 + 1] -= low - TITLE_FLOOR; P[p * 2] += (T[p * 2] - P[p * 2]) * 0.15; }
+      }
+    }
+    const [cx] = this.centre();
+    for (let i = 0; i < 10; i += 2) { T[i] -= cx - STAGE_W / 2; P[i] -= cx - STAGE_W / 2; }
+    this.rearWheelRot += 4; this.frontWheelRot += 4;
+    this.updateBodyRot();
+  }
+
+  /** Whether the point (x, y) is on the truck (a wheel or the body), with a little to spare. */
+  hits(x, y) {
+    const T = this.T;
+    if (Math.hypot(x - T[2], y - T[3]) < 26 || Math.hypot(x - T[4], y - T[5]) < 26) return true;
+    // in the body's own frame (from the rear mount, x along to the front mount)
+    const ang = Math.atan2(T[9] - T[7], T[8] - T[6]), c = Math.cos(ang), sn = Math.sin(ang);
+    const dx = x - T[6], dy = y - T[7], u = dx * c + dy * sn, v = -dx * sn + dy * c;
+    return (u > -16 && u < 68 && v > -32 && v < 16) || Math.hypot(x - T[0], y - T[1]) < 20;
+  }
+
+  /**
+   * Knock the truck up from the point (x, y): every point is pushed up, the ones nearest the hit
+   * most, so hitting the back wheel lifts the back and turns it over forwards. It never goes up
+   * fast enough to rise above `KICK.top`, so it stays on screen.
+   */
+  kick(x, y) {
+    const T = this.T, P = this.P;
+    for (let i = 0; i < 10; i += 2) {
+      const d = Math.hypot(T[i] - x, T[i + 1] - y);
+      P[i + 1] += KICK.push * (KICK.even + (1 - KICK.even) * Math.max(0, 1 - d / KICK.reach));
+    }
+    // At most fast enough to rise to KICK.top (about the title's words), however often it's hit.
+    const [, cy] = this.centre(), up = this.centre(P)[1] - cy;
+    const max = Math.min(KICK.max, Math.sqrt(2 * 0.11 * Math.max(0, cy - KICK.top)));
+    if (up > max) for (let i = 1; i < 10; i += 2) P[i] -= up - max;
+  }
 }
+
+/** The title truck's floor (where its wheels' bottoms rest), and its body's outline as Wreck has it. */
+const TITLE_FLOOR = 192.5;
+const TITLE_BODY = [[-10, -26], [62, -26], [62, 10], [-10, 10]];
+/**
+ * A kick on the title truck: px per step up, the share every point gets, how far the rest
+ * reaches, the most speed up, and the highest its middle goes (its floor is at 192.5).
+ */
+export const KICK = { push: 5.2, even: 0.3, reach: 80, max: 7.5, top: 0 };
 
 // ---------------------------------------------------------------------------------------------
 // Game state machine (_ma)
@@ -441,9 +517,8 @@ function validCount(v) {
 }
 
 export function emptyKeys() {
-  // `one` is the single button of the one-button controls. `back` is the touch zones' left zone:
-  // reverse on the ground, tilt back in the air.
-  return { up: false, down: false, left: false, right: false, pause: false, restart: false, one: false, back: false, upright: false };
+  // `one` is the single button of the one-button controls (Space, or holding the touch screen).
+  return { up: false, down: false, left: false, right: false, pause: false, restart: false, one: false, upright: false };
 }
 
 /**
@@ -494,10 +569,19 @@ export const TRICK_COOLDOWN = 70;
  */
 const UNDERSIDE = 0.42;
 const RIGHTING_STEPS = 80;
-const ONE_BUTTON_AIR = 4;        // steps off the ground before one-button and touch-zone controls count as in the air
+const ONE_BUTTON_AIR = 4;        // steps off the ground before the one-button controls count as in the air
+/** The cab of a truck wrecked on purpose (Esc) takes this much damage a step while it touches the ground (as scraping does). */
+const SELF_WRECK_DAMAGE = 6;
+/** Endless Mode's milestones: distances (then every `every` metres), and scores. */
+export const MILESTONES = { metres: [100, 250, 500, 750, 1000], every: 500, scores: [5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000] };
+/** Steps a milestone stays on screen. */
+export const MILESTONE_SHOW = 150;
+/** Stats are saved at least this often while driving (10 s). */
+const STATS_SAVE_EVERY = 700;
 
 /**
- * Screens: 'title' | 'options' | 'help' | 'garage' | 'practiceSelect' | 'trialSelect' | 'playing' | 'paused' | 'gameOver'
+ * Screens: 'title' | 'modes' (the mode picker over the title) | 'stats' | 'options' | 'help' | 'garage' |
+ * 'practiceSelect' | 'trialSelect' | 'playing' | 'paused' | 'gameOver'
  * Modes: 'campaign' (all nine stages), 'practice' (one stage), 'endless' (a generated course),
  * 'trial' (Time Trial: a stage or all nine against the clock, see trial.js).
  * The title screen's Play and Classic both start a campaign, under different rules.
@@ -525,7 +609,13 @@ export class Game {
     this.bonus = 0;                   // Z3F62
     this.flipBonus = 0;               // a4072 (now: the last trick chain's payout)
     this.flipBonusTimer = 0;          // B5172
-    this.tricks = new TrickTracker();
+    // High Scores screen: records and totals (stats.js), counted as you play.
+    this.stats = validStats(this.store.get('stats'));
+    this.statsSince = 0;              // steps since the stats were last saved
+    this.tricks = new TrickTracker({
+      onTrick: (kind, info) => countTrick(this.stats, kind, info),
+      onBank: (points, n, bailed) => countChain(this.stats, points, n, bailed),
+    });
     this.damage = 0;                  // X5B4 (0..1000)
     this.endTimer = 0;                // L5B72
     this.tickerTimer = 0;             // e8472
@@ -554,6 +644,10 @@ export class Game {
     this.split = null;                // clock now minus the ghost's at this point of the track
     this.trialResult = null;          // { time, best, record } at the end of a finished run
     this.wreck = null;                // the pieces of a wrecked truck (outside Classic)
+    this.selfWrecked = false;         // the wreck was done on purpose (Esc), not by damage
+    this.milestone = null;            // Endless: the celebration on screen { text, timer, n }
+    this.milestones = [];             // ...and ones waiting their turn
+    this.milestoneCount = 0;          // bumped for each one (for the sound and the confetti)
     this.scraping = false;            // the cab is scraping the ground this step
     this.speedKmh = 0;                // the speedometer (outside Classic), smoothed a little
     this.stuck = 0;                   // steps the truck has spent stuck (flip-upright assist)
@@ -667,6 +761,9 @@ export class Game {
     if (!this.grammar) this.grammar = buildGrammar(this.data.levels);
     this.course = new EndlessCourse(this.grammar, this.data.levels, this.random);
     this.distance = 0;
+    this.nextMetres = 0; this.nextScore = 0;
+    this.bestToBeat = this.bestEndless; // a new best distance is a milestone too
+    this.milestone = null; this.milestones = [];
     this.beginRun(0);
   }
 
@@ -724,6 +821,7 @@ export class Game {
     else { this.level = firstLevel; this.lastLevel = firstLevel; }
     this.score = 0; this.bonus = 0; this.damage = 0;
     this.wrecked = false; this.finished = false;
+    this.stats.runs++;
     this.startStage();
   }
 
@@ -733,7 +831,7 @@ export class Game {
 
   startStage() { // u8a62
     this.world = this.makeWorld();
-    this.wreck = null;
+    this.wreck = null; this.selfWrecked = false;
     this.stuck = 0; this.canUpright = false; this.righting = 0; this.airSteps = 0;
     this.landed = false; // the truck is dropped in at the start; until it lands it isn't driving
     this.uprightLinger = 0; this.trickCooldown = 0;
@@ -785,12 +883,44 @@ export class Game {
 
   /** Endless Mode: score new ground, and scroll the world when the truck nears the window's end. */
   updateEndless() {
-    const col = Math.floor(this.truck.T[0] / TILE) + this.course.dropped;
+    // (A truck wrecked on purpose still counts the ground its pieces tumble over.)
+    const x = this.focus[0];
+    const col = Math.floor(x / TILE) + this.course.dropped;
     if (col > this.distance) {
       if (this.endTimer === 0) this.score += (col - this.distance) * POINTS_PER_TILE;
+      this.stats.endlessMetres += (col - this.distance) * METRES_PER_TILE;
       this.distance = col;
     }
-    if (this.truck.T[0] > (ENDLESS_WIDTH - 40) * TILE) this.scrollWorld(ENDLESS_SHIFT);
+    this.checkMilestones();
+    if (x > (ENDLESS_WIDTH - 40) * TILE) this.scrollWorld(ENDLESS_SHIFT);
+  }
+
+  /** The distance of Endless milestone `i`: the listed ones, then every MILESTONES.every metres. */
+  static milestoneMetres(i) {
+    const M = MILESTONES.metres;
+    return i < M.length ? M[i] : M[M.length - 1] + (i - M.length + 1) * MILESTONES.every;
+  }
+
+  /** Endless: celebrate distances, scores and a new best distance as they're passed. */
+  checkMilestones() {
+    const found = [];
+    while (this.metres >= Game.milestoneMetres(this.nextMetres)) found.push(`${Game.milestoneMetres(this.nextMetres++).toLocaleString('en-US')} m!`);
+    const S = MILESTONES.scores;
+    while (this.nextScore < S.length && this.score >= S[this.nextScore]) found.push(`${S[this.nextScore++].toLocaleString('en-US')} points!`);
+    if (this.bestToBeat > 0 && this.metres > this.bestToBeat) { found.push('New best distance!'); this.bestToBeat = 0; }
+    for (const text of found) {
+      this.milestoneCount++;
+      if (this.milestone) this.milestones.push(text); else this.milestone = { text, timer: MILESTONE_SHOW, n: this.milestoneCount };
+    }
+  }
+
+  /** Count down the milestone on screen; the next one waiting comes on once it's been seen a while. */
+  tickMilestone() {
+    const m = this.milestone;
+    if (!m) return;
+    m.timer--;
+    if (this.milestones.length && m.timer < MILESTONE_SHOW - 60) this.milestone = { text: this.milestones.shift(), timer: MILESTONE_SHOW, n: m.n + 1 };
+    else if (m.timer <= 0) this.milestone = null;
   }
 
   /** Drop `n` columns off the left of the course and move everything left to match. */
@@ -807,7 +937,7 @@ export class Game {
    */
   updateLoop() {
     const L = this.levelData.loop;
-    if (!L || this.truck.T[0] < (L.from + 2 * L.period) * TILE) return;
+    if (!L || this.focus[0] < (L.from + 2 * L.period) * TILE) return;
     this.shiftWorld(L.period * TILE, L.drop * TILE);
   }
 
@@ -833,9 +963,45 @@ export class Game {
   showMenu(screen) {
     // Leaving an Endless run part-way (quitting from pause, say) still counts its distance.
     if (this.mode === 'endless' && (this.screen === 'playing' || this.screen === 'paused')) this.saveEndlessBest();
-    if (screen === 'title' || screen === 'garage') this.garageTruck.reset(STAGE_W / 2, 120);
+    if (this.screen === 'playing' || this.screen === 'paused') this.saveStats();
+    // The title's truck carries on as it was under the mode picker, and back from it.
+    const overTitle = (a, b) => (a === 'title' && b === 'modes') || (a === 'modes' && b === 'title');
+    if ((screen === 'title' || screen === 'garage') && !overTitle(this.screen, screen)) this.garageTruck.reset(STAGE_W / 2, 120);
     this.screen = screen;
     this.teleportCount++;
+  }
+
+  saveStats() { this.statsSince = 0; this.store.set('stats', this.stats); }
+
+  /** Knock the title screen's truck up from (x, y), in its own coordinates. Returns whether it was hit. */
+  kickTitleTruck(x, y) {
+    const t = this.garageTruck;
+    if ((this.screen !== 'title') || !t.hits(x, y)) return false;
+    t.kick(x, y);
+    return true;
+  }
+
+  // ---- the Esc easter egg: wreck the truck on purpose
+
+  /** Wrecking on purpose works outside Classic rules and Time Trial. */
+  get selfWreckAllowed() { return !this.rules.classic && this.mode !== 'trial'; }
+
+  /**
+   * Wreck the truck now: it comes apart as a damage wreck does, but there's no game over. With
+   * damage on, the loose cab takes damage whenever it touches the ground (any side of it) until
+   * it's wrecked for real; without, the pieces tumble until you leave. If the body rolls over the
+   * finish line, the stage still counts. Returns false if it can't (already wrecked, over the
+   * finish line, or by rules that don't allow it).
+   */
+  selfWreck() {
+    if (!this.selfWreckAllowed || this.screen !== 'playing' || this.wreck || this.endTimer > 0) return false;
+    this.bankTricks();
+    this.wreck = new Wreck(this.truck, this.world, this.makeWorld(3));
+    this.selfWrecked = true;
+    this.tricks.reset();
+    this.canUpright = false; this.righting = 0; this.stuck = 0;
+    this.stats.selfWrecks++;
+    return true;
   }
 
   bankTricks() {
@@ -940,16 +1106,16 @@ export class Game {
   }
 
   /**
-   * The keys the truck sees. With one-button controls, the button drives on the ground and tilts
-   * back in the air; the touch zones' left zone (`back`) reverses on the ground and tilts back in
-   * the air, or tilts back on the ground too while driving forwards (the middle zone held as well).
+   * The keys the truck sees. With one-button controls there's one button (Space, the up arrow, or
+   * holding the touch screen): it drives on the ground and tilts back in the air. Nothing else
+   * drives or tilts.
    */
   driveKeys() {
     const k = this.keys;
-    if (!this.oneButtonActive || !(k.one || k.back)) return k;
+    if (!this.oneButtonActive) return k;
+    const one = k.one || k.up;
     const air = this.airSteps >= ONE_BUTTON_AIR;
-    const backTilts = k.back && (air || k.up);
-    return { ...k, up: k.up || (k.one && !air), down: k.down || (k.back && !backTilts), left: k.left || (k.one && air) || backTilts };
+    return { ...k, up: one && !air, down: false, left: one && air, right: false };
   }
 
   stepTruck(w) { // V7B33
@@ -957,7 +1123,10 @@ export class Game {
     t.integrate();
     t.rearContact = false; t.frontContact = false;
     for (let i = 0; i < 2; i++) { t.constrain(); t.collideWheels(w); }
-    this.airSteps = t.rearContact || t.frontContact ? 0 : this.airSteps + 1;
+    const down = t.rearContact || t.frontContact;
+    // The longest jump (not the drop in at the start, before the truck has landed).
+    if (down && this.landed && this.airSteps > this.stats.maxAir) this.stats.maxAir = this.airSteps;
+    this.airSteps = down ? 0 : this.airSteps + 1;
     if (this.airSteps === 0) this.landed = true;
     const keys = this.driveKeys();
     t.drive(keys);
@@ -1062,15 +1231,17 @@ export class Game {
       return;
     }
     // The stunt tracks have no finish: they're for playing on.
-    if (this.mode !== 'endless' && !this.isStunt && this.truck.T[0] >= (this.levelData.width - 9) * TILE) {
+    // (A truck wrecked on purpose finishes if its body gets over the line.)
+    if (this.mode !== 'endless' && !this.isStunt && this.focus[0] >= (this.levelData.width - 9) * TILE) {
       this.ticker = 'Stage Complete !'; this.tickerTimer = 140; this.endTimer = 210;
       this.bankTricks(); // a chain still going at the finish line is paid out
     }
     if (this.damage === 1000 && this.rules.damage) {
       this.ticker = 'Your truck is wrecked - Game over !'; this.tickerTimer = 140; this.endTimer = 210;
       if (!this.rules.classic) {
-        // The truck comes apart and collapses; the pieces tumble for a moment before the game-over screen.
-        this.wreck = new Wreck(this.truck, this.world, this.makeWorld(3));
+        // The truck comes apart and collapses; the pieces tumble for a moment before the game-over
+        // screen. (One wrecked on purpose is in pieces already.)
+        if (!this.wreck) this.wreck = new Wreck(this.truck, this.world, this.makeWorld(3));
         this.endTimer = 160;
         this.tricks.reset();
       }
@@ -1080,6 +1251,7 @@ export class Game {
   finishStage() { // V9B62 / J7F52
     for (const d of this.dirt) d.life = 0;
     const isWrecked = this.damage === 1000;
+    if (isWrecked) this.stats.wrecks++; else this.stats.stages++;
     if (this.level === this.lastLevel || isWrecked) {
       this.score += this.bonus;
       if (this.mode === 'campaign' && !isWrecked) this.score += 100000;
@@ -1092,6 +1264,7 @@ export class Game {
       else if (this.rules.damage && !this.isStunt) this.saveBest(this.score);
       this.restartLatch = true;
       this.screen = 'gameOver';
+      this.saveStats();
     } else {
       this.level++;
       this.startStage();
@@ -1114,6 +1287,7 @@ export class Game {
     this.lastScore = this.score;
     this.wrecked = false; this.finished = true;
     this.saveEndlessBest();
+    this.saveStats();
     this.restartLatch = true;
     this.screen = 'gameOver';
   }
@@ -1123,8 +1297,11 @@ export class Game {
     switch (this.screen) {
       case 'playing':
         if (!this.world) return;
-        if (this.wreck) this.wreck.step(); else this.stepTruck(this.world);
+        if (this.wreck) this.stepWreck(); else this.stepTruck(this.world);
         this.updateSpeedometer();
+        this.stats.driveSteps++;
+        if (++this.statsSince >= STATS_SAVE_EVERY) this.saveStats();
+        this.tickMilestone();
         if (this.keys.upright) this.upright();
         if (this.mode === 'endless') this.updateEndless();
         else this.updateLoop();
@@ -1145,8 +1322,11 @@ export class Game {
         else if (!this.keys.pause) this.screen = 'playing';
         break;
       case 'garage':
-      case 'title':
         this.garageTruck.garageStep();
+        break;
+      case 'title':
+      case 'modes':
+        this.garageTruck.titleStep();
         break;
       case 'gameOver':
         // A wrecked truck's pieces keep tumbling behind the game-over box.
@@ -1159,12 +1339,28 @@ export class Game {
     }
   }
 
-  /** The speedometer reads the truck's speed, smoothed so it doesn't flicker; a wreck, and a truck
-   *  still being dropped in at the start, read 0. */
+  /** The wrecked truck's pieces, and (wrecked on purpose, with damage on) the damage to its cab. */
+  stepWreck() {
+    this.wreck.step();
+    if (this.selfWrecked && this.rules.damage && this.endTimer === 0 && this.wreck.bodyTouching) {
+      this.damage = Math.min(1000, this.damage + SELF_WRECK_DAMAGE);
+    }
+  }
+
+  /**
+   * The speedometer reads the speed of the truck's centre of mass, smoothed so it doesn't flicker;
+   * a wreck, and a truck still being dropped in at the start, read 0. (The chassis point, which
+   * the camera follows, sits below the centre of mass, so while the truck turns over in the air
+   * it swings around it: its speed would rise and fall with each turn.)
+   */
   updateSpeedometer() {
     const t = this.truck;
-    const raw = this.wreck || !this.landed ? 0 : Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]) * KMH_PER_PX_STEP;
+    const raw = this.wreck || !this.landed ? 0 : t.speed * KMH_PER_PX_STEP;
     this.speedKmh += (raw - this.speedKmh) * 0.15;
+    if (!this.wreck && this.landed) {
+      this.stats.topSpeed = Math.max(this.stats.topSpeed, this.speedKmh);
+      if (this.airSteps === 0) this.stats.distance += t.speed * METRES_PER_TILE / TILE;
+    }
   }
 
   /** Toggle pause directly (for touch/gamepad buttons, which are taps rather than held keys). */

@@ -18,6 +18,8 @@ export class SoundWatcher {
     this.scrapeHold = 0;
     this.flipTimer = 0;
     this.tricksDone = 0;
+    this.flipCounts = 0;
+    this.milestone = 0;
     this.ticker = '';
     this.tickerTimer = 0;
     this.teleports = -1;
@@ -37,6 +39,8 @@ export class SoundWatcher {
       this.damage = game.damage;
       this.flipTimer = game.flipBonusTimer;
       this.tricksDone = game.tricks.done;
+      this.flipCounts = game.tricks.flipCounts;
+      this.milestone = game.milestone?.n ?? 0;
       this.scrapeHold = 0;
       if (playing && !wasPlaying) events.push({ type: 'start' });
     }
@@ -58,8 +62,14 @@ export class SoundWatcher {
         // Tricks sound as they're done, not when their points are added up later.
         events.push({ type: 'trick', names: game.tricks.fresh });
       }
+      // Each turn of a flip, counted out in the air (+1, +2...).
+      if (game.tricks.flipCounts > this.flipCounts && game.tricks.flipPop) events.push({ type: 'flipCount', turns: game.tricks.flipPop.turns });
     } else this.scrapeHold = 0;
     this.tricksDone = game.tricks.done;
+    this.flipCounts = game.tricks.flipCounts;
+    // Endless milestones, as each comes on screen.
+    if (playing && game.milestone && game.milestone.n !== this.milestone) events.push({ type: 'milestone' });
+    this.milestone = game.milestone?.n ?? this.milestone;
     if (game.tickerTimer > this.tickerTimer || game.ticker !== this.ticker) {
       if (game.ticker.startsWith('Stage Complete')) events.push({ type: 'stage' });
       else if (game.ticker.startsWith('Your truck is wrecked')) events.push({ type: 'wreck' });
@@ -75,8 +85,14 @@ export class SoundWatcher {
     return {
       events,
       scrape: { on: this.scrapeHold > 0, speed: Math.min(1, slide / 7) },
-      engine: {
-        on: playing && !game.wreck,
+      // A truck wrecked on purpose (Esc) has no wheels to drive, but its engine still revs.
+      engine: game.wreck ? {
+        on: playing && game.selfWrecked,
+        throttle: game.keys.up || game.keys.one || game.keys.down ? 1 : 0,
+        speed: 0,
+        airborne: false,
+      } : {
+        on: playing,
         throttle: playing && (game.driveKeys().up || game.keys.down) ? 1 : 0,
         speed: Math.min(1, speed / 14),
         airborne: !t.rearContact && !t.frontContact,

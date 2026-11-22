@@ -167,34 +167,21 @@ body[data-screen="playing"] #corner { display: flex; }
 }
 body[data-upright="1"] #corner #upright-button { display: grid !important; }
 
-/* Touch zones (the one-button option on a touch screen): hide the pedals; the whole screen is in three parts. */
+/* One button on a touch screen: hide the pedals; holding anywhere on the screen is the button. */
 #tap { display: none; position: fixed; inset: 0; z-index: 2; touch-action: none; }
-body.touch-mode[data-onebutton="1"][data-screen="playing"] #tap { display: grid; }
-/* Its three parts (left reverses or tilts back, middle drives, right drives and tilts forwards),
-   labelled faintly, with short dividers down at the labels only, clear of the driving view. */
-#tap { grid-template-columns: 1fr 1fr 1fr; }
-#tap .zone {
-  position: relative;
-  display: flex;
+body.touch-mode[data-onebutton="1"][data-screen="playing"] #tap { display: flex; }
+#tap {
   align-items: flex-end;
   justify-content: center;
-  padding: 0 8px calc(var(--edge-b) + 6px);
-  pointer-events: none;
+  padding: 0 16px calc(var(--edge-b) + 6px);
 }
-#tap .zone + .zone::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  bottom: var(--edge-b);
-  height: 34px;
-  border-left: 1px dashed rgba(255, 255, 255, 0.3);
-}
-#tap .zone span {
+#tap span {
   font-size: 13px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.5);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   text-align: center;
+  pointer-events: none;
 }
 body[data-onebutton="1"] #touch .pad { visibility: hidden; }
 

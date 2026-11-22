@@ -3,7 +3,7 @@
 
 import { Game, STEP_HZ, emptyKeys } from './game.js';
 import { loadAssets } from './assets.js';
-import { Renderer, hitButton } from './render.js';
+import { Renderer, hitButton, buttonsFor } from './render.js';
 import { Sound } from './audio.js';
 import { SoundWatcher } from './sound-events.js';
 
@@ -63,21 +63,47 @@ function setTouchMode(on) {
   document.body.classList.toggle('touch-mode', on);
 }
 
+/** The mode picker's buttons, and moving its highlight (the arrow keys, or a gamepad) by `delta`. */
+const modeButtons = () => buttonsFor('modes', renderer.tall);
+function moveModeChoice(delta) {
+  const list = modeButtons(), i = list.indexOf(renderer.hover);
+  renderer.hover = list[i < 0 ? 0 : (i + delta + list.length) % list.length];
+}
+/** Start the mode highlighted in the mode picker (Standard if none is). */
+function chooseMode() {
+  const b = modeButtons().includes(renderer.hover) ? renderer.hover : null;
+  doAction(b ? b.action : 'standard');
+}
+
+/**
+ * Esc: the easter egg first (outside Classic and Time Trial, a truck being driven is wrecked on
+ * the spot, and its pieces tumble with no game over), then back a level as usual.
+ */
+function escape() {
+  if (game.screen === 'playing' && game.selfWreck()) { sound.play('wreck'); return; }
+  if (game.screen !== 'title') goMenu();
+}
+
 function onKey(e, down) {
   const name = KEY_MAP[e.code];
   if (name || e.code === 'Escape') e.preventDefault();
   if (down) setTouchMode(false);
   if (down && !e.repeat) {
-    if (e.code === 'Escape') { if (game.screen !== 'title') goMenu(); return; }
+    if (e.code === 'Escape') { escape(); return; }
     if (e.code === 'KeyF') { toggleFullscreen(); return; }
     if (e.code === 'KeyM') { doAction('sound'); return; }
-    if (game.screen === 'title' && (e.code === 'Space' || e.code === 'Enter')) { doAction('play'); return; }
+    if (game.screen === 'title' && (e.code === 'Space' || e.code === 'Enter')) { doAction('play'); moveModeChoice(0); return; }
+    if (game.screen === 'modes') {
+      if (name === 'up' || name === 'down') { moveModeChoice(name === 'up' ? -1 : 1); return; }
+      if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') { chooseMode(); return; }
+    }
   }
   if (name) { for (const n of [name].flat()) keyboard[n] = down; combineKeys(); }
 }
 
 window.addEventListener('keydown', (e) => onKey(e, true));
 window.addEventListener('keyup', (e) => onKey(e, false));
+document.addEventListener('visibilitychange', () => { if (document.hidden && game) game.saveStats(); });
 window.addEventListener('blur', () => {
   for (const src of [keyboard, touchKeys, padKeys]) Object.assign(src, emptyKeys());
   combineKeys();
@@ -111,7 +137,10 @@ function doAction(a) {
   }
   sound.play('click');
   if (a === 'oneButton' || a === 'practiceDamage' || a === 'practiceClassic' || a === 'dynamicCamera' || a === 'ghostOn' || a === 'showFps') { game.toggle(a); return; }
-  if (a === 'play') game.startCampaign();
+  if (a === 'play') game.showMenu('modes');
+  else if (a === 'back') game.showMenu('title');
+  else if (a === 'stats') game.showMenu('stats');
+  else if (a === 'standard') game.startCampaign();
   else if (a === 'classic') game.startCampaign(true);
   else if (a === 'endless') game.startEndless();
   else if (a === 'endRun') game.endRun();
@@ -139,19 +168,29 @@ function stagePoint(e) {
   return renderer.toMenu(e.clientX - rect.left, e.clientY - rect.top);
 }
 
+/** Whether the point (x, y) in menu coordinates is on the title screen's truck. */
+function onTitleTruck(x, y) {
+  return game.screen === 'title' && game.garageTruck.hits(...renderer.toTitleTruck(x, y));
+}
+
 canvas.addEventListener('pointerdown', (e) => {
   setTouchMode(e.pointerType === 'touch');
   const [x, y] = stagePoint(e);
+  // The title's truck is drawn over everything, so it's hit first: tap it to knock it up.
+  if (onTitleTruck(x, y)) { e.preventDefault(); game.kickTitleTruck(...renderer.toTitleTruck(x, y)); sound.play('boing'); return; }
   const b = hitButton(game.screen, x, y, game, renderer.tall);
   if (b) { e.preventDefault(); doAction(b.action); }
+  // A tap away from the mode picker's buttons closes it.
+  else if (game.screen === 'modes') { e.preventDefault(); doAction('back'); }
 });
 
 canvas.addEventListener('pointermove', (e) => {
   if (e.pointerType === 'touch') return;
   const [x, y] = stagePoint(e);
   const b = hitButton(game.screen, x, y, game, renderer.tall);
-  renderer.hover = b;
-  canvas.style.cursor = b ? 'pointer' : '';
+  // (in the mode picker, the arrow keys' highlight stays put until the mouse is on a button)
+  if (b || game.screen !== 'modes') renderer.hover = b;
+  canvas.style.cursor = b || onTitleTruck(x, y) ? 'pointer' : '';
 });
 
 canvas.addEventListener('pointerleave', () => { renderer.hover = null; });
@@ -178,33 +217,18 @@ for (const btn of touchUI.querySelectorAll('[data-key]')) {
   }
 }
 
-// Touch zones (the one-button option on a touch screen): the screen (apart from the buttons) is in
-// three parts. The middle drives, the right tilts forwards (clockwise), and the left tilts back
-// (anticlockwise) in the air and reverses on the ground; held with the middle, the left tilts back
-// on the ground too (the game decides: the `back` key). Fingers in several parts combine. A finger
-// that slides into another part switches to it.
+// One button on a touch screen: holding anywhere on the screen (apart from the pause and flip
+// buttons) is the button. Any number of fingers count as one.
 {
   const tap = document.getElementById('tap');
-  const pointers = new Map(); // pointerId -> 'left' | 'middle' | 'right'
-  const zoneAt = (e) => { const x = e.clientX / window.innerWidth; return x < 1 / 3 ? 'left' : x > 2 / 3 ? 'right' : 'middle'; };
-  const update = () => {
-    const zones = new Set(pointers.values());
-    touchKeys.up = zones.has('middle');
-    touchKeys.right = zones.has('right');
-    touchKeys.back = zones.has('left');
-    combineKeys();
-  };
+  const pointers = new Set();
+  const update = () => { touchKeys.one = pointers.size > 0; combineKeys(); };
   tap.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     setTouchMode(true);
     tap.setPointerCapture?.(e.pointerId);
-    pointers.set(e.pointerId, zoneAt(e));
+    pointers.add(e.pointerId);
     update();
-  });
-  tap.addEventListener('pointermove', (e) => {
-    if (!pointers.has(e.pointerId)) return;
-    const zone = zoneAt(e);
-    if (pointers.get(e.pointerId) !== zone) { pointers.set(e.pointerId, zone); update(); }
   });
   for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) {
     tap.addEventListener(ev, (e) => { pointers.delete(e.pointerId); update(); });
@@ -237,11 +261,12 @@ for (const ev of ['touchstart', 'touchend']) {
 
 let padPauseWasDown = false;
 let padStartWasDown = false;
+let padUpWasDown = false, padDownWasDown = false;
 
 function pollGamepads() {
   const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
   Object.assign(padKeys, emptyKeys());
-  let pauseDown = false, startDown = false;
+  let pauseDown = false, startDown = false, upDown = false, downDown = false;
   for (const p of pads) {
     const b = (i) => !!p.buttons[i]?.pressed;
     const ax = p.axes[0] || 0;
@@ -254,15 +279,24 @@ function pollGamepads() {
     padKeys.upright ||= b(3);                      // Y
     pauseDown ||= b(9);                            // Start
     startDown ||= b(0) || b(9);
+    upDown ||= b(12) || (p.axes[1] || 0) < -0.5;
+    downDown ||= b(13) || (p.axes[1] || 0) > 0.5;
   }
   if (pads.length) {
     if (pauseDown && !padPauseWasDown && (game.screen === 'playing' || game.screen === 'paused')) game.togglePause();
-    if (startDown && !padStartWasDown && game.screen === 'title') doAction('play');
+    if (startDown && !padStartWasDown && game.screen === 'title') { doAction('play'); moveModeChoice(0); }
+    else if (game.screen === 'modes') {
+      if (startDown && !padStartWasDown) chooseMode();
+      else if (upDown && !padUpWasDown) moveModeChoice(-1);
+      else if (downDown && !padDownWasDown) moveModeChoice(1);
+    }
     padKeys.restart = padKeys.restart && game.screen === 'gameOver';
     combineKeys();
   }
   padPauseWasDown = pauseDown;
   padStartWasDown = startDown;
+  padUpWasDown = upDown;
+  padDownWasDown = downDown;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -355,7 +389,7 @@ function frame(now) {
   const ds = document.body.dataset;
   if (ds.screen !== game.screen) ds.screen = game.screen;
   const cur = snapshot();
-  const t = game.screen === 'playing' || game.screen === 'title' || game.screen === 'garage' ? Math.min(acc / DT, 1) : 1;
+  const t = ['playing', 'title', 'modes', 'garage'].includes(game.screen) ? Math.min(acc / DT, 1) : 1;
   renderer.draw(game, prev ? lerpView(prev, cur, t) : cur);
   const one = game.oneButtonActive ? '1' : '0', up = game.canUpright && game.screen === 'playing' ? '1' : '0';
   if (ds.onebutton !== one) ds.onebutton = one;
@@ -370,7 +404,7 @@ function fit() {
 
 /**
  * Test hook for automated screenshots, e.g. ?test=play&stage=5&frames=400&touch=1
- *   test   = title | garage | help | practice | trials | play | trial | endless | paused | gameover
+ *   test   = title | modes | stats | options | garage | help | practice | trials | play | trial | endless | paused | gameover
  *            (trial: a Time Trial of `stage`, 9 for All Nine)
  *   stage  = stage index for play (0-8), frames = steps to simulate with the gas held
  *   seed   = for endless: a number, so the same course comes up every time
@@ -402,7 +436,7 @@ function applyTestParams() {
     Object.assign(game.look, { body, tyre, hub, paint: Number.isInteger(paint) ? paint : body });
   }
   const frames = Number(q.get('frames')) || 0;
-  const screens = { garage: 'garage', help: 'help', practice: 'practiceSelect', trials: 'trialSelect', title: 'title' };
+  const screens = { garage: 'garage', help: 'help', practice: 'practiceSelect', trials: 'trialSelect', title: 'title', modes: 'modes', stats: 'stats', options: 'options' };
   if (screens[test]) {
     game.showMenu(screens[test]);
     for (let i = 0; i < 300; i++) game.step();

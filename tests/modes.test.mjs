@@ -371,7 +371,7 @@ test('the pause screen names the run, and offers the controls switch outside Cla
   const actions = (g) => BUTTONS.paused.filter((b) => b.show(g)).map((b) => b.action);
   const g = new Game(data, { random: () => 0.4 });
   g.startCampaign();
-  assert.equal(runName(g), 'Play  ·  Stage One');
+  assert.equal(runName(g), 'Standard  ·  Stage One');
   assert.deepEqual(actions(g), ['resume', 'menu', 'sound', 'oneButton']);
   g.startCampaign(true);
   assert.equal(runName(g), 'Classic  ·  Stage One');
@@ -411,8 +411,8 @@ test('the tall menu layouts keep every button on the page, apart from the others
     const actions = (l) => new Set(l.map((b) => b.action));
     assert.deepEqual(actions(TALL_BUTTONS[screen]), actions(BUTTONS[screen]), screen);
   }
-  const practice = TALL_BUTTONS.title.find((b) => b.action === 'practice').rect;
-  assert.equal(hitButton('title', practice.x + 5, practice.y + 5, g, true).action, 'practice');
+  const practice = TALL_BUTTONS.modes.find((b) => b.action === 'practice').rect;
+  assert.equal(hitButton('modes', practice.x + 5, practice.y + 5, g, true).action, 'practice');
 });
 
 test('the chassis bottoming out on a hard landing is no scrape outside Classic; Classic still counts it', () => {
@@ -716,27 +716,19 @@ test('Halfpipe: drop in and ride it back and forth between its ledges', () => {
   assert.equal(g.screen, 'playing');
 });
 
-test('touch zones: the left zone reverses on the ground and tilts back in the air', () => {
+test('one-button controls: the up arrow is the button, and the other arrows do nothing', () => {
   const g = new Game(data);
   g.toggle('oneButton');
   g.startCampaign();
+  settle(g);
+  const pick = (k) => (({ up, down, left, right }) => ({ up, down, left, right }))(k);
   g.keys.up = true;
-  settle(g, 250);
-  g.keys.up = false;
-  settle(g, 140);
-  const x0 = g.truck.T[0];
-  g.keys.back = true;
-  settle(g, 140);
-  assert.ok(g.truck.T[0] < x0 - 20, `reversed (${x0.toFixed(0)} -> ${g.truck.T[0].toFixed(0)})`);
-  g.keys.back = false;
-  settle(g, 140);
-  const t = g.truck;
-  for (let i = 1; i < 10; i += 2) t.P[i] = t.T[i] + 6; // throw it up into the air
-  for (let i = 0; i < 8; i++) g.step();
-  const r0 = t.bodyRot;
-  g.keys.back = true;
-  for (let i = 0; i < 15; i++) g.step();
-  assert.ok(t.bodyRot < r0 - 10, `tilted back (${r0.toFixed(1)} -> ${t.bodyRot.toFixed(1)})`);
+  assert.deepEqual(pick(g.driveKeys()), { up: true, down: false, left: false, right: false }, 'up drives on the ground, like Space');
+  g.keys = { ...g.keys, up: false, down: true, left: true, right: true };
+  assert.deepEqual(pick(g.driveKeys()), { up: false, down: false, left: false, right: false }, 'down, left and right do nothing');
+  g.airSteps = 20;
+  g.keys = { ...g.keys, up: true };
+  assert.deepEqual(pick(g.driveKeys()), { up: false, down: false, left: true, right: false }, 'up tilts back in the air');
 });
 
 test('every screen\'s buttons can be shown for every kind of run', async () => {
@@ -760,13 +752,3 @@ test('every screen\'s buttons can be shown for every kind of run', async () => {
   assert.equal(reachedLine(g), 'Got to stage 3 of 9');
 });
 
-test('touch zones: the left zone held with the middle drives and tilts back, on the ground too', () => {
-  const g = new Game(data);
-  g.toggle('oneButton');
-  g.startCampaign();
-  settle(g);
-  g.keys.back = true;
-  assert.deepEqual((({ up, down, left }) => ({ up, down, left }))(g.driveKeys()), { up: false, down: true, left: false }, 'left alone reverses');
-  g.keys.up = true;
-  assert.deepEqual((({ up, down, left }) => ({ up, down, left }))(g.driveKeys()), { up: true, down: false, left: true }, 'with the middle: drive and tilt back');
-});

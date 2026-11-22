@@ -35,8 +35,8 @@ test('a flip with big air and a clean landing chains, and pays out with a multip
   run(tr, ft, 100, { rear: false, front: false });           // 100 steps of air
   ft.state.flipAccum = 372;
   let paid = run(tr, ft, 1, { flip: 372 });                  // both wheels down together
-  assert.deepEqual(tr.chain.map((t) => t.name), ['Backflip', 'Big Air', 'Clean']);
-  assert.deepEqual(tr.show.names, ['Backflip', 'Big Air', 'Clean']);
+  assert.deepEqual(tr.chain.map((t) => t.name), ['Backflip', 'Big Air (1.4s)', 'Clean']);
+  assert.deepEqual(tr.show.names, ['Backflip', 'Big Air (1.4s)', 'Clean']);
   const air = (100 - 35) * TRICK.airPoints, clean = Math.round((372 + air) * TRICK.cleanBonus);
   assert.equal(tr.chainPoints, 372 + air + clean);
   assert.equal(tr.multiplier, 3);
@@ -78,13 +78,13 @@ test('scraping the cab bails the chain: its tricks pay, but with no multiplier',
   run(tr, ft, 150, { rear: false, front: false });
   ft.state.flipAccum = -400;
   run(tr, ft, 1, { flip: 400, rear: true, front: false });  // Frontflip + Huge Air, not clean
-  assert.deepEqual(tr.chain.map((t) => t.name), ['Frontflip', 'Huge Air']);
+  assert.deepEqual(tr.chain.map((t) => t.name), ['Frontflip', 'Huge Air (2.1s)']);
   const points = tr.chainPoints;
   const paid = run(tr, ft, 1, { scraped: true });
   assert.equal(paid, points);
   assert.equal(tr.banked.bailed, true);
   // A bail isn't shown as a trick: the names stay, with a bail note under them.
-  assert.deepEqual(tr.show.names, ['Frontflip', 'Huge Air']);
+  assert.deepEqual(tr.show.names, ['Frontflip', 'Huge Air (2.1s)']);
   assert.ok(tr.bail);
   assert.equal(tr.queue.length, 0);
 });
@@ -126,7 +126,7 @@ test('in the game, a dropped truck that turns over in the air scores its tricks'
     if (g.tricks.show) for (const n of g.tricks.show.names) names.add(n);
     if (g.score > before) payouts++;
   }
-  assert.ok(names.has('Big Air') || names.has('Huge Air'), `tricks seen: ${[...names]}`);
+  assert.ok([...names].some((n) => /^(Big|Huge) Air \(\d\.\d+s\)$/.test(n)), `tricks seen: ${[...names]}`);
   assert.ok([...names].some((n) => n.endsWith('Backflip')), `tricks seen: ${[...names]}`);
   assert.ok(payouts >= 1 && g.score > 0, `score ${g.score}`);
   assert.equal(g.flipBonus, g.tricks.banked.points);
