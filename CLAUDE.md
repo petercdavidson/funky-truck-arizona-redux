@@ -77,7 +77,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   for game state. `Renderer` scales the stage to fit the screen.
 - The physics is a faithful port of the original game. Treat changes to `Truck` / `CollisionWorld`
   as gameplay changes: say so explicitly and add or adjust tests.
-- Screens are `game.screen` strings: `title`, `modes` (the mode picker over the title), `stats`, `options`, `help`, `garage`, `practiceSelect`, `trialSelect`, `playing`,
+- Screens are `game.screen` strings: `title`, `modes` (the mode picker over the title), `stats`, `pauseOptions`, `options`, `help`, `garage`, `practiceSelect`, `trialSelect`, `playing`,
   `paused`, `gameOver`. A new screen needs an entry in `BUTTONS`, a case in `Renderer.draw`, and
   `body[data-screen]` CSS if it affects touch controls.
 - Saved data goes through `game.store` (key prefix `funkytruck.` in localStorage). Validate

@@ -12,10 +12,13 @@ outside the box to close it (on a keyboard: ↑ / ↓ and Space or Enter; on a g
 **High Scores** shows each mode's best and your records and totals across all your runs: longest
 airtime, top speed, most flips in one jump, longest wheelie, best and longest trick chain, distance
 and time driven, runs, stages finished, flips, each trick, bails and wrecks (`src/stats.js`).
+Its **Reset** button asks *Are you sure?*, and its Yes counts down five seconds before it can be
+pressed; it clears every best score, best time, ghost and stat.
 
 Tap or click the truck on the title screen to knock it into the air: where you hit it decides
 which way it turns over (the back wheel flips it forwards). Tap it as often as you like; up high it
-goes in front of the words.
+goes in front of the words. There's no height limit: knock it hard enough and it flies out of
+sight and falls back down.
 
 ## Modes
 
@@ -54,7 +57,7 @@ The game-over box says how far the run got: the stage reached (Standard and Clas
 
 **Garage**: choose the truck's body, paint, tyres and wheels. Choosing a body puts it in its own
 colour; Paint then gives it any other body's colour. Only the look changes: every body and tyre
-drives exactly the same (the garage says so).
+drives exactly the same (the garage says so). **Reset Truck** goes back to the truck you start with.
 
 Standard, Classic and Endless each keep their own best (score, score, distance), and Time Trial a
 best time and ghost per track (a ghost is about 30 KB a minute of driving). A Practice run with
@@ -68,7 +71,11 @@ truck stops looking stuck. A flip upright isn't a trick: tricks count again a se
 Outside Classic the body touching ground underneath it (the chassis bottoming out on a hard landing
 or a ramp) isn't a scrape: no damage, bail or scrape sound. Hitting the cab's roof or sides is.
 
-**One Button** (on the Options screen, or as Controls in the pause menu): one button drives on the
+**Dynamic crash cam** (outside Classic; on the Options screen): when the truck is wrecked, the
+camera pulls back (up to 2.6 times the usual view) to keep all its scattering pieces in frame, and
+follows the body if they spread further than that. `CRASH_CAM` in `src/game.js`.
+
+**One Button** (the Controls option: Standard, Pedals on a touchscreen, or One Button): one button drives on the
 ground and tilts the truck back in the air. On a keyboard it's Space or the up arrow (the other
 arrow keys do nothing); on a touchscreen the pedals go and holding anywhere on the screen is the
 button. Classic always uses the original controls.
@@ -96,8 +103,8 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Sound on / off | M | Sound switch (Options screen or pause menu) | |
 | Full screen | F | | |
 
-**Options** (a button next to How to Play on the title screen) has the switches for sound, the
-controls (One Button), the dynamic camera, and **Show Frame Rate** (frames per second
+**Options** (on the title screen) has the switches for sound, the controls (Standard / Pedals or
+One Button), the dynamic camera, the dynamic crash cam, and **Show Frame Rate** (frames per second
 in the bottom left corner). Options for one mode stay on that mode's screen (Practice's Damage and
 Classic, Time Trial's Ghost).
 
@@ -105,8 +112,8 @@ The game's
 version is in the title screen's bottom-right corner; on the live site it's followed by the
 commit it was built from.
 
-The pause screen names the run (mode and stage, or distance in Endless) and has switches for
-sound and, outside Classic, the controls (Standard or One Button; on a touchscreen, Pedals or One Button).
+The pause screen names the run (mode and stage, or distance in Endless) and has an **Options**
+button with the options that apply to the run (Classic has no controls or camera switches).
 
 The best scores, the High Scores screen's stats, the options and the truck chosen in the garage (with each body's paint) are saved in the browser
 (`localStorage`).
@@ -128,7 +135,7 @@ never wanders into a valley that can only be left by a steeper wall: every hill 
 
 Score: 10 points for every new tile of ground, plus tricks as usual. The HUD shows the
 distance in metres. **Milestones** are celebrated as you pass them, in gold with a burst of
-confetti and a fanfare: 100, 250, 500, 750 and 1,000 m, then every 500 m; 5,000, 10,000, 25,000,
+confetti in the trucks' paint colours and a fanfare: 100, 250, 500, 750 and 1,000 m, then every 500 m; 5,000, 10,000, 25,000,
 50,000, 100,000, 250,000, 500,000 and 1,000,000 points; and beating your best distance.
 
 ## Sound

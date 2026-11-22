@@ -7,8 +7,8 @@
 import { buildGrammar, EndlessCourse, ENDLESS_WIDTH, ENDLESS_SHIFT } from './endless.js';
 import { TrickTracker } from './tricks.js';
 import { Wreck } from './wreck.js';
-import { TRIAL_ALL, GHOST_EVERY, validBests, loadGhost, saveGhost, ghostPose } from './trial.js';
-import { validStats, countTrick, countChain } from './stats.js';
+import { TRIAL_ALL, TRIAL_TRACKS, GHOST_EVERY, validBests, loadGhost, saveGhost, ghostPose } from './trial.js';
+import { validStats, emptyStats, countTrick, countChain } from './stats.js';
 
 export const TILE = 64;          // s4c2
 export const STAGE_W = 576;      // Z7552
@@ -463,8 +463,8 @@ export class Truck {
 
   /**
    * Knock the truck up from the point (x, y): every point is pushed up, the ones nearest the hit
-   * most, so hitting the back wheel lifts the back and turns it over forwards. It never goes up
-   * fast enough to rise above `KICK.top`, so it stays on screen.
+   * most, so hitting the back wheel lifts the back and turns it over forwards. There's no limit:
+   * hit it often enough and it flies up out of sight, and falls back down.
    */
   kick(x, y) {
     const T = this.T, P = this.P;
@@ -472,21 +472,14 @@ export class Truck {
       const d = Math.hypot(T[i] - x, T[i + 1] - y);
       P[i + 1] += KICK.push * (KICK.even + (1 - KICK.even) * Math.max(0, 1 - d / KICK.reach));
     }
-    // At most fast enough to rise to KICK.top (about the title's words), however often it's hit.
-    const [, cy] = this.centre(), up = this.centre(P)[1] - cy;
-    const max = Math.min(KICK.max, Math.sqrt(2 * 0.11 * Math.max(0, cy - KICK.top)));
-    if (up > max) for (let i = 1; i < 10; i += 2) P[i] -= up - max;
   }
 }
 
 /** The title truck's floor (where its wheels' bottoms rest), and its body's outline as Wreck has it. */
 const TITLE_FLOOR = 192.5;
 const TITLE_BODY = [[-10, -26], [62, -26], [62, 10], [-10, 10]];
-/**
- * A kick on the title truck: px per step up, the share every point gets, how far the rest
- * reaches, the most speed up, and the highest its middle goes (its floor is at 192.5).
- */
-export const KICK = { push: 5.2, even: 0.3, reach: 80, max: 7.5, top: 0 };
+/** A kick on the title truck: px per step up, the share every point gets, and how far the rest reaches. */
+export const KICK = { push: 5.2, even: 0.3, reach: 80 };
 
 // ---------------------------------------------------------------------------------------------
 // Game state machine (_ma)
@@ -556,6 +549,16 @@ export const CAMERA = {
   lookBack: 100, backFrom: 1, backTo: 4, backW: 0.025, // reversing: px per step backwards, and its spring
 };
 
+/**
+ * The dynamic crash cam (outside Classic, when switched on): once the truck is wrecked, the camera
+ * pulls back to keep every piece in view, centred on them, up to `maxZoom` times the usual view
+ * (beyond that it follows the body). `margin` is room left round the pieces (stage units, at
+ * zoom 1), and `maxRate` the most the zoom changes in a step.
+ */
+export const CRASH_CAM = { maxZoom: 2.6, margin: 70, maxRate: 0.02 };
+/** Steps the High Scores reset waits before its Yes can be pressed (5 s). */
+export const RESET_WAIT = 350;
+
 /** Flip-upright assist: steps of being stuck before the button appears. */
 export const STUCK_STEPS = 140;
 /** ...and how long it stays once the truck no longer looks stuck (3 s). */
@@ -581,7 +584,7 @@ const STATS_SAVE_EVERY = 700;
 
 /**
  * Screens: 'title' | 'modes' (the mode picker over the title) | 'stats' | 'options' | 'help' | 'garage' |
- * 'practiceSelect' | 'trialSelect' | 'playing' | 'paused' | 'gameOver'
+ * 'practiceSelect' | 'trialSelect' | 'playing' | 'paused' | 'pauseOptions' | 'gameOver'
  * Modes: 'campaign' (all nine stages), 'practice' (one stage), 'endless' (a generated course),
  * 'trial' (Time Trial: a stage or all nine against the clock, see trial.js).
  * The title screen's Play and Classic both start a campaign, under different rules.
@@ -632,6 +635,7 @@ export class Game {
     this.practiceDamage = flag('practiceDamage', true);
     this.practiceClassic = flag('practiceClassic', false);
     this.dynamicCamera = flag('dynamicCamera', true);
+    this.crashCam = flag('crashCam', true);
     this.ghostOn = flag('ghost', true);
     this.showFps = flag('showFps', false);
     // Time Trial: the best time on each track (see trial.js), and the run under way.
@@ -644,6 +648,7 @@ export class Game {
     this.split = null;                // clock now minus the ghost's at this point of the track
     this.trialResult = null;          // { time, best, record } at the end of a finished run
     this.wreck = null;                // the pieces of a wrecked truck (outside Classic)
+    this.resetConfirm = null;         // High Scores: the reset being confirmed, { steps } since asked
     this.selfWrecked = false;         // the wreck was done on purpose (Esc), not by damage
     this.milestone = null;            // Endless: the celebration on screen { text, timer, n }
     this.milestones = [];             // ...and ones waiting their turn
@@ -720,6 +725,9 @@ export class Game {
 
   saveLook() { this.store.set('truckLook', { ...this.look }); }
 
+  /** Back to the truck you start with. */
+  resetLook() { Object.assign(this.look, { body: 0, tyre: 0, hub: 0, paint: 0 }); this.saveLook(); }
+
   /** Step 'body', 'tyre', 'hub' or 'paint' by `delta`. A new body comes in its own colour. */
   cycleLook(part, delta) {
     const L = this.look;
@@ -728,9 +736,9 @@ export class Game {
     this.saveLook();
   }
 
-  /** Flip an on/off option and save it: 'soundOn', 'oneButton', 'practiceDamage', 'practiceClassic', 'dynamicCamera', 'ghostOn', 'showFps'. */
+  /** Flip an on/off option and save it: 'soundOn', 'oneButton', 'practiceDamage', 'practiceClassic', 'dynamicCamera', 'crashCam', 'ghostOn', 'showFps'. */
   toggle(option) {
-    const key = { soundOn: 'sound', oneButton: 'oneButton', practiceDamage: 'practiceDamage', practiceClassic: 'practiceClassic', dynamicCamera: 'dynamicCamera', ghostOn: 'ghost', showFps: 'showFps' }[option];
+    const key = { soundOn: 'sound', oneButton: 'oneButton', practiceDamage: 'practiceDamage', practiceClassic: 'practiceClassic', dynamicCamera: 'dynamicCamera', crashCam: 'crashCam', ghostOn: 'ghost', showFps: 'showFps' }[option];
     if (!key) return;
     this[option] = !this[option];
     this.store.set(key, this[option]);
@@ -738,6 +746,9 @@ export class Game {
 
   /** The dynamic camera applies outside Classic, when switched on. */
   get dynamicCameraActive() { return this.dynamicCamera && !this.rules.classic; }
+
+  /** The crash cam works on a wrecked truck outside Classic, when switched on. */
+  get crashCamActive() { return this.crashCam && !this.rules.classic && !!this.wreck; }
 
   /** One-button controls apply outside Classic. */
   get oneButtonActive() { return this.oneButton && !this.rules.classic; }
@@ -967,11 +978,37 @@ export class Game {
     // The title's truck carries on as it was under the mode picker, and back from it.
     const overTitle = (a, b) => (a === 'title' && b === 'modes') || (a === 'modes' && b === 'title');
     if ((screen === 'title' || screen === 'garage') && !overTitle(this.screen, screen)) this.garageTruck.reset(STAGE_W / 2, 120);
+    this.resetConfirm = null;
     this.screen = screen;
     this.teleportCount++;
   }
 
   saveStats() { this.statsSince = 0; this.store.set('stats', this.stats); }
+
+  // ---- High Scores: reset (asked, then confirmed once RESET_WAIT steps have passed)
+
+  askReset() { if (this.screen === 'stats') this.resetConfirm = { steps: 0 }; }
+  cancelReset() { this.resetConfirm = null; }
+  get resetReady() { return !!this.resetConfirm && this.resetConfirm.steps >= RESET_WAIT; }
+
+  /** Clear every best score, best time, ghost and stat. Only once the wait is over. */
+  resetScores() {
+    if (!this.resetReady) return false;
+    this.best = 0; this.bestPlay = 0; this.bestEndless = 0;
+    this.trialBests = {};
+    this.stats = emptyStats();
+    for (const k of ['bestScore', 'bestPlay', 'bestEndless']) this.store.set(k, 0);
+    this.store.set('trialBests', {});
+    for (let t = 0; t < TRIAL_TRACKS; t++) this.store.set(`ghost${t}`, null);
+    this.saveStats();
+    this.resetConfirm = null;
+    return true;
+  }
+
+  // ---- the pause menu's Options
+
+  openPauseOptions() { if (this.screen === 'paused') this.screen = 'pauseOptions'; }
+  closePauseOptions() { if (this.screen === 'pauseOptions') { this.screen = 'paused'; this.pauseStage = 99; } }
 
   /** Knock the title screen's truck up from (x, y), in its own coordinates. Returns whether it was hit. */
   kickTitleTruck(x, y) {
@@ -1013,8 +1050,10 @@ export class Game {
   get focus() { return this.wreck ? this.wreck.centre : [this.truck.T[0], this.truck.T[1]]; }
 
   updateCamera() { // T5933 + w6015
-    const [fx, fy] = this.focus;
-    if (this.dynamicCameraActive) this.updateZoom();
+    const crash = this.crashCamActive ? this.crashFrame() : null;
+    const [fx, fy] = crash ? crash.centre : this.focus;
+    if (crash) this.zoomTo(crash.zoom, CRASH_CAM.maxRate);
+    else if (this.dynamicCameraActive) this.updateZoom();
     else { this.zoom = 1; this.back = 0; this.backV = 0; }
     // The original camera: it keeps the truck 150 from the left and halfway down, moving a fifth
     // of the way there each step, at most a tile. The dynamic camera is the same with the frame
@@ -1024,7 +1063,9 @@ export class Game {
     // than that (the stunt tracks), so there the limit rises to keep up with it.
     const t = this.truck;
     const lim = this.rules.classic ? TILE * z : Math.max(TILE * z, 1.5 * Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]));
-    const dx = Math.max(Math.min((fx - this.camAnchorX * z - this.camX) * 0.2, lim), -lim);
+    // (The crash cam keeps the pieces in the middle.)
+    const anchorX = crash ? this.viewW / 2 : this.camAnchorX;
+    const dx = Math.max(Math.min((fx - anchorX * z - this.camX) * 0.2, lim), -lim);
     const dy = Math.max(Math.min((fy - this.viewH * z / 2 - this.camY) * 0.2, lim), -lim);
     this.camX = Math.min(Math.max(this.camX + dx, 0), this.maxCamX);
     // Classic stays inside the level. Elsewhere the camera follows the truck up and down wherever
@@ -1032,6 +1073,30 @@ export class Game {
     // column of every stage ends in solid dirt).
     this.camY += dy;
     if (this.rules.classic) this.camY = Math.min(Math.max(this.camY, 0), this.maxCamY);
+  }
+
+  /**
+   * The crash cam's frame: the middle of all the wreck's pieces, and the zoom that shows them
+   * all with a margin. If they've spread too far for CRASH_CAM.maxZoom, it follows the body.
+   */
+  crashFrame() {
+    const W = this.wreck.T;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < W.length; i += 2) {
+      x0 = Math.min(x0, W[i]); x1 = Math.max(x1, W[i]); y0 = Math.min(y0, W[i + 1]); y1 = Math.max(y1, W[i + 1]);
+    }
+    const m = 2 * CRASH_CAM.margin;
+    const fit = Math.max((x1 - x0 + m) / this.viewW, (y1 - y0 + m) / this.viewH);
+    if (fit > CRASH_CAM.maxZoom) return { centre: this.wreck.centre, zoom: CRASH_CAM.maxZoom };
+    return { centre: [(x0 + x1) / 2, (y0 + y1) / 2], zoom: Math.max(1, fit) };
+  }
+
+  /** Move the zoom towards `target` on its spring, at most `maxRate` a step. */
+  zoomTo(target, maxRate) {
+    const w = CAMERA.zoomW;
+    let v = this.zoomV + w * w * (target - this.zoom) - 2 * w * this.zoomV;
+    v = Math.max(-maxRate, Math.min(maxRate, v));
+    this.zoom = Math.max(1, this.zoom + v); this.zoomV = v;
   }
 
   /** How far below the point (x, y) the ground is (a wheel centre's resting height), up to `max`. */
@@ -1323,6 +1388,9 @@ export class Game {
         break;
       case 'garage':
         this.garageTruck.garageStep();
+        break;
+      case 'stats':
+        if (this.resetConfirm) this.resetConfirm.steps++;
         break;
       case 'title':
       case 'modes':

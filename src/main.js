@@ -81,6 +81,8 @@ function chooseMode() {
  */
 function escape() {
   if (game.screen === 'playing' && game.selfWreck()) { sound.play('wreck'); return; }
+  if (game.screen === 'pauseOptions') { doAction('pauseBack'); return; }
+  if (game.screen === 'stats' && game.resetConfirm) { doAction('resetNo'); return; }
   if (game.screen !== 'title') goMenu();
 }
 
@@ -136,10 +138,16 @@ function doAction(a) {
     return;
   }
   sound.play('click');
-  if (a === 'oneButton' || a === 'practiceDamage' || a === 'practiceClassic' || a === 'dynamicCamera' || a === 'ghostOn' || a === 'showFps') { game.toggle(a); return; }
+  if (['oneButton', 'practiceDamage', 'practiceClassic', 'dynamicCamera', 'crashCam', 'ghostOn', 'showFps'].includes(a)) { game.toggle(a); return; }
   if (a === 'play') game.showMenu('modes');
   else if (a === 'back') game.showMenu('title');
   else if (a === 'stats') game.showMenu('stats');
+  else if (a === 'pauseOptions') game.openPauseOptions();
+  else if (a === 'pauseBack') game.closePauseOptions();
+  else if (a === 'lookReset') game.resetLook();
+  else if (a === 'resetAsk') game.askReset();
+  else if (a === 'resetNo') game.cancelReset();
+  else if (a === 'resetYes') game.resetScores();
   else if (a === 'standard') game.startCampaign();
   else if (a === 'classic') game.startCampaign(true);
   else if (a === 'endless') game.startEndless();
@@ -188,8 +196,7 @@ canvas.addEventListener('pointermove', (e) => {
   if (e.pointerType === 'touch') return;
   const [x, y] = stagePoint(e);
   const b = hitButton(game.screen, x, y, game, renderer.tall);
-  // (in the mode picker, the arrow keys' highlight stays put until the mouse is on a button)
-  if (b || game.screen !== 'modes') renderer.hover = b;
+  renderer.hover = b;
   canvas.style.cursor = b || onTitleTruck(x, y) ? 'pointer' : '';
 });
 

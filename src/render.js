@@ -3,15 +3,15 @@
 // All drawing uses the original 576x448 stage coordinates (y down, clockwise rotation), scaled to
 // the canvas. Tiles are drawn in device pixels with snapped edges so they never show seams.
 
-import { TILE, STAGE_W, STAGE_H, STEP_HZ, MILESTONE_SHOW } from './game.js';
-import { HUD_FONT, TITLE_FONT } from './assets.js';
+import { TILE, STAGE_W, STAGE_H, STEP_HZ, MILESTONE_SHOW, RESET_WAIT } from './game.js';
+import { HUD_FONT, TITLE_FONT, BODY_PAINTS } from './assets.js';
 import { TRICK } from './tricks.js';
 import { VERSION, BUILD } from './version.js';
 import { Wreck } from './wreck.js';
 import { TRIAL_ALL, formatTime, formatGap } from './trial.js';
 
 const DEG = Math.PI / 180;
-const FILL_SCREENS = new Set(['playing', 'paused', 'gameOver']);
+const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'gameOver']);
 const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'help', 'garage', 'practiceSelect', 'trialSelect']);
 const AHEAD = '#8ff0a4', BEHIND = '#ffb0a0'; // Time Trial gaps: ahead of / behind your best
 const FILL_TILE = 1;   // solid dirt
@@ -33,15 +33,53 @@ const r = (x, y, w, h) => ({ x, y, w, h });
 const onOff = (v) => (v ? 'On' : 'Off');
 const option = (y, label, action) => ({ rect: r(428, y, 132, 20), label, action, small: true });
 
-/** The Options screen: [label, action, what it does]. */
+/** The controls in use, by the names the player sees. */
+const controlsName = (g, r) => (g.oneButton ? 'One Button' : r?.touchMode ? 'Pedals' : 'Standard');
+/** What the controls in use do. */
+function controlsAbout(g, r) {
+  if (g.oneButton) return r?.touchMode ? 'Hold anywhere on the screen to drive, and to tilt back in the air' : 'Space (or the up arrow) drives, and tilts back in the air';
+  return r?.touchMode ? 'Pedals on the right drive and reverse; the left buttons tilt' : 'The arrow keys drive and tilt';
+}
+const notClassic = (g) => !g.rules.classic;
+
+/**
+ * The Options screen: [label, action, what it does, applies(game)]. The pause menu's Options
+ * shows only those that apply to the run (the controls and cameras aren't Classic's).
+ */
 const OPTIONS = [
   [(g) => `♪ Sound: ${onOff(g.soundOn)}`, 'sound', () => 'Engine, landings, tricks and crashes (M on a keyboard)'],
-  [(g) => `One Button: ${onOff(g.oneButton)}`, 'oneButton',
-    (g, r) => (r?.touchMode ? 'Hold anywhere on the screen to drive, and to tilt back in the air' : 'Space (or the up arrow) drives, and tilts back in the air')],
-  [(g) => `Dynamic Camera: ${onOff(g.dynamicCamera)}`, 'dynamicCamera', () => 'Pulls back to show more when you go fast or fly high'],
+  [(g, r) => `Controls: ${controlsName(g, r)}`, 'oneButton', controlsAbout, notClassic],
+  [(g) => `Dynamic Camera: ${onOff(g.dynamicCamera)}`, 'dynamicCamera', () => 'Pulls back to show more when you go fast or fly high', notClassic],
+  [(g) => `Dynamic Crash Cam: ${onOff(g.crashCam)}`, 'crashCam', () => 'Pulls back to keep every piece of a wrecked truck in view', notClassic],
   [(g) => `Show Frame Rate: ${onOff(g.showFps)}`, 'showFps', () => 'Frames per second, in the bottom left corner'],
 ];
-const optionRow = (i, tall) => (tall ? r(50, 92 + 96 * i, 260, 40) : r(178, 82 + 66 * i, 220, 26));
+const optionRow = (i, tall) => (tall ? r(50, 92 + 90 * i, 260, 40) : r(178, 70 + 62 * i, 220, 26));
+const optionAbout = (action) => OPTIONS.find((o) => o[1] === action)?.[2];
+
+/** The pause menu's Options: the options that apply, by Classic rules or not, then Back. */
+function pauseOptionButtons(tall, extra = {}) {
+  return [true, false].flatMap((classic) => {
+    const when = (g) => !!g.rules?.classic === classic;
+    const list = OPTIONS.filter((o) => !o[3] || o[3]({ rules: { classic } }));
+    return [
+      ...list.map(([label, action], i) => ({ rect: optionRow(i, tall), label, action, show: when, ...extra })),
+      { rect: tall ? r(80, 560, 200, 38) : r(229, 400, 120, 25), label: 'Back', action: 'pauseBack', show: when, ...extra },
+    ];
+  });
+}
+
+/** High Scores: Reset and Menu, or while a reset is being confirmed, Yes (once it may) and No. */
+function statsButtons(tall, extra = {}) {
+  const asking = (g) => !!g.resetConfirm, idle = (g) => !g.resetConfirm;
+  const left = (g) => Math.ceil(Math.max(0, RESET_WAIT - (g.resetConfirm?.steps ?? 0)) / STEP_HZ);
+  return [
+    { rect: tall ? r(30, 700, 145, 38) : r(160, 412, 120, 25), label: 'Reset', action: 'resetAsk', show: idle, ...extra },
+    { rect: tall ? r(185, 700, 145, 38) : r(296, 412, 120, 25), label: 'Menu', action: 'menu', show: idle, ...extra },
+    { rect: tall ? r(50, 404, 125, 44) : r(168, 254, 115, 28), label: (g) => (g.resetReady ? 'Yes, Reset' : `Yes (${left(g)})`), action: 'resetYes',
+      show: asking, disabled: (g) => !g.resetReady, ...extra },
+    { rect: tall ? r(185, 404, 125, 44) : r(293, 254, 115, 28), label: 'No', action: 'resetNo', show: asking, ...extra },
+  ];
+}
 /** The title screen's buttons. Play opens the mode picker (the 'modes' screen) over it. */
 const MENU = [['Play', 'play'], ['Change Truck', 'garage'], ['High Scores', 'stats'], ['Options', 'options'], ['How to Play', 'help']];
 /** The game modes, in the mode picker: [label, action, what it is]. */
@@ -69,13 +107,9 @@ const stuntButtons = (place, extra = {}) => Array.from({ length: STUNTS }, (_, i
 /** The garage's note that the truck's look is only a look. */
 const COSMETIC = 'Looks only: every truck drives exactly the same';
 
-/** The controls in use, by the names the player sees. */
-const controlsName = (g, r) => (g.oneButton ? 'One Button' : r?.touchMode ? 'Pedals' : 'Standard');
-
 /**
  * The pause menu's buttons, placed by `place(i)`. Each kind of run gets its own column: Endless
- * can end the run, Practice can restart the stage, and Classic rules have no controls switch (they
- * always use the original controls).
+ * can end the run, and Practice and Time Trial can restart. Options opens the options that apply.
  */
 function pauseButtons(place) {
   const kinds = [
@@ -93,8 +127,7 @@ function pauseButtons(place) {
     (kind.startsWith('practice') || kind === 'trial') && { label: 'Restart', action: 'again' },
     // Quitting Practice or Time Trial goes back to its list of stages
     { label: (g) => (g.quitScreen === 'title' ? 'Quit to Menu' : 'Quit to Stages'), action: 'menu' },
-    { label: (g) => `Sound: ${onOff(g.soundOn)}`, action: 'sound' },
-    !/classic/i.test(kind) && { label: (g, r) => `Controls: ${controlsName(g, r)}`, action: 'oneButton' },
+    { label: 'Options', action: 'pauseOptions' },
   ].filter(Boolean).map((b, i) => ({ ...b, rect: place(i), show: when })));
 }
 
@@ -122,14 +155,16 @@ export const BUTTONS = {
     ...MODES.map(([label, action], i) => ({ rect: modeRow(i, false), label, action })),
     { rect: r(228, 330, 120, 24), label: 'Back', action: 'back' },
   ],
-  stats: [{ rect: r(229, 412, 120, 25), label: 'Menu', action: 'menu' }],
+  stats: statsButtons(false),
   options: [
     ...OPTIONS.map(([label, action], i) => ({ rect: optionRow(i, false), label, action })),
     { rect: r(229, 400, 120, 25), label: 'Menu', action: 'menu' },
   ],
+  pauseOptions: pauseOptionButtons(false),
   help: [{ rect: r(229, 386, 120, 25), label: 'Menu', action: 'menu' }],
   garage: [
-    { rect: r(229, 413, 120, 25), label: 'Menu', action: 'menu' },
+    { rect: r(160, 413, 120, 25), label: 'Reset Truck', action: 'lookReset' },
+    { rect: r(296, 413, 120, 25), label: 'Menu', action: 'menu' },
     ...LOOK_PARTS.flatMap((part, i) => [
       { rect: r(200, 226 + 34 * i, 32, 32), action: `${part}-1` },
       { rect: r(344, 226 + 34 * i, 32, 32), action: `${part}+1` },
@@ -153,7 +188,7 @@ export const BUTTONS = {
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 680, modes: 680, stats: 760, options: 560, help: 560, garage: 580, practiceSelect: 540, trialSelect: 540, paused: 410, gameOver: 330 };
+export const TALL_H = { title: 680, modes: 680, stats: 760, options: 620, pauseOptions: 620, help: 560, garage: 580, practiceSelect: 540, trialSelect: 540, paused: 410, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
@@ -165,14 +200,16 @@ export const TALL_BUTTONS = {
     ...MODES.map(([label, action], i) => ({ rect: modeRow(i, true), label, action, ...T_BIG })),
     { rect: r(80, 562, 200, 38), label: 'Back', action: 'back', ...T_BIG },
   ],
-  stats: [{ rect: r(80, 700, 200, 38), label: 'Menu', action: 'menu', ...T_BIG }],
+  stats: statsButtons(true, T_BIG),
   options: [
     ...OPTIONS.map(([label, action], i) => ({ rect: optionRow(i, true), label, action, ...T_BIG })),
-    { rect: r(80, 500, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
+    { rect: r(80, 560, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
   ],
+  pauseOptions: pauseOptionButtons(true, T_BIG),
   help: [{ rect: r(80, 500, 200, 38), label: 'Menu', action: 'menu', ...T_BIG }],
   garage: [
-    { rect: r(80, 532, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
+    { rect: r(30, 532, 145, 38), label: 'Reset Truck', action: 'lookReset', ...T_BIG },
+    { rect: r(185, 532, 145, 38), label: 'Menu', action: 'menu', ...T_BIG },
     ...LOOK_PARTS.flatMap((part, i) => [
       { rect: r(30, 268 + 56 * i, 48, 48), action: `${part}-1` },
       { rect: r(282, 268 + 56 * i, 48, 48), action: `${part}+1` },
@@ -392,11 +429,11 @@ export class Renderer {
     }
   }
 
-  text(str, x, y, { size = 13, font = TITLE_FONT, weight = '800', color = '#fff', align = 'center', shadow = null } = {}) {
+  text(str, x, y, { size = 13, font = TITLE_FONT, weight = '800', color = '#fff', align = 'center', shadow = null, baseline = 'top' } = {}) {
     const ctx = this.ctx;
     ctx.font = `${weight} ${size}px ${font}`;
     ctx.textAlign = align;
-    ctx.textBaseline = 'top';
+    ctx.textBaseline = baseline;
     if (shadow) {
       ctx.fillStyle = shadow;
       ctx.fillText(str, x + size * 0.05, y + size * 0.05);
@@ -475,13 +512,16 @@ export class Renderer {
     for (const b of buttonsFor(screen, this.tall)) {
       if (b.show && !b.show(game)) continue;
       const { x, y, w, h } = b.rect;
+      const off = b.disabled?.(game);
+      if (off) { this.ctx.save(); this.ctx.globalAlpha = 0.5; }
       if (b.label) {
         const label = typeof b.label === 'function' ? b.label(game, this) : b.label;
         const size = b.size || (b.small ? 10 : 11.5);
         this.roundRect(x, y, w, h, this.tall ? 6 : 4, b.small ? 'rgba(107, 74, 64, 0.7)' : BUTTON_FILL);
         this.centredLabel(label.toUpperCase(), x + w / 2, y + h / 2, w - 8, { size, weight: '800' });
       }
-      if (this.hover === b) this.roundRect(x, y, w, h, this.tall ? 6 : 4, 'rgba(255,255,255,0.16)');
+      if (off) this.ctx.restore();
+      else if (this.hover === b) this.roundRect(x, y, w, h, this.tall ? 6 : 4, 'rgba(255,255,255,0.16)');
     }
   }
 
@@ -688,7 +728,7 @@ export class Renderer {
     if (this.confettiRun !== game.teleportCount) { this.confettiRun = game.teleportCount; this.confetti = []; } // a new run
     if (m && m.n !== this.confettiFor && game.screen === 'playing') {
       this.confettiFor = m.n;
-      const colors = ['#ffe27a', '#ff8f6b', '#8ff0a4', '#7cc8ff', '#f5a3ff', '#ffffff'];
+      const colors = BODY_PAINTS; // the trucks' own paints
       for (let i = 0; i < 70; i++) {
         const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, sp = 120 + Math.random() * 260;
         this.confetti.push({ x: this.viewW / 2 + (Math.random() - 0.5) * 60, y: 168, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
@@ -723,19 +763,21 @@ export class Renderer {
   meter(name, share, y, reading = '') {
     const ctx = this.ctx;
     // The label's left edge lines up with the bar's.
-    const label = { size: 15, font: HUD_FONT, weight: '800', align: 'left' };
+    // Placed by their baselines, not the tops of their lines: where a line's top is above the
+    // letters differs between fonts (on iPhones the label dropped onto the bar).
+    const label = { size: 15, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic' };
     ctx.font = `${label.weight} ${label.size}px ${label.font}`;
     ctx.textAlign = 'left'; // the measurement below depends on it
-    this.text(name, 13.1 + ctx.measureText(name).actualBoundingBoxLeft, y, label);
-    if (reading) this.text(reading, 102, y + 16.2, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', color: 'rgba(255,255,255,0.9)' });
+    this.text(name, 13.1 + ctx.measureText(name).actualBoundingBoxLeft, y + 13, label);
+    if (reading) this.text(reading, 99.5, y + 27.5, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic', color: 'rgba(255,255,255,0.9)' });
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.fillRect(13.1, y + 17.5, 80, 10);
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.fillRect(13.1, y + 17.5, 80 * Math.max(0, Math.min(1, share)), 10);
     // the end bars either side, as the original's damage bar had
     ctx.fillStyle = 'rgba(255,255,255,0.95)';
-    ctx.fillRect(13.1 - 4.5, y + 15, 2, 15);
-    ctx.fillRect(13.1 + 80 + 2.5, y + 15, 2, 15);
+    ctx.fillRect(13.1 - 3.2, y + 17.5, 1.7, 10);
+    ctx.fillRect(13.1 + 80 + 1.5, y + 17.5, 1.7, 10);
   }
 
   hud(game) { // Symbol 305 / X3323
@@ -896,6 +938,20 @@ export class Renderer {
       column(cols[0], 34, 262, 50, 19.5, 12.5);
       column(cols[1], 314, 542, 50, 19.5, 12.5);
     }
+    if (game.resetConfirm) {
+      // Are you sure? (Yes waits five seconds.)
+      this.overlayDim(0.45);
+      const note = { weight: '600', color: 'rgba(255,255,255,0.9)' };
+      if (tall) {
+        this.roundRect(30, 250, 300, 220, 12, BOX_FILL, BOX_EDGE);
+        this.text('Are you sure?', cx, 272, { size: 26, weight: '900' });
+        this.wrapText('This clears every best score, best time, ghost and stat. It can\'t be undone.', cx, 316, 260, { ...note, size: 14 }, 19);
+      } else {
+        this.roundRect(148, 140, 280, 160, 10, BOX_FILL, BOX_EDGE);
+        this.text('Are you sure?', cx, 154, { size: 22, weight: '900' });
+        this.wrapText('This clears every best score, best time, ghost and stat. It can\'t be undone.', cx, 192, 250, { ...note, size: 12 }, 16);
+      }
+    }
     this.buttons('stats', game);
   }
 
@@ -978,14 +1034,22 @@ export class Renderer {
   }
 
   /** The Options screen: each option as a button, with a line on what it does. */
-  options(game) {
+  options(game, screen = 'options') {
     const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
-    this.text('Options', cx, tall ? 28 : 22, { size: tall ? 26 : 22, weight: '800' });
-    OPTIONS.forEach(([, , about], i) => {
-      const b = optionRow(i, tall);
-      this.fitText(about(game, this), cx, b.y + b.h + (tall ? 8 : 5), tall ? 330 : 400, { size: tall ? 13 : 11, weight: '600', color: 'rgba(255,255,255,0.8)' });
-    });
-    this.buttons('options', game);
+    this.text('Options', cx, tall ? 28 : 18, { size: tall ? 26 : 22, weight: '800', shadow: screen === 'options' ? null : 'rgba(38,38,38,0.7)' });
+    for (const b of buttonsFor(screen, tall)) {
+      const about = optionAbout(b.action);
+      if (!about || (b.show && !b.show(game))) continue;
+      const { y, h } = b.rect;
+      this.fitText(about(game, this), cx, y + h + (tall ? 8 : 5), tall ? 330 : 400, { size: tall ? 13 : 11, weight: '600', color: 'rgba(255,255,255,0.85)' });
+    }
+    this.buttons(screen, game);
+  }
+
+  /** The pause menu's Options, over the dimmed game. */
+  pauseOptions(game) {
+    this.overlayDim(0.55);
+    this.options(game, 'pauseOptions');
   }
 
   /** Time Trial's stage list: a card per stage with its best time, then all nine in a row. */
@@ -1112,6 +1176,7 @@ export class Renderer {
         case 'practiceSelect': this.practiceSelect(game); break;
         case 'trialSelect': this.trialSelect(game); break;
         case 'paused': this.paused(game); break;
+        case 'pauseOptions': this.pauseOptions(game); break;
         case 'gameOver': this.gameOver(game); break;
       }
     } finally {

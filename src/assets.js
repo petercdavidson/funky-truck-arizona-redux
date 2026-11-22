@@ -79,6 +79,9 @@ const BODY_COLOURS = [
   [[105, 123, 90], [122, 144, 104], [143, 165, 125], [157, 178, 141]],
 ];
 
+/** The bodies' paint colours (the two main shades of each), for things drawn in the game's own colours. */
+export const BODY_PAINTS = BODY_COLOURS.flatMap((c) => c.slice(1, 3).map(([r, g, b]) => `rgb(${r}, ${g}, ${b})`));
+
 function toHsl(r, g, b) {
   r /= 255; g /= 255; b /= 255;
   const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;

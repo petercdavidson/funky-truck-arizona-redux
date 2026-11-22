@@ -43,9 +43,12 @@ test('the title truck jumps when tapped, turns over the way it was hit, and stay
   settle(g, 20);
   assert.ok(t.centre()[1] < y0 - 40, 'it jumped');
   assert.ok(t.bodyRot > 10, `hit at the back, it turns nose down (${t.bodyRot.toFixed(0)}°)`);
-  // Tapped again and again, it never goes up too fast to stay about on screen.
-  for (let i = 0; i < 30; i++) { g.kickTitleTruck(t.T[0], t.T[1]); g.step(); }
-  assert.ok(t.centre(t.P)[1] - t.centre()[1] <= KICK.max + 0.5);
+  // Tapped again and again, it flies up out of sight (no limit), and comes back down.
+  for (let i = 0; i < 60; i++) { if (i % 10 === 0) g.kickTitleTruck(t.T[0], t.T[1]); g.step(); }
+  let top = Infinity;
+  for (let i = 0; i < 300; i++) { g.step(); top = Math.min(top, t.centre()[1]); }
+  assert.ok(top < -300, `flew well above the page (${Math.round(top)})`);
+  assert.ok(KICK.push > 0);
   settle(g, 1500);
   assert.ok(Math.abs(t.centre()[0] - 288) < 1, 'kept in the middle');
   assert.ok(t.T[3] <= 170.01 && t.T[5] <= 170.01, 'resting on its floor');
@@ -180,4 +183,88 @@ test('stats are counted as you play, saved, and checked when read back', () => {
   const s = new Game(data, { store }).stats;
   assert.deepEqual([s.runs, s.maxAir, s.topSpeed, s.tricks.Clean, s.tricks.Wheelie, s.distance], [0, 0, 0, 0, 4, 12.5]);
   assert.deepEqual(validStats('junk'), validStats(null));
+});
+
+test('the crash cam pulls back to keep the wreck\'s pieces in view, and can be switched off', async () => {
+  const { CRASH_CAM } = await import('../src/game.js');
+  for (const on of [true, false]) {
+    const g = new Game(data, { random: () => 0.4 });
+    if (!on) g.toggle('crashCam');
+    g.dynamicCamera = false;
+    g.startEndless();
+    settle(g, 150);
+    const t = g.truck;
+    for (let i = 0; i < 10; i += 2) { t.P[i] = t.T[i] - 12; t.P[i + 1] = t.T[i + 1] + 4; } // flung forwards and up
+    g.selfWreck();
+    let most = 1;
+    for (let i = 0; i < 300; i++) {
+      g.step();
+      most = Math.max(most, g.zoom);
+      if (on) {
+        // every piece is in the frame (or the body is, once they're too far apart)
+        const { zoom } = g.crashFrame();
+        if (zoom < CRASH_CAM.maxZoom && g.zoom >= zoom - 0.001 && i > 150) {
+          const W = g.wreck.T;
+          for (let p = 0; p < W.length; p += 2) {
+            assert.ok(W[p] >= g.camX - 5 && W[p] <= g.camX + g.viewW * g.zoom + 5, 'a piece is out of frame across');
+          }
+        }
+      }
+    }
+    if (on) assert.ok(most > 1.1, `pulled back (${most.toFixed(2)})`);
+    else assert.equal(most, 1, 'switched off: no pull-back');
+  }
+  const c = new Game(data);
+  c.crashCam = true;
+  c.startCampaign(true);
+  assert.equal(c.crashCamActive, false, 'not in Classic');
+});
+
+test('the pause menu\'s Options shows only the options that apply', async () => {
+  const { BUTTONS, TALL_BUTTONS } = await import('../src/render.js');
+  const g = new Game(data);
+  for (const layout of [BUTTONS, TALL_BUTTONS]) {
+    const shown = (game) => layout.pauseOptions.filter((b) => b.show(game)).map((b) => b.action);
+    g.startCampaign();
+    assert.deepEqual(shown(g), ['sound', 'oneButton', 'dynamicCamera', 'crashCam', 'showFps', 'pauseBack']);
+    g.startCampaign(true);
+    assert.deepEqual(shown(g), ['sound', 'showFps', 'pauseBack'], 'Classic: no controls or cameras');
+  }
+  g.startCampaign();
+  g.togglePause();
+  g.openPauseOptions();
+  assert.equal(g.screen, 'pauseOptions');
+  settle(g, 50);
+  assert.equal(g.screen, 'pauseOptions', 'the game stays paused');
+  g.closePauseOptions();
+  assert.equal(g.screen, 'paused');
+});
+
+test('High Scores reset: Yes only works after five seconds, and clears every best and stat', () => {
+  const store = memoryStore();
+  const g = new Game(data, { store });
+  g.bestPlay = 1234; g.bestEndless = 50; g.trialBests = { 0: 700 }; g.stats.runs = 9;
+  store.set('ghost0', { v: 1 });
+  g.showMenu('stats');
+  g.askReset();
+  settle(g, 349);
+  assert.equal(g.resetScores(), false, 'not yet');
+  assert.equal(g.bestPlay, 1234);
+  g.step();
+  assert.ok(g.resetScores());
+  assert.deepEqual([g.bestPlay, g.bestEndless, g.trialBests, g.stats.runs, g.resetConfirm], [0, 0, {}, 0, null]);
+  assert.equal(store.get('ghost0'), null);
+  assert.equal(store.get('stats').runs, 0);
+  g.askReset();
+  g.cancelReset();
+  assert.equal(g.resetConfirm, null);
+});
+
+test('the garage can reset the truck to the one you start with', () => {
+  const store = memoryStore();
+  const g = new Game(data, { store });
+  g.cycleLook('body', 2); g.cycleLook('tyre', 1);
+  g.resetLook();
+  assert.deepEqual(g.look, { body: 0, tyre: 0, hub: 0, paint: 0 });
+  assert.deepEqual(store.get('truckLook'), g.look);
 });

@@ -372,10 +372,10 @@ test('the pause screen names the run, and offers the controls switch outside Cla
   const g = new Game(data, { random: () => 0.4 });
   g.startCampaign();
   assert.equal(runName(g), 'Standard  ·  Stage One');
-  assert.deepEqual(actions(g), ['resume', 'menu', 'sound', 'oneButton']);
+  assert.deepEqual(actions(g), ['resume', 'menu', 'pauseOptions']);
   g.startCampaign(true);
   assert.equal(runName(g), 'Classic  ·  Stage One');
-  assert.deepEqual(actions(g), ['resume', 'menu', 'sound'], 'Classic keeps the original controls');
+  assert.deepEqual(actions(g), ['resume', 'menu', 'pauseOptions']);
   g.practiceDamage = false;
   g.startPractice(3);
   assert.equal(runName(g), 'Practice  ·  Stage Four  (no damage)');
@@ -384,7 +384,7 @@ test('the pause screen names the run, and offers the controls switch outside Cla
   assert.equal(runName(g), 'Practice  ·  Stage Nine  (Classic rules)');
   g.startEndless();
   assert.equal(runName(g), 'Endless  ·  0 m');
-  assert.deepEqual(actions(g), ['resume', 'endRun', 'menu', 'sound', 'oneButton']);
+  assert.deepEqual(actions(g), ['resume', 'endRun', 'menu', 'pauseOptions']);
 });
 
 test('the tall menu layouts keep every button on the page, apart from the others, and big enough to tap', async () => {
