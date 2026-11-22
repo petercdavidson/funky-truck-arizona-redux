@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Game, TILE, STAGES_PER_PAGE } from '../src/game.js';
-import { validStage, validStages, addStage, groundTop, MAX_STAGES } from '../src/stages.js';
+import { validStage, validStages, addStage, MAX_STAGES } from '../src/stages.js';
 import { memoryStore } from './helpers.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
@@ -42,7 +42,6 @@ test('adding a stage puts it first, replaces one of the same name, and keeps at 
   assert.deepEqual(list.map((s) => [s.name, s.width]), [['A', 50], ['B', 40]]);
   for (let i = 0; i < MAX_STAGES + 5; i++) ({ list } = addStage(list, validStage(flat(40, null, `S${i}`), N), 10 + i));
   assert.equal(list.length, MAX_STAGES);
-  assert.equal(groundTop(flat(40), 5 * TILE), 14 * TILE);
 });
 
 test('a custom stage with a finish line can be completed; its score is not a best', () => {

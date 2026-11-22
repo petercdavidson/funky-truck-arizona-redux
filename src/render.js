@@ -4,7 +4,6 @@
 // the canvas. Tiles are drawn in device pixels with snapped edges so they never show seams.
 
 import { TILE, STAGE_W, STAGE_H, STEP_HZ, RESET_WAIT, STAGES_PER_PAGE } from './game.js';
-import { groundTop } from './stages.js';
 import { HUD_FONT, TITLE_FONT, BODY_PAINTS } from './assets.js';
 import { TRICK } from './tricks.js';
 import { VERSION, BUILD } from './version.js';
@@ -84,6 +83,8 @@ function statsButtons(tall, extra = {}) {
     { rect: tall ? r(185, 404, 125, 44) : r(293, 254, 115, 28), label: 'No', action: 'resetNo', show: asking, ...extra },
   ];
 }
+/** The title's Redux!, in a bright version of your truck's paint (by paint: yellow, red, green, blue, white, sage). */
+const REDUX_COLOURS = ['#d8c770', '#e19279', '#b4d469', '#64c6d3', '#d8eaec', '#9cb08d'];
 /** The title's drop shadow colour. */
 const TITLE_SHADOW = '#7d5545';
 /** The title screen's buttons. Play opens the mode picker (the 'modes' screen) over it. */
@@ -822,7 +823,6 @@ export class Renderer {
       this.truck(v.G, rot, rot, game.look);
       ctx.restore();
     }
-    if (game.mode === 'custom') this.finishFlag(game.customLevel);
     if (game.battle) battleBack(this, game, v);
     if (game.wreck && v.W) this.wreck(game.wreck, v.W, game.look);
     else this.truck(v.T, v.rr, v.fr, game.look);
@@ -994,7 +994,7 @@ export class Renderer {
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(-14 * Math.PI / 180);
-      this.text('Redux!', 0, 0, { size, weight: '900', color: BODY_PAINTS[(game.look?.paint ?? 0) * 2] || BODY_PAINTS[0], shadow });
+      this.text('Redux!', 0, 0, { size, weight: '900', color: REDUX_COLOURS[game.look?.paint] || REDUX_COLOURS[0], shadow });
       ctx.restore();
     };
     if (this.tall) {
@@ -1243,8 +1243,8 @@ export class Renderer {
 
   /**
    * Sandbox's Hitboxes: what the physics sees. The ground's collision lines (green where the cab
-   * can touch them, orange where touching them scrapes it), each truck's wheels and roof probe, the
-   * circles trucks hit each other with, and a wreck's pieces.
+   * can touch them, orange where touching them scrapes it), each truck's wheels and roof probe (all
+   * that touches the ground), the circles trucks hit each other with, and a wreck's pieces.
    */
   hitboxes(game, v) {
     const ctx = this.ctx, L = game.levelData, table = game.data.collision, z = game.zoom;
@@ -1267,10 +1267,17 @@ export class Renderer {
       ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.stroke();
     };
     const R = game.truck.wheelRadius, T = v.T;
-    // trucks against each other (dashed), yours and the other cars'
-    const cars = [{ T, s: 1 }];
-    if (game.battle) for (const e of game.battle.bots) if (!e.wreck) cars.push({ T: e.truck.T, s: e.s });
-    if (!game.wreck) for (const c of cars) for (const k of circles(c.T, c.s)) ring(k.x, k.y, k.r, 'rgba(110, 220, 255, 0.85)', true);
+    // What touches the ground (solid): each truck's two wheels, and the probe on the cab's roof
+    // (drawn as a red dot on a line from the chassis), which is the only part of the body the
+    // ground can touch (touching it scrapes the cab). The body itself has no collision with the
+    // ground. Trucks hit each other as circles (dashed, faint): shown only when there are others.
+    const cars = [{ T, t: game.truck, s: 1 }];
+    if (game.battle) for (const e of game.battle.bots) if (!e.wreck) cars.push({ T: e.truck.T, t: e.truck, s: e.s });
+    if (!game.wreck && cars.length > 1) {
+      ctx.lineWidth = 1.5 * z;
+      for (const c of cars) for (const k of circles(c.T, c.s)) ring(k.x, k.y, k.r, 'rgba(110, 220, 255, 0.5)', true);
+      ctx.lineWidth = 2 * z;
+    }
     if (game.wreck && v.W) {
       // a wreck's pieces: the wheels, the body box and the bars
       const W = v.W, w = game.wreck;
@@ -1280,29 +1287,16 @@ export class Renderer {
       w.body.slice(0, 4).forEach((i, n) => (n ? ctx.lineTo(W[i * 2], W[i * 2 + 1]) : ctx.moveTo(W[i * 2], W[i * 2 + 1])));
       ctx.closePath(); ctx.stroke();
       for (const b of w.bars) { ctx.beginPath(); ctx.moveTo(W[b.a * 2], W[b.a * 2 + 1]); ctx.lineTo(W[b.b * 2], W[b.b * 2 + 1]); ctx.stroke(); }
-    } else {
-      // your wheels (they're what touches the ground) and the cab's roof probe
-      ring(T[2], T[3], R, 'rgba(255, 240, 90, 0.95)'); ring(T[4], T[5], R, 'rgba(255, 240, 90, 0.95)');
-      const a = game.truck.bodyRot * Math.PI / 180, px = 10 * Math.cos(a) + 30 * Math.sin(a) + T[0], py = 10 * Math.sin(a) - 30 * Math.cos(a) + T[1];
-      ctx.setLineDash([]); ctx.fillStyle = 'rgba(255, 90, 90, 0.95)';
-      ctx.beginPath(); ctx.arc(px, py, 4 * z, 0, Math.PI * 2); ctx.fill();
     }
-    ctx.restore();
-  }
-
-  /** A custom stage's finish line: a chequered flag on a pole, standing on the ground there. */
-  finishFlag(level) {
-    if (!Number.isFinite(level?.finish)) return;
-    const ctx = this.ctx, x = level.finish, y = groundTop(level, x, this.a.levels.collision) ?? level.height * TILE, h = 150;
-    ctx.save();
-    ctx.fillStyle = '#f2efe8'; ctx.fillRect(x - 2, y - h, 4, h);
-    const sq = 9;
-    for (let i = 0; i < 6; i++) for (let j = 0; j < 4; j++) {
-      ctx.fillStyle = (i + j) % 2 ? '#2f2c2a' : '#ffffff';
-      ctx.fillRect(x + 2 + i * sq, y - h + j * sq, sq, sq);
+    for (const c of (game.wreck ? cars.slice(1) : cars)) {
+      const P = c.T, s = c.s;
+      ring(s * P[2], P[3], R, 'rgba(255, 240, 90, 0.95)'); ring(s * P[4], P[5], R, 'rgba(255, 240, 90, 0.95)');
+      // the roof probe: (10, -30) from the chassis, turned with the body (Truck.probeBody)
+      const a = c.t.bodyRot * Math.PI / 180, px = 10 * Math.cos(a) + 30 * Math.sin(a) + P[0], py = 10 * Math.sin(a) - 30 * Math.cos(a) + P[1];
+      ctx.setLineDash([]); ctx.strokeStyle = 'rgba(255, 90, 90, 0.8)'; ctx.fillStyle = 'rgba(255, 90, 90, 0.95)';
+      ctx.beginPath(); ctx.moveTo(s * P[0], P[1]); ctx.lineTo(s * px, py); ctx.stroke();
+      ctx.beginPath(); ctx.arc(s * px, py, 5 * z, 0, Math.PI * 2); ctx.fill();
     }
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1;
-    ctx.strokeRect(x + 2, y - h, 6 * sq, 4 * sq);
     ctx.restore();
   }
 

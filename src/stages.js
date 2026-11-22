@@ -53,28 +53,3 @@ export function addStage(list, stage, now = Date.now()) {
   const out = [s, ...rest].slice(0, MAX_STAGES);
   return { list: out, index: 0 };
 }
-
-/**
- * Where the ground is at x (px): the highest collision line over x in the first column tile that
- * isn't sky (`table` is the collision table), or that tile's top if it has none there. Null if the
- * column is all sky.
- */
-export function groundTop(stage, x, table = null) {
-  const col = Math.floor(x / TILE);
-  if (col < 0 || col >= stage.width) return null;
-  for (let r = 0; r < stage.height; r++) {
-    const id = stage.tiles[r][col];
-    if (id === 0) continue;
-    const d = table?.[id] || [], lx = x - col * TILE;
-    let best = null;
-    for (let i = 0; i < d.length; i += 5) {
-      const [x1, y1, x2, y2] = [d[i], d[i + 1], d[i + 2], d[i + 3]];
-      if (lx < Math.min(x1, x2) || lx > Math.max(x1, x2) || x1 === x2) continue;
-      const y = y1 + (y2 - y1) * (lx - x1) / (x2 - x1);
-      if (best === null || y < best) best = y;
-    }
-    if (best !== null) return r * TILE + best;
-    if (!d.length) return r * TILE; // solid dirt or a fill tile with no line: its top
-  }
-  return null;
-}

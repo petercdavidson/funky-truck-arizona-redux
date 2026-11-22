@@ -888,8 +888,8 @@ export class Game {
 
   /** Sandbox: how many tracks it offers (Endless, then the nine stages, then the stunt tracks). */
   get sandboxCourses() { return 1 + this.data.levels.length + (this.data.stunts?.length || 0); }
-  /** The name of Sandbox track `i`. */
-  sandboxCourseName(i) { return i === 0 ? 'Endless' : this.stageName(i - 1); }
+  /** The name of Sandbox track `i` (the stages by number, to keep its list short). */
+  sandboxCourseName(i) { return i === 0 ? 'Endless' : i <= this.data.levels.length ? `Stage ${i}` : this.stageName(i - 1); }
 
   /**
    * Sandbox: the chosen track, with the physics as set (sandbox.js). No damage. Stages keep their
