@@ -13,7 +13,27 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
   canvases), the nine stages (`a.levels.levels`), the stunt tracks (`a.levels.stunts`) and the
   collision table (`a.levels.collision[id]`: line segments `x1, y1, x2, y2, type` per tile).
 - `../src/game.js`: only the constants `TILE` (64 px), `STAGE_NAMES`, `METRES_PER_TILE` (2.5).
-- `../src/autotile.js`: the Path tool (`buildKit`, `drawPath`), tested in `tests/autotile.test.mjs`.
+- `../src/autotile.js`: the Path tool (`buildKit`, `drawPath`), and the tile mirrors (`mirrorOf`,
+  `flipTiles`, `NO_MIRROR`), tested in `tests/autotile.test.mjs`.
+- `../src/tile-art.js`: each tile's edge pixels (made by `tools/make-tile-art.mjs`), passed to
+  `buildKit` so the Path tool picks tiles whose art joins up.
+
+## How the page works
+
+- Made for a desktop browser (mouse or trackpad and keyboard); it stacks up on a narrow screen
+  but nothing is designed around touch.
+- The view is two canvases the size of the view (`#tiles`, `#over`) under a transparent scrolling
+  div (`#scroller` with `#spacer` the size of the level at the zoom). Only the tiles in view are
+  drawn, redrawn on scroll; drawing uses world px × `Z`, shifted by the scroll (`toView`). Mouse
+  events go to `#scroller`.
+- Zoom: pinch (Ctrl+wheel in Chrome/Firefox, `gesture*` events in Safari), Ctrl/⌘+scroll,
+  `+`/`-`/`0`, zooming at the pointer. `#mini` along the bottom is the whole level.
+- Tools (`tool`): `paint`, `select`, `path`, `start`, `finish`; each has a panel (`.tp`).
+- Select: `box` is the selected area. Moving, Alt-drag copying, nudging and pasting make a
+  floating area, `flt = { tiles, x, y, base }`: the level's tiles are `base` with `flt.tiles`
+  stamped on, so it can be moved again without wiping what it passed over; `dropFloat()` lets go
+  (clicking outside, Enter, Esc, another tool, saving). Undo drops it.
+- View settings (zoom, grid, collision, path, numbers) are kept in `funkytruck.editorView`.
 
 ## The stage format (the contract with the game: `src/stages.js`)
 

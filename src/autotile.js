@@ -15,11 +15,40 @@
 const SKY = 0, DIRT = 1;
 
 /**
+ * Tiles that are each other's left-right mirror image (in what they do: the art differs a little on
+ * purpose). Found from the collision lines (each pair's lines mirror within a pixel or two; tested)
+ * and from the tile sheet, which lays mirrored tiles out in mirrored rows. 41 to 55 (the kickers)
+ * have none. Tiles not listed (sky, plain dirt, the flat piece 2) are their own mirror.
+ */
+export const MIRROR_PAIRS = [
+  [4, 24], [5, 25], [6, 26], [10, 20], [11, 21], [12, 22], [13, 23], [14, 34], [15, 35], [16, 36],
+  [60, 63], [61, 62], [64, 67], [65, 66], [70, 73], [71, 72], [74, 77], [75, 76],
+  [80, 83], [81, 82], [84, 87], [85, 86], [90, 93], [91, 92], [94, 97], [95, 96],
+  [100, 103], [101, 102], [104, 107], [105, 106],
+  [110, 117], [111, 116], [112, 115], [113, 114], [120, 127], [121, 126], [122, 125], [123, 124],
+  [130, 135], [131, 134], [132, 133], [140, 145], [141, 144], [142, 143],
+  [150, 153], [151, 152], [154, 155], [160, 163], [161, 162], [164, 165],
+  [170, 183], [171, 182], [172, 181], [173, 180], [174, 186], [175, 185], [176, 184], [177, 188], [178, 187], [179, 189],
+  [190, 213], [191, 212], [192, 211], [193, 210], [194, 216], [195, 215], [196, 214], [197, 218], [198, 217], [199, 219],
+  [200, 223], [201, 222], [202, 221], [203, 220], [204, 226], [205, 225], [206, 224], [207, 228], [208, 227], [209, 229],
+];
+/** Tiles with no mirror: flipping leaves them as they are. */
+export const NO_MIRROR = new Set([41, 43, 45, 50, 51, 52, 53, 54, 55]);
+const mirrors = new Map(MIRROR_PAIRS.flatMap(([a, b]) => [[a, b], [b, a]]));
+/** A tile's left-right mirror (itself when it has none, or is symmetric). */
+export const mirrorOf = (id) => mirrors.get(id) ?? id;
+
+/** Tiles (rows of ids) flipped left to right, each tile swapped for its mirror. */
+export function flipTiles(rows) {
+  return rows.map((r) => r.slice().reverse().map(mirrorOf));
+}
+
+/**
  * Learn the pieces and the fill from the stages.
  * `collision[id]` is a tile's lines, five numbers each (x1, y1, x2, y2, flag), drawn from the right
  * end to the left end. `levels` are the nine stages ({ width, height, tiles }).
  */
-export function buildKit(collision, levels, T = 64) {
+export function buildKit(collision, levels, T = 64, opts = {}) {
   // Edge positions in the data are 0..63 and a pixel or so apart where pieces meet (15 and 16, 31
   // and 32): snap each to one value. 63 is the far edge (T).
   // Only the ends are snapped (the points inside a tile are left as drawn).
@@ -92,7 +121,65 @@ export function buildKit(collision, levels, T = 64) {
     for (const [id, k] of m) { total += k; if (k > n) { best = id; n = k; } }
     fillPick.set(key, { id: best, share: n / total, total });
   }
-  return { T, pieces, byId, byEntry, isPiece, joins, fillPick };
+  // The tiles the stages use: pieces that share a shape (the same ground, drawn differently), and
+  // the fill tiles the look pass may choose from.
+  const used = new Set(levels.flatMap((l) => l.tiles.flat()));
+  const shape = (p) => p.pts.map((q) => q.join(',')).join(' ');
+  const variants = new Map();
+  for (const p of pieces) variants.set(p.id, pieces.filter((q) => used.has(q.id) && shape(q) === shape(p)).map((q) => q.id));
+  const fills = [...used].filter((id) => id !== SKY && !isPiece.has(id)).sort((p, q) => p - q);
+  const kit = { T, pieces, byId, byEntry, isPiece, joins, fillPick, variants, fills };
+  if (opts.edges) Object.assign(kit, artOf(opts.edges));
+  return kit;
+}
+
+// ---- the look: how well tiles' art meets at their edges (src/tile-art.js)
+
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/**
+ * `seam(a, b, dir)`: how badly tile a's art meets tile b's: dir 0 is a left of b, 1 a above b. 0 is
+ * seamless; 1 is opaque against clear all along the edge. Counts the dirt's outline (opacity) not
+ * lining up, and where both are dirt, a jump in brightness (the rim against plain dirt).
+ */
+function artOf(edges) {
+  const n = edges.length, A = new Float32Array(n * 128), Lu = new Float32Array(n * 128);
+  edges.forEach((s, id) => {
+    for (let e = 0; e < 4; e++) for (let k = 0; k < 32; k++) {
+      A[id * 128 + e * 32 + k] = B64.indexOf(s[e * 64 + k]) / 63;
+      Lu[id * 128 + e * 32 + k] = B64.indexOf(s[e * 64 + 32 + k]);
+    }
+  });
+  const cache = new Float32Array(n * n * 2).fill(-1);
+  const seam = (a, b, dir) => {
+    if (a >= n || b >= n) return 0;
+    const i = (a * n + b) * 2 + dir;
+    let c = cache[i];
+    if (c >= 0) return c;
+    const ea = a * 128 + (dir ? 64 : 32), eb = b * 128 + (dir ? 0 : 96);
+    c = 0;
+    for (let k = 0; k < 32; k++) {
+      const pa = A[ea + k], pb = A[eb + k];
+      // brightness: a line that carries on a pixel or two along still looks joined
+      const la = Lu[ea + k], lb = Lu[eb + k];
+      let dl = Math.abs(la - lb);
+      if (k > 0) dl = Math.min(dl, (Math.abs(la - Lu[eb + k - 1]) + Math.abs(Lu[ea + k - 1] - lb)) / 2);
+      if (k < 31) dl = Math.min(dl, (Math.abs(la - Lu[eb + k + 1]) + Math.abs(Lu[ea + k + 1] - lb)) / 2);
+      c += Math.abs(pa - pb) + Math.min(pa, pb) * Math.min(1, dl * 0.08);
+    }
+    return (cache[i] = c / 32);
+  };
+  /** The seams over columns x0..x1-1 (and where they meet the columns either side). */
+  const seamTotal = (tiles, x0, x1) => {
+    const H = tiles.length, W = tiles[0].length;
+    let s = 0;
+    for (let y = 0; y < H; y++) for (let x = Math.max(0, x0 - 1); x < Math.min(W, x1 + 1); x++) {
+      if (x + 1 < W && x + 1 <= x1) s += seam(tiles[y][x], tiles[y][x + 1], 0);
+      if (y + 1 < H && x >= x0 && x < x1) s += seam(tiles[y][x], tiles[y + 1][x], 1);
+    }
+    return s;
+  };
+  return { seam, seamTotal };
 }
 
 /** Offsets of the cells (relative to the one a point belongs to) that touch a point on its edge. */
@@ -190,6 +277,15 @@ export function drawPath(level, sketch, kit, opts = {}) {
   // ---- the search: states are (edge point, last piece); cost is straying plus odd joins
   const band = opts.band ?? 3 * T;
   const UNSEEN = opts.unseenJoin ?? 1.5, PER = opts.perPiece ?? 0.05;
+  // with the tiles' art (kit.seam), a join whose art doesn't meet costs more
+  const { seam } = kit, ART = opts.art ?? 3;
+  const joinSeam = (last, X, Y, p, cx, cy) => {
+    const q = byId.get(last), lx = (X - q.outX) / T, ly = (Y - q.outY) / T;
+    if (ly === cy && lx + 1 === cx) return seam(last, p.id, 0);
+    if (lx === cx && ly === cy + 1) return seam(p.id, last, 1);
+    if (lx === cx && ly + 1 === cy) return seam(last, p.id, 1);
+    return 0;
+  };
   const heap = new Heap();
   const best = new Map(), from = new Map();
   const push = (X, Y, last, cost, prev, cell) => {
@@ -226,14 +322,19 @@ export function drawPath(level, sketch, kit, opts = {}) {
     if (done && cost > done.cost) break;
     const lx = Math.floor(X / T), ly = Math.floor(Y / T);
     const cells = [[lx, ly], ...cellsAt(X - lx * T, Y - ly * T, T).map(([dx, dy]) => [lx + dx, ly + dy])];
+    // the cell the last piece is in: a cell holds one tile, so the next piece goes in another
+    const lp = last >= 0 ? byId.get(last) : null;
+    const lcx = lp ? (X - lp.outX) / T : -1, lcy = lp ? (Y - lp.outY) / T : -1;
     for (const [cx, cy] of cells) {
       if (cx < x0 || cx >= x1 || cy < 0 || cy >= H) continue;
+      if (cx === lcx && cy === lcy) continue;
       const ix = X - cx * T, iy = Y - cy * T;
       if (ix < 0 || ix > T || iy < 0 || iy > T) continue;
       if (Math.abs(cy * T + T / 2 - sy(cx * T + T / 2)) > band) continue;
       for (const p of byEntry.get(`${ix},${iy}`) || []) {
         let c = cost + strayCost(p, cx, cy) + PER;
         if (last >= 0 && !joins.has(last * 1024 + p.id)) c += UNSEEN;
+        if (last >= 0 && seam) c += ART * joinSeam(last, X, Y, p, cx, cy);
         if (last >= 0) c += bendCost(X, Math.abs(p.aIn - byId.get(last).aOut));
         push(cx * T + p.outX, cy * T + p.outY, p.id, c, key, { x: cx, y: cy, id: p.id });
       }
@@ -242,7 +343,9 @@ export function drawPath(level, sketch, kit, opts = {}) {
   if (!done) return null;
   const chain = [];
   for (let key = done.key; key && from.get(key)?.cell; key = from.get(key).prev) chain.unshift(from.get(key).cell);
-  return { chain, x0, x1, tiles: buildTiles(level, chain, x0, x1, kit) };
+  const tiles = buildTiles(level, chain, x0, x1, kit);
+  if (seam && opts.look !== false) polish(tiles, chain, x0, x1, kit);
+  return { chain, x0, x1, tiles };
 }
 
 /** The level's tiles with columns x0..x1-1 rebuilt around `chain`. */
@@ -287,6 +390,95 @@ function buildTiles(level, chain, x0, x1, kit) {
 }
 
 function fillKeysFor(up, left, right, isPiece) { return fillKeys(up, left, right, isPiece); }
+
+/**
+ * The look pass: with the ground's shape settled, choose each fill tile (and which of the pieces
+ * with the same shape) so the art joins up: the dirt's outline and rim carry on from tile to tile.
+ * Each column, then each row, is solved exactly (a shortest path through its choices) with the
+ * tiles either side held, a few times over. Only tiles near the surface change; the rest stay
+ * dirt. Changes `tiles` in place.
+ */
+function polish(tiles, chain, x0, x1, kit, rounds = 3) {
+  const { seam, isPiece, variants, fills } = kit;
+  const H = tiles.length, W = tiles[0].length;
+  const PRIOR = 0.04;        // choosing other than the stages' usual tile there
+  const onChain = new Set(chain.map((c) => c.y * W + c.x));
+  // the choices for each cell (null: it stays as it is) and what it was to begin with
+  const cand = new Map(), first = new Map();
+  const nearSurface = (x, y) => {
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const t = tiles[y + dy]?.[x + dx];
+      if (t === SKY || onChain.has((y + dy) * W + x + dx)) return true;
+    }
+    return false;
+  };
+  for (let x = x0; x < x1; x++) for (let y = 0; y < H; y++) {
+    const id = tiles[y][x];
+    if (id === SKY) continue;
+    if (onChain.has(y * W + x)) { const v = variants.get(id); if (v && v.length > 1) cand.set(y * W + x, v); }
+    else if (!isPiece.has(id) && nearSurface(x, y)) cand.set(y * W + x, fills);
+    if (cand.has(y * W + x)) first.set(y * W + x, id);
+  }
+  if (!cand.size) return;
+  const at = (x, y) => (x < 0 || y < 0 || x >= W || y >= H ? -1 : tiles[y][x]);
+  const sm = (a, b, dir) => (a < 0 || b < 0 ? 0 : seam(a, b, dir));
+  // one line of cells (a column or a row) solved exactly, the cells beside it held
+  const line = (cells, dir) => {
+    // dir 1: a column (cells top to bottom; the sides are left and right); 0: a row
+    const opts = cells.map(([x, y]) => cand.get(y * W + x) || [tiles[y][x]]);
+    const cost = [], back = [];
+    cells.forEach(([x, y], i) => {
+      const o = opts[i], k0 = first.get(y * W + x);
+      const [ax, ay, bx, by] = dir ? [x - 1, y, x + 1, y] : [x, y - 1, x, y + 1];
+      const c = new Float64Array(o.length), b = new Int32Array(o.length);
+      o.forEach((t, j) => {
+        let u = (k0 !== undefined && t !== k0 ? PRIOR : 0);
+        u += dir ? sm(at(ax, ay), t, 0) + sm(t, at(bx, by), 0) : sm(at(ax, ay), t, 1) + sm(t, at(bx, by), 1);
+        if (i === 0) {
+          const [px, py] = dir ? [x, y - 1] : [x - 1, y];
+          c[j] = u + sm(at(px, py), t, dir);
+        } else {
+          let best = Infinity, bi = 0;
+          opts[i - 1].forEach((s, k) => { const v = cost[i - 1][k] + seam(s, t, dir); if (v < best) { best = v; bi = k; } });
+          c[j] = u + best; b[j] = bi;
+        }
+        if (i === cells.length - 1) { const [nx, ny] = dir ? [x, y + 1] : [x + 1, y]; c[j] += sm(t, at(nx, ny), dir); }
+      });
+      cost.push(c); back.push(b);
+    });
+    let j = 0;
+    const last = cost[cost.length - 1];
+    for (let k = 1; k < last.length; k++) if (last[k] < last[j]) j = k;
+    let changed = false;
+    for (let i = cells.length - 1; i >= 0; i--) {
+      const [x, y] = cells[i], t = opts[i][j];
+      if (tiles[y][x] !== t) { tiles[y][x] = t; changed = true; }
+      j = back[i][j];
+    }
+    return changed;
+  };
+  // the runs of cells with choices, by column and by row
+  const runs = (dir) => {
+    const out = [];
+    const [na, nb] = dir ? [x1 - x0, H] : [H, x1 - x0];
+    for (let a = 0; a < na; a++) {
+      let run = [];
+      for (let b = 0; b <= nb; b++) {
+        const [x, y] = dir ? [x0 + a, b] : [x0 + b, a];
+        if (b < nb && cand.has(y * W + x)) run.push([x, y]);
+        else if (run.length) { out.push(run); run = []; }
+      }
+    }
+    return out;
+  };
+  const cols = runs(1), rows = runs(0);
+  for (let r = 0; r < rounds; r++) {
+    let changed = false;
+    for (const c of cols) changed = line(c, 1) || changed;
+    for (const c of rows) changed = line(c, 0) || changed;
+    if (!changed) break;
+  }
+}
 
 /** A small binary heap of [cost, ...data]. */
 class Heap {

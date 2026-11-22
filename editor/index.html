@@ -2,129 +2,308 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Funky Truck Arizona Redux · Stage Editor</title>
   <!--
     The Stage Editor. The game's Stage Editor screen opens it in a new tab (serve the repo with
     npm start and open /editor/). See editor/CLAUDE.md. The stage being edited is kept in this
     browser (localStorage, funkytruck.editorLevel); Play opens it in the game
     (index.html?test=custom), and Save to Game adds it to the game's stages (funkytruck.stages,
-    the format in src/stages.js).
+    the format in src/stages.js). Made for a desktop browser (mouse or trackpad, keyboard).
   -->
   <style>
+    :root {
+      --bg: #1a1817; --panel: #262321; --card: #2f2b28; --line: #443e39; --hover: #3b3632;
+      --text: #efe9e3; --dim: #aaa198; --faint: #756d66;
+      --accent: #f0b43c; --accent-ink: #2a1d04; --go: #3fa45e; --sel: #ffd54a; --sky: #9cbad1;
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; height: 100vh; display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: 430px 1fr;
-      font: 13px/1.4 system-ui, sans-serif; background: #232120; color: #eee; }
-    header { grid-column: 1 / 3; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 8px 10px; background: #33302e; border-bottom: 1px solid #000; }
-    header label { display: inline-flex; gap: 4px; align-items: center; }
-    header .group { display: inline-flex; gap: 4px; align-items: center; padding-right: 12px; border-right: 1px solid #555; }
-    button, select, input { font: inherit; }
-    button { background: #5a4a42; color: #fff; border: 1px solid #8a7466; border-radius: 4px; padding: 3px 9px; cursor: pointer; }
-    button:hover { background: #6b574d; }
-    button.on { background: #c9a14a; color: #222; border-color: #e6c36e; }
-    input[type=number] { width: 58px; }
-    aside { overflow: auto; padding: 8px; background: #2b2826; border-right: 1px solid #000; }
-    aside h3 { margin: 10px 0 4px; font-size: 13px; color: #d9c4a8; }
-    #palette { display: grid; grid-template-columns: repeat(10, 40px); gap: 1px; background: #8fae7a; width: max-content; }
-    #palette canvas { width: 40px; height: 40px; cursor: pointer; display: block; }
-    #palette canvas.sel { outline: 3px solid #ffd54a; outline-offset: -3px; }
-    .near { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 4px; }
-    .near figure { margin: 0; text-align: center; font-size: 10px; color: #bbb; cursor: pointer; }
-    .near canvas { width: 36px; height: 36px; display: block; background: #8fae7a; }
-    main { overflow: auto; position: relative; background: #1b1a19; }
-    #stack { position: relative; }
-    #stack canvas { position: absolute; left: 0; top: 0; }
-    footer { grid-column: 1 / 3; padding: 4px 10px; background: #33302e; border-top: 1px solid #000; color: #ccc; }
-    .hint { color: #aaa; font-size: 12px; }
-    kbd { background: #444; border-radius: 3px; padding: 0 4px; font-size: 11px; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; overflow: hidden; background: var(--bg); color: var(--text);
+      font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+      display: grid; grid-template: "top top top" auto "rail side view" 1fr "status status status" auto / 68px 392px 1fr;
+    }
+    button, select, input { font: inherit; color: inherit; }
+    kbd { font: 11px ui-monospace, Menlo, monospace; background: #45403b; border-radius: 3px; padding: 0 4px; color: #ddd; white-space: nowrap; }
+    svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+    /* buttons: plain (quiet), .primary (the main thing to do), .go (play) */
+    .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 6px; cursor: pointer;
+      background: transparent; border: 1px solid var(--line); white-space: nowrap; }
+    .btn:hover:not(:disabled) { background: var(--hover); }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+    .btn.icon { width: 30px; padding: 0; justify-content: center; }
+    .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+    .btn.primary:hover { background: #ffc64f; }
+    .btn.go { background: var(--go); border-color: var(--go); color: #fff; font-weight: 600; }
+    .btn.go:hover { background: #4bb86c; }
+    .btn kbd { margin-left: auto; }
+    input[type=number], input[type=text], select { background: #1f1d1b; border: 1px solid var(--line); border-radius: 5px; height: 28px; padding: 0 6px; }
+    input[type=number] { width: 64px; }
+
+    /* ---- top bar */
+    header { grid-area: top; display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid #000; }
+    .brand { font-weight: 700; color: var(--accent); margin-right: 4px; letter-spacing: 0.02em; }
+    #name { width: 200px; font-weight: 600; }
+    .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
+    .grow { flex: 1; }
+    .menu { position: relative; }
+    .menu > summary { list-style: none; }
+    .menu > summary::-webkit-details-marker { display: none; }
+    .menu-items { position: absolute; z-index: 20; top: 34px; left: 0; min-width: 230px; padding: 6px; background: var(--card);
+      border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); display: grid; gap: 2px; }
+    .menu-items .btn { border-color: transparent; width: 100%; justify-content: flex-start; }
+    .toggles { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+    .toggles label { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; cursor: pointer; color: var(--dim); border-left: 1px solid var(--line); user-select: none; }
+    .toggles label:first-child { border-left: 0; }
+    .toggles input { display: none; }
+    .toggles label:has(input:checked) { background: #4a4037; color: var(--text); }
+    .toggles label:has(input:checked)::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+    .check { display: inline-flex; align-items: center; gap: 5px; color: var(--dim); cursor: pointer; user-select: none; }
+
+    /* ---- tool rail */
+    nav { grid-area: rail; display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; background: var(--panel); border-right: 1px solid #000; }
+    .tool { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0 6px; border-radius: 8px; cursor: pointer;
+      background: transparent; border: 1px solid transparent; color: var(--dim); font-size: 11px; position: relative; }
+    .tool:hover { background: var(--hover); color: var(--text); }
+    .tool.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+    .tool svg { width: 24px; height: 24px; }
+    .tool kbd { position: absolute; top: 3px; right: 3px; font-size: 9px; padding: 0 3px; background: rgba(0,0,0,0.25); color: inherit; }
+
+    /* ---- side panel */
+    aside { grid-area: side; overflow-y: auto; background: var(--panel); border-right: 1px solid #000; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+    .card h2 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); display: flex; align-items: center; gap: 8px; }
+    .card h2 .grow { flex: 1; }
+    details.card > summary { cursor: pointer; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+    details.card[open] > summary { margin-bottom: 8px; }
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; }
+    .hint { color: var(--dim); font-size: 12px; margin: 6px 0 0; }
+    .hint p { margin: 3px 0; }
+    .tp { display: none; }
+    .tp.on { display: block; }
+    .cur { display: flex; gap: 12px; align-items: center; }
+    .cur canvas { width: 64px; height: 64px; background: var(--sky); border-radius: 6px; border: 1px solid var(--line); }
+    .cur .big { font-size: 15px; font-weight: 600; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .grid2 .btn { justify-content: flex-start; }
+    #palette { display: grid; grid-template-columns: repeat(10, 1fr); gap: 1px; background: #4c5a44; border-radius: 4px; overflow: hidden; }
+    #palette canvas { width: 100%; aspect-ratio: 1; cursor: pointer; display: block; background: #8fae7a; }
+    #palette canvas.sel { outline: 3px solid var(--sel); outline-offset: -3px; }
+    #palette canvas.mirror { outline: 2px dashed #fff; outline-offset: -3px; }
+    .legend { display: flex; gap: 10px; font-size: 11px; color: var(--dim); margin-top: 6px; }
+    .legend b { font-weight: 700; }
+    .legend[hidden] { display: none; }
+    .near { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px; }
+    .near figure { margin: 0; text-align: center; font-size: 10px; color: var(--dim); cursor: pointer; }
+    .near canvas { width: 32px; height: 32px; display: block; background: #8fae7a; }
+
+    /* ---- the stage view */
+    main { grid-area: view; position: relative; display: grid; grid-template-rows: 1fr auto; min-width: 0; min-height: 0; background: #121110; }
+    #viewport { position: relative; min-height: 0; overflow: hidden; }
+    #viewport canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
+    #scroller { position: absolute; inset: 0; overflow: auto; }
+    #spacer { pointer-events: none; }
+    .floating { position: absolute; z-index: 5; display: flex; gap: 4px; align-items: center; padding: 4px; background: rgba(38,35,33,0.92);
+      border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+    #zoomBox { right: 16px; bottom: 16px; }
+    #zoomPct { width: 48px; text-align: center; font-variant-numeric: tabular-nums; color: var(--dim); }
+    #selBox { left: 50%; transform: translateX(-50%); top: 12px; display: none; }
+    #selBox.on { display: flex; }
+    #selBox .info { color: var(--dim); padding: 0 6px; }
+    #mini { display: block; width: 100%; height: 48px; cursor: pointer; border-top: 1px solid #000; background: #121110; }
+
+    footer { grid-area: status; display: flex; gap: 16px; padding: 4px 12px; background: var(--panel); border-top: 1px solid #000; color: var(--dim); font-size: 12px; min-height: 24px; }
+    #msg { color: var(--text); flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    #where { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+    dialog { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 12px; padding: 18px 22px; max-width: 680px; }
+    dialog::backdrop { background: rgba(0,0,0,0.5); }
+    dialog h3 { margin: 0 0 10px; }
+    dialog table { border-collapse: collapse; width: 100%; }
+    dialog td { padding: 3px 8px 3px 0; vertical-align: top; }
+    dialog td:first-child { white-space: nowrap; color: var(--dim); }
+    dialog h4 { margin: 12px 0 4px; color: var(--accent); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+    @media (max-width: 900px) {
+      body { grid-template: "top top" auto "rail view" 1fr "side side" 40vh "status status" auto / 60px 1fr; }
+      header { flex-wrap: wrap; }
+    }
   </style>
 </head>
 <body>
   <header>
-    <span class="group">
-      <select id="source"></select>
-      <button id="load">Load</button>
-      <label>W <input id="w" type="number" min="10" max="2000" value="60"></label>
-      <label>H <input id="h" type="number" min="8" max="400" value="24"></label>
-      <button id="blank">New blank</button>
-      <button id="resize" title="Keep what's there, change the size (adds or removes columns on the right and rows at the bottom)">Resize</button>
+    <span class="brand">Stage Editor</span>
+    <input id="name" type="text" value="My Track" title="The stage's name (Save to Game replaces a stage of the same name)">
+    <details class="menu" id="fileMenu">
+      <summary class="btn">File ▾</summary>
+      <div class="menu-items">
+        <button class="btn" id="blank">New blank level</button>
+        <button class="btn" id="import">Open file…</button>
+        <button class="btn" id="export">Save file</button>
+        <button class="btn" id="copy">Copy JSON</button>
+      </div>
+    </details>
+    <input id="file" type="file" accept=".json,application/json" hidden>
+    <span class="sep"></span>
+    <button class="btn icon" id="undo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 20 20"><path d="M7 4 3 8l4 4"/><path d="M3 8h9a5 5 0 0 1 0 10H9"/></svg></button>
+    <button class="btn icon" id="redo" title="Redo (Ctrl+Shift+Z)"><svg viewBox="0 0 20 20"><path d="m13 4 4 4-4 4"/><path d="M17 8H8a5 5 0 0 0 0 10h3"/></svg></button>
+    <span class="grow"></span>
+    <span class="toggles" title="What to show over the stage">
+      <label title="The tile grid (G)"><input id="grid" type="checkbox" checked>Grid</label>
+      <label title="Collision lines; the tick points to the side the truck rides on (C)"><input id="coll" type="checkbox">Collision</label>
+      <label title="The Path tool's curve, in every tool"><input id="showPath" type="checkbox" checked>Path</label>
+      <label title="Each tile's number, here and in the tiles: yellow for ground pieces, cyan for fill, grey for plain dirt (N)"><input id="nums" type="checkbox">Numbers</label>
     </span>
-    <span class="group" title="Move the whole level, start point included. Tiles pushed past the edge are dropped; the gap left behind repeats the edge column or row. Shift+arrow keys move it 1 tile.">
-      Shift
-      <button id="shiftL">←</button>
-      <button id="shiftR">→</button>
-      <button id="shiftU">↑</button>
-      <button id="shiftD">↓</button>
-      <label>by <input id="shiftN" type="number" min="1" max="500" value="1"></label>
-    </span>
-    <span class="group">
-      <button id="modePaint" class="on" title="P">Paint</button>
-      <button id="modeSelect" title="S: drag a box, then Ctrl+C / Ctrl+X">Select</button>
-      <button id="modePath" title="D: click to add points to a curve; the tiles follow it">Path</button>
-      <button id="pathNew" title="Keep the tiles as they are and start a new path">New path</button>
-      <button id="modeFinish" title="F: click where the finish line goes (the stage is complete when the truck gets past it)">Finish line</button>
-      <button id="noFinish" title="No finish line: the stage goes on until you quit, like a stunt track">No finish</button>
-      <button id="undo" title="Ctrl+Z">Undo</button>
-      <button id="redo" title="Ctrl+Shift+Z">Redo</button>
-    </span>
-    <span class="group">
-      <label>Zoom <input id="zoom" type="range" min="0.15" max="1.5" step="0.05" value="0.6"></label>
-      <label><input id="grid" type="checkbox" checked> grid</label>
-      <label><input id="coll" type="checkbox"> collision</label>
-      <label title="Show the Path tool's curve in every mode"><input id="showPath" type="checkbox" checked> path</label>
-      <label title="Each tile's number: yellow for ground pieces (with collision), cyan for fill, grey for plain dirt (1)"><input id="nums" type="checkbox"> numbers</label>
-      <label title="Painting a tile fills the column below it with solid dirt"><input id="fill" type="checkbox" checked> dirt below</label>
-    </span>
-    <span class="group">
-      <label>Name <input id="name" value="My Track" size="12"></label>
-      <button id="play">Play ▶</button>
-      <label><input id="nodamage" type="checkbox" checked> no damage</label>
-      <button id="toGame" title="Add this stage to the game's stages (Stage Editor, Load Stage), replacing one of the same name">Save to Game</button>
-    </span>
-    <span class="group" style="border:0">
-      <button id="export">Save file</button>
-      <button id="copy">Copy JSON</button>
-      <button id="import">Open file</button>
-      <input id="file" type="file" accept=".json,application/json" hidden>
-    </span>
+    <button class="btn icon" id="helpBtn" title="Keyboard and mouse (?)">?</button>
+    <span class="sep"></span>
+    <label class="check" title="Play with no damage"><input id="nodamage" type="checkbox" checked> no damage</label>
+    <button class="btn go" id="play" title="Play this stage in the game (a new tab)"><svg viewBox="0 0 20 20"><path d="M6 4v12l10-6z" fill="currentColor"/></svg>Play</button>
+    <button class="btn primary" id="toGame" title="Add this stage to the game's stages (Stage Editor, Load Stage), replacing one of the same name">Save to Game</button>
   </header>
 
+  <nav id="tools">
+    <button class="tool on" data-tool="paint" title="Paint tiles (B)"><kbd>B</kbd>
+      <svg viewBox="0 0 24 24"><path d="M4 20c3.5 0 5-1.6 5-4a2.4 2.4 0 0 1 4.8 0c0 2.6-3.3 4-9.8 4Z"/><path d="m11.5 13.5 8.5-9"/></svg>Paint</button>
+    <button class="tool" data-tool="select" title="Select, move, copy and flip an area (S)"><kbd>S</kbd>
+      <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" stroke-dasharray="3 2.2"/><path d="M12 9v6M9 12h6"/></svg>Select</button>
+    <button class="tool" data-tool="path" title="Draw the ground as a curve (D)"><kbd>D</kbd>
+      <svg viewBox="0 0 24 24"><path d="M3 18C8 18 7 6 12 6s4 12 9 12"/><rect x="1.5" y="16.5" width="3" height="3" fill="currentColor"/><rect x="19.5" y="16.5" width="3" height="3" fill="currentColor"/><path d="M12 6h5" stroke-dasharray="1.5 1.5"/></svg>Path</button>
+    <button class="tool" data-tool="start" title="Where the truck drops in (T)"><kbd>T</kbd>
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="15" r="5"/><path d="M12 2.5v6M9 6l3 3 3-3"/></svg>Start</button>
+    <button class="tool" data-tool="finish" title="The finish line (F)"><kbd>F</kbd>
+      <svg viewBox="0 0 24 24"><path d="M6 21V3"/><path d="M6 4h12l-2.5 4.5L18 13H6"/></svg>Finish</button>
+  </nav>
+
   <aside>
-    <div class="hint">
-      <b>Paint</b>: left drag paints the selected tile, right drag erases to sky.
-      <kbd>Alt</kbd>-click picks up the tile under the cursor. <kbd>Shift</kbd>-click sets where the
-      truck drops in. <b>Select</b> (<kbd>S</kbd>): drag a box, <kbd>Ctrl+C</kbd> copies,
-      <kbd>Ctrl+V</kbd> then click to stamp it (<kbd>Esc</kbd> stops). <kbd>Del</kbd> clears the box.
-      <b>Shift</b> moves the whole level (<kbd>Shift</kbd>+arrow keys: 1 tile).
-      <b>Finish line</b> (<kbd>F</kbd>): click where it goes; drag to move it. <b>No finish</b> takes it
-      away: then the stage goes on until you quit, like a stunt track. <b>Save to Game</b> puts the
-      stage in the game's list (Stage Editor, Load Stage).
-      <b>Path</b> (<kbd>D</kbd>): click to add points to a curve, and the editor lays the tiles that
-      follow it (with the fill below), joining the ground on either side. Drag a point or its handles
-      to reshape it (<kbd>Alt</kbd>-drag a handle to bend at the point); right-click a point to remove
-      it, double-click to make it smooth again. The tiles update as you go; <b>New path</b> keeps
-      them and starts another curve. Tiles are 64 px; 1 tile is 2.5 m.
-    </div>
-    <h3>Tiles (as laid out in the tile sheet)</h3>
-    <div id="palette"></div>
-    <h3 id="nearTitle">Next to the selected tile in the nine stages</h3>
-    <div id="near"></div>
+    <section class="card" id="toolCard">
+      <h2 id="toolTitle">Paint</h2>
+      <div class="tp on" data-tp="paint">
+        <div class="cur">
+          <canvas id="curTile" width="64" height="64"></canvas>
+          <div>
+            <div class="big" id="curName">Tile 2</div>
+            <div class="hint" id="curInfo"></div>
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn" id="flipTile" title="Swap to its mirror image (H)"><svg viewBox="0 0 20 20"><path d="M10 2v16" stroke-dasharray="2 2"/><path d="M7 5 2 10l5 5zM13 5l5 5-5 5z"/></svg>Flip <kbd>H</kbd></button>
+          <label class="check" title="Painting a tile fills the column below it with solid dirt"><input id="fill" type="checkbox" checked> fill dirt below</label>
+        </div>
+        <div class="hint"><p>Drag paints · right-drag erases to sky</p><p><kbd>Alt</kbd>-click picks up a tile · <kbd>Shift</kbd>-click moves the start</p></div>
+      </div>
+      <div class="tp" data-tp="select">
+        <div class="grid2">
+          <button class="btn" id="selCopy">Copy <kbd>⌘C</kbd></button>
+          <button class="btn" id="selCut">Cut <kbd>⌘X</kbd></button>
+          <button class="btn" id="selPaste">Paste <kbd>⌘V</kbd></button>
+          <button class="btn" id="selFlip">Flip ↔ <kbd>H</kbd></button>
+          <button class="btn" id="selDel">Clear <kbd>Del</kbd></button>
+          <button class="btn" id="selAll">Select all <kbd>⌘A</kbd></button>
+        </div>
+        <div class="hint"><p>Drag a box. Drag inside it to <b>move</b> it; <kbd>Alt</kbd>-drag to move a <b>copy</b>. Arrow keys nudge it a tile.</p>
+          <p>A moved or pasted area floats over the stage until you click outside it, press <kbd>Enter</kbd> or switch tools, so you can keep moving it without wiping what's underneath.</p></div>
+      </div>
+      <div class="tp" data-tp="path">
+        <div class="row"><button class="btn" id="pathNew" title="Keep the tiles as they are and start another curve">New path</button>
+          <button class="btn" id="pathDel" title="Remove the selected point (Del)">Remove point</button></div>
+        <div class="hint"><p>Click to add points; the tiles follow the curve, joining the ground either side, with fill chosen so the dirt's edge carries on from tile to tile.</p>
+          <p>Drag a point or a handle to reshape (<kbd>Alt</kbd>-drag a handle for a corner). Right-click a point to remove it, double-click to smooth it.</p></div>
+      </div>
+      <div class="tp" data-tp="start">
+        <div class="hint"><p>Click (or drag) where the truck drops in.</p><p id="startInfo"></p></div>
+      </div>
+      <div class="tp" data-tp="finish">
+        <div class="row"><button class="btn" id="noFinish">No finish line</button></div>
+        <div class="hint"><p>Click where the finish line goes; drag to move it. With none, the stage goes on until you quit, like a stunt track.</p><p id="finishInfo"></p></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Tiles <span class="grow"></span><span style="text-transform:none;letter-spacing:0;font-weight:400" id="palHint">as in the tile sheet</span></h2>
+      <div id="palette"></div>
+      <div class="legend" id="legend" hidden><span><b style="color:#ffe14d">12</b> ground</span><span><b style="color:#5ee8ff">12</b> fill</span><span><b style="color:#bbb">1</b> plain dirt</span><span>dashed: the mirror</span></div>
+    </section>
+
+    <details class="card" id="nearCard">
+      <summary id="nearTitle">Next to this tile in the nine stages</summary>
+      <div id="near"></div>
+    </details>
+
+    <details class="card" id="levelCard" open>
+      <summary>Level</summary>
+      <div class="row"><select id="source" style="flex:1"></select><button class="btn" id="load" title="Start from this (Undo brings back what you had)">Load</button></div>
+      <div class="row"><label>W <input id="w" type="number" min="10" max="2000" value="60"></label>
+        <label>H <input id="h" type="number" min="8" max="400" value="24"></label>
+        <button class="btn" id="resize" title="Keep what's there, change the size (adds or removes columns on the right and rows at the bottom)">Resize</button></div>
+      <div class="row" title="Move the whole level, start point included. Tiles pushed past the edge are dropped; the gap left behind repeats the edge column or row. Shift+arrow keys move it 1 tile.">
+        Shift all <button class="btn icon" id="shiftL">←</button><button class="btn icon" id="shiftR">→</button><button class="btn icon" id="shiftU">↑</button><button class="btn icon" id="shiftD">↓</button>
+        <label>by <input id="shiftN" type="number" min="1" max="500" value="1"></label></div>
+    </details>
   </aside>
 
-  <main id="scroller"><div id="stack"><canvas id="tiles"></canvas><canvas id="over"></canvas></div></main>
-  <footer id="status">Loading…</footer>
+  <main>
+    <div id="viewport">
+      <canvas id="tiles"></canvas><canvas id="over"></canvas>
+      <div id="scroller"><div id="spacer"></div></div>
+      <div class="floating" id="selBox">
+        <span class="info" id="selInfo"></span>
+        <button class="btn" id="fbFlip" title="Flip left to right (H)">Flip ↔</button>
+        <button class="btn" id="fbCopy" title="Copy (Ctrl+C)">Copy</button>
+        <button class="btn" id="fbDel" title="Clear to sky (Del)">Clear</button>
+        <button class="btn" id="fbDone" title="Drop it here (Enter)">Done</button>
+      </div>
+      <div class="floating" id="zoomBox">
+        <button class="btn icon" id="zoomOut" title="Zoom out (−)">−</button>
+        <span id="zoomPct">60%</span>
+        <button class="btn icon" id="zoomIn" title="Zoom in (+)">+</button>
+        <button class="btn" id="zoomFit" title="Fit the level's height (0)">Fit</button>
+      </div>
+    </div>
+    <canvas id="mini" title="The whole level: click or drag to look at a part of it"></canvas>
+  </main>
+
+  <footer><span id="msg">Loading…</span><span id="where"></span></footer>
+
+  <dialog id="help">
+    <h3>Stage Editor: keyboard and mouse</h3>
+    <h4>Tools</h4>
+    <table>
+      <tr><td><kbd>B</kbd> Paint</td><td>Drag paints the chosen tile, right-drag erases. <kbd>Alt</kbd>-click picks up a tile; <kbd>H</kbd> swaps the chosen tile for its mirror.</td></tr>
+      <tr><td><kbd>S</kbd> Select</td><td>Drag a box; drag inside to move it, <kbd>Alt</kbd>-drag to copy. <kbd>H</kbd> flips it, arrows nudge it, <kbd>Del</kbd> clears it, <kbd>Enter</kbd> drops it, <kbd>Esc</kbd> lets go.</td></tr>
+      <tr><td><kbd>D</kbd> Path</td><td>Click to add points to a curve; the tiles follow it. Drag points and handles; right-click removes a point.</td></tr>
+      <tr><td><kbd>T</kbd> Start</td><td>Click where the truck drops in (or <kbd>Shift</kbd>-click while painting).</td></tr>
+      <tr><td><kbd>F</kbd> Finish</td><td>Click where the finish line goes.</td></tr>
+    </table>
+    <h4>Everywhere</h4>
+    <table>
+      <tr><td>Pinch, <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+scroll</td><td>Zoom at the pointer. <kbd>+</kbd> <kbd>−</kbd> zoom, <kbd>0</kbd> fits the height.</td></tr>
+      <tr><td>Scroll, <kbd>Space</kbd>+drag, middle-drag</td><td>Move around. The strip at the bottom shows the whole level: click it to jump.</td></tr>
+      <tr><td><kbd>⌘C</kbd> <kbd>⌘X</kbd> <kbd>⌘V</kbd></td><td>Copy, cut, paste (the pasted area floats under the pointer until you drop it).</td></tr>
+      <tr><td><kbd>⌘Z</kbd> <kbd>⌘⇧Z</kbd></td><td>Undo, redo.</td></tr>
+      <tr><td><kbd>Shift</kbd>+arrows</td><td>Move the whole level a tile.</td></tr>
+      <tr><td><kbd>G</kbd> <kbd>C</kbd> <kbd>N</kbd></td><td>Grid, collision lines, tile numbers.</td></tr>
+    </table>
+    <p class="hint">⌘ is Ctrl on Windows and Linux. Tiles are 64 px; 1 tile is 2.5 m. The stage you're editing is kept in this browser as you go.</p>
+    <form method="dialog" style="text-align:right"><button class="btn primary">OK</button></form>
+  </dialog>
 
   <script type="module">
     import { loadAssets } from '../src/assets.js';
     import { TILE, STAGE_NAMES, METRES_PER_TILE } from '../src/game.js';
-    import { buildKit, drawPath } from '../src/autotile.js';
+    import { buildKit, drawPath, mirrorOf, flipTiles, NO_MIRROR } from '../src/autotile.js';
+    import { TILE_EDGES } from '../src/tile-art.js';
 
     const $ = (id) => document.getElementById(id);
     const a = await loadAssets('../assets/');
     const stages = a.levels.levels, stunts = a.levels.stunts, collision = a.levels.collision;
     const NT = collision.length;           // tile ids are 0 .. NT-1; 0 is sky, 1 solid dirt
     const SKY = 0, DIRT = 1;
-    const KEY = 'funkytruck.editorLevel';
-    const kit = buildKit(collision, stages, TILE);   // the Path tool's pieces and fill
+    const KEY = 'funkytruck.editorLevel', VIEW_KEY = 'funkytruck.editorView';
+    const kit = buildKit(collision, stages, TILE, { edges: TILE_EDGES });   // the Path tool's pieces, fill and look
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const say = (text) => { $('msg').textContent = text; };
 
     // ---- which tiles sit next to which in the nine stages (to see how pieces fit together)
     const near = Array.from({ length: NT }, () => ({ right: new Map(), left: new Map(), above: new Map(), below: new Map() }));
@@ -138,9 +317,17 @@
       }
     }
     const used = new Set(stages.flatMap((l) => l.tiles.flat()));
+    // each tile's average colour, for the strip that shows the whole level
+    const avg = a.tiles.map((t, id) => {
+      if (id === SKY) return [156, 186, 209];
+      const d = t.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, TILE, TILE).data;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < d.length; i += 4) { const al = d[i + 3] / 255; r += d[i] * al + 156 * (1 - al); g += d[i + 1] * al + 186 * (1 - al); b += d[i + 2] * al + 209 * (1 - al); n++; }
+      return [r / n, g / n, b / n];
+    });
 
     // ---- the level being edited
-    let L = null;          // { name, width, height, tiles, start, finish? (px) }
+    let L = null;          // { name, width, height, tiles, start, finish? (px), guide? }
     const undo = [], redo = [];
     const snapshot = () => JSON.stringify(L);
     // An edit that isn't to the path makes the tiles as they are now the path's new starting point.
@@ -148,55 +335,61 @@
       undo.push(snapshot()); if (undo.length > 200) undo.shift(); redo.length = 0;
       if (!pathEdit && L.guide) L.guide.base = null;
     }
-    function restore(s) { L = JSON.parse(s); $('w').value = L.width; $('h').value = L.height; $('name').value = L.name; sizeCanvas(); }
+    function restore(s) {
+      L = JSON.parse(s); flt = null; box = null;
+      $('w').value = L.width; $('h').value = L.height; $('name').value = L.name;
+      sizeLevel();
+    }
 
     function blank(w, h) {
       const tiles = Array.from({ length: h }, (_, y) => Array(w).fill(y >= h - 6 ? DIRT : SKY));
-      // a strip of flat ground to start on
-      for (let x = 0; x < w; x++) tiles[h - 7][x] = 2;
+      for (let x = 0; x < w; x++) tiles[h - 7][x] = 2;   // a strip of flat ground to start on
       return { name: $('name').value || 'My Track', width: w, height: h, tiles, start: [3 * TILE, (h - 10) * TILE] };
     }
     function fromLevel(l, name) {
       return { name, width: l.width, height: l.height, tiles: l.tiles.map((r) => r.slice()), start: l.start.slice() };
     }
+    const sizeInputs = () => [clamp(Math.round(+$('w').value) || 60, 10, 2000), clamp(Math.round(+$('h').value) || 24, 8, 400)];
 
-    // ---- source list
-    const sources = [['blank', 'Blank'], ...stages.map((_, i) => [`s${i}`, STAGE_NAMES[i]]), ...stunts.map((s, i) => [`t${i}`, `Stunt: ${s.name}`])];
+    // ---- level: load, new, resize, shift
+    const sources = [...stages.map((_, i) => [`s${i}`, `Stage ${i + 1}: ${STAGE_NAMES[i]}`]), ...stunts.map((s, i) => [`t${i}`, `Stunt: ${s.name}`])];
     for (const [v, label] of sources) $('source').append(new Option(label, v));
     $('load').onclick = () => {
-      const v = $('source').value;
-      remember();
-      if (v === 'blank') L = blank(+$('w').value, +$('h').value);
-      else if (v[0] === 's') L = fromLevel(stages[+v.slice(1)], `${STAGE_NAMES[+v.slice(1)]} (edited)`);
-      else L = fromLevel(stunts[+v.slice(1)], `${stunts[+v.slice(1)].name} (edited)`);
+      const v = $('source').value, i = +v.slice(1);
+      dropFloat(); remember();
+      L = v[0] === 's' ? fromLevel(stages[i], `${STAGE_NAMES[i]} (edited)`) : fromLevel(stunts[i], `${stunts[i].name} (edited)`);
       $('w').value = L.width; $('h').value = L.height; $('name').value = L.name;
-      sizeCanvas(); save();
+      sizeLevel(); fitHeight(); save();
+      say(`Loaded ${L.name.replace(' (edited)', '')}. Undo brings back what you had.`);
     };
-    $('blank').onclick = () => { remember(); L = blank(+$('w').value, +$('h').value); sizeCanvas(); save(); };
+    $('blank').onclick = () => {
+      closeMenus(); dropFloat(); remember();
+      const [w, h] = sizeInputs();
+      L = blank(w, h); sizeLevel(); fitHeight(); save();
+      say(`A new blank level, ${w} × ${h} tiles (the size is under Level). Undo brings back what you had.`);
+    };
     $('resize').onclick = () => {
-      remember();
-      const w = +$('w').value, h = +$('h').value;
+      dropFloat(); remember();
+      const [w, h] = sizeInputs();
       const tiles = Array.from({ length: h }, (_, y) => Array.from({ length: w }, (_, x) => (y < L.height && x < L.width ? L.tiles[y][x] : y < L.height ? SKY : L.tiles[L.height - 1][Math.min(x, L.width - 1)])));
       L = { ...L, width: w, height: h, tiles };
       if (Number.isFinite(L.finish) && L.finish >= w * TILE) delete L.finish;
-      sizeCanvas(); save();
+      sizeLevel(); save();
+      say(`Now ${w} × ${h} tiles.`);
     };
-
-    // ---- shift the whole level by (dx, dy) tiles; the gap left behind repeats the edge it came from
+    // shift the whole level by (dx, dy) tiles; the gap left behind repeats the edge it came from
     function shift(dx, dy) {
       if (!dx && !dy) return;
-      remember();
-      const W = L.width, H = L.height, clamp = (v, n) => Math.max(0, Math.min(n - 1, v));
-      L.tiles = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => L.tiles[clamp(y - dy, H)][clamp(x - dx, W)]));
-      L.start = [
-        Math.max(TILE / 2, Math.min(W * TILE - TILE / 2, L.start[0] + dx * TILE)),
-        Math.max(TILE / 2, Math.min(H * TILE - TILE / 2, L.start[1] + dy * TILE)),
-      ];
+      dropFloat(); remember();
+      const W = L.width, H = L.height;
+      L.tiles = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => L.tiles[clamp(y - dy, 0, H - 1)][clamp(x - dx, 0, W - 1)]));
+      L.start = [clamp(L.start[0] + dx * TILE, TILE / 2, W * TILE - TILE / 2), clamp(L.start[1] + dy * TILE, TILE / 2, H * TILE - TILE / 2)];
       if (L.guide) for (const p of L.guide.pts) { p.x += dx * TILE; p.y += dy * TILE; }
-      if (Number.isFinite(L.finish)) L.finish = Math.max(TILE, Math.min(W * TILE - TILE, L.finish + dx * TILE));
+      if (Number.isFinite(L.finish)) L.finish = clamp(L.finish + dx * TILE, TILE, W * TILE - TILE);
       box = null;
       drawAll(); save();
-      $('status').textContent = `Shifted the level ${Math.abs(dx || dy)} tile${Math.abs(dx || dy) === 1 ? '' : 's'} ${dx < 0 ? 'left' : dx > 0 ? 'right' : dy < 0 ? 'up' : 'down'}.`;
+      const n = Math.abs(dx || dy);
+      say(`Shifted the level ${n} tile${n === 1 ? '' : 's'} ${dx < 0 ? 'left' : dx > 0 ? 'right' : dy < 0 ? 'up' : 'down'}.`);
     }
     const shiftBy = () => Math.max(1, Math.floor(+$('shiftN').value) || 1);
     $('shiftL').onclick = () => shift(-shiftBy(), 0);
@@ -206,25 +399,46 @@
 
     // ---- palette
     let sel = 2;
-    const thumb = (id, px) => {
-      const c = document.createElement('canvas');
-      c.width = c.height = px;
-      c.getContext('2d').drawImage(a.tiles[id], 0, 0, px, px);
-      c.title = `tile ${id}${used.has(id) ? '' : ' (not used in the stages)'}`;
+    const numColour = (id) => (kit.isPiece.has(id) ? '#ffe14d' : id === DIRT ? 'rgba(200,200,200,0.75)' : '#5ee8ff');
+    function thumb(id, px, c = document.createElement('canvas'), numbered = false) {
+      c.width = c.height = px * 2;   // sharp on high-density screens
+      const g = c.getContext('2d');
+      g.clearRect(0, 0, px * 2, px * 2);
+      if (id === SKY) { g.fillStyle = '#9cbad1'; g.fillRect(0, 0, px * 2, px * 2); g.fillStyle = '#234'; g.font = `${px * 0.6}px sans-serif`; g.textAlign = 'center'; g.fillText('sky', px, px * 1.2); }
+      else g.drawImage(a.tiles[id], 0, 0, px * 2, px * 2);
+      if (numbered && id !== SKY) {
+        g.font = `bold ${Math.round(px * 0.75)}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.lineWidth = 4; g.lineJoin = 'round'; g.strokeStyle = 'rgba(0,0,0,0.85)'; g.fillStyle = numColour(id);
+        g.strokeText(id, px, px); g.fillText(id, px, px);
+      }
+      c.title = `tile ${id}${id > DIRT && !used.has(id) ? ' (not used in the stages)' : ''}`;
       return c;
-    };
+    }
     const palCells = [];
     for (let id = 0; id < NT; id++) {
-      const c = thumb(id, 40);
-      if (id === SKY) { const g = c.getContext('2d'); g.fillStyle = '#9cbad1'; g.fillRect(0, 0, 40, 40); g.fillStyle = '#234'; g.font = '11px sans-serif'; g.fillText('sky', 10, 24); }
-      if (!used.has(id) && id > DIRT) c.style.opacity = '0.45';
+      const c = thumb(id, 36);
+      if (!used.has(id) && id > DIRT) c.style.opacity = '0.4';
       c.onclick = () => pick(id);
       palCells.push(c);
       $('palette').append(c);
     }
+    function drawPalette() {
+      const on = $('nums').checked;
+      palCells.forEach((c, id) => thumb(id, 36, c, on));
+      $('legend').hidden = !on;
+    }
+    function mirrorNote(id) {
+      if (NO_MIRROR.has(id)) return 'no mirror (a kicker)';
+      const m = mirrorOf(id);
+      return m === id ? 'its own mirror' : `mirror: ${m}`;
+    }
     function pick(id) {
       sel = id;
-      palCells.forEach((c, i) => c.classList.toggle('sel', i === id));
+      palCells.forEach((c, i) => { c.classList.toggle('sel', i === id); c.classList.toggle('mirror', i !== id && i === mirrorOf(id)); });
+      thumb(id, 32, $('curTile'));
+      $('curName').textContent = id === SKY ? 'Sky' : `Tile ${id}`;
+      $('curInfo').textContent = `${id === SKY ? 'erases' : kit.isPiece.has(id) ? 'ground' : id === DIRT ? 'plain dirt' : 'fill'} · ${mirrorNote(id)}`;
+      $('flipTile').disabled = mirrorOf(id) === id;
       $('nearTitle').textContent = `Next to tile ${id} in the nine stages`;
       const box = $('near');
       box.innerHTML = '';
@@ -235,7 +449,7 @@
         const row = document.createElement('div'); row.className = 'near';
         for (const [other, n] of list) {
           const f = document.createElement('figure');
-          f.append(thumb(other, 36));
+          f.append(thumb(other, 32));
           const cap = document.createElement('figcaption'); cap.textContent = `${other} ×${n}`;
           f.append(cap);
           f.onclick = () => pick(other);
@@ -243,18 +457,38 @@
         }
         box.append(row);
       }
+      drawOver();
     }
-    pick(2);
+    function flipTile() {
+      const m = mirrorOf(sel);
+      if (m === sel) { say(`Tile ${sel} has ${NO_MIRROR.has(sel) ? 'no mirror' : 'no other mirror: it is its own'}.`); return; }
+      const was = sel; pick(m);
+      say(`Tile ${was} flipped: now tile ${m}.`);
+    }
+    $('flipTile').onclick = flipTile;
 
-    // ---- drawing
+    // ---- the view: two canvases the size of the view, drawn for wherever it's scrolled to
+    const scroller = $('scroller'), spacer = $('spacer');
     const tc = $('tiles'), oc = $('over'), tx = tc.getContext('2d'), ox = oc.getContext('2d');
-    let Z = +$('zoom').value;
-    function sizeCanvas() {
-      Z = +$('zoom').value;
-      const w = Math.ceil(L.width * TILE * Z), h = Math.ceil(L.height * TILE * Z);
-      for (const c of [tc, oc]) { c.width = w; c.height = h; }
-      $('stack').style.width = `${w}px`; $('stack').style.height = `${h}px`;
+    let Z = 0.6, vw = 0, vh = 0, dpr = 1;
+    const sx = () => scroller.scrollLeft, sy = () => scroller.scrollTop;
+    function sizeView() {
+      dpr = window.devicePixelRatio || 1;
+      vw = scroller.clientWidth; vh = scroller.clientHeight;
+      for (const c of [tc, oc]) { c.width = Math.round(vw * dpr); c.height = Math.round(vh * dpr); c.style.width = `${vw}px`; c.style.height = `${vh}px`; }
       drawAll();
+    }
+    function sizeLevel() {
+      spacer.style.width = `${Math.ceil(L.width * TILE * Z)}px`; spacer.style.height = `${Math.ceil(L.height * TILE * Z)}px`;
+      $('zoomPct').textContent = `${Math.round(Z * 100)}%`;
+      drawAll(); drawMini();
+    }
+    // world pixels times Z, shifted by the scroll
+    const toView = (g) => g.setTransform(dpr, 0, 0, dpr, -sx() * dpr, -sy() * dpr);
+    function seen() {
+      const s = TILE * Z;
+      return { xa: Math.max(0, Math.floor(sx() / s)), xb: Math.min(L.width, Math.ceil((sx() + vw) / s)),
+        ya: Math.max(0, Math.floor(sy() / s)), yb: Math.min(L.height, Math.ceil((sy() + vh) / s)) };
     }
     function drawTile(x, y) {
       const s = TILE * Z, px = Math.floor(x * s), py = Math.floor(y * s), pw = Math.floor((x + 1) * s) - px, ph = Math.floor((y + 1) * s) - py;
@@ -263,46 +497,62 @@
       const id = L.tiles[y][x];
       if (id !== SKY && a.tiles[id]) tx.drawImage(a.tiles[id], px, py, pw, ph);
     }
-    function drawAll() {
-      for (let y = 0; y < L.height; y++) for (let x = 0; x < L.width; x++) drawTile(x, y);
-      drawOver();
+    function drawTiles() {
+      tx.setTransform(1, 0, 0, 1, 0, 0);
+      tx.fillStyle = '#121110'; tx.fillRect(0, 0, tc.width, tc.height);
+      toView(tx);
+      const v = seen();
+      for (let y = v.ya; y < v.yb; y++) for (let x = v.xa; x < v.xb; x++) drawTile(x, y);
     }
-    let hover = null, box = null, clip = null, mode = 'paint';
+    function drawAll() { if (!L || !vw) return; drawTiles(); drawOver(); }
+    let viewPending = false;
+    const redrawSoon = () => { if (!viewPending) { viewPending = true; requestAnimationFrame(() => { viewPending = false; drawAll(); drawMiniView(); }); } };
+    scroller.addEventListener('scroll', redrawSoon);
+    new ResizeObserver(() => { sizeView(); drawMini(); }).observe(scroller);
+
+    let tool = 'paint', hover = null, box = null, flt = null, clip = null, dragging = null;
     // each tile's number, over the cells in view: yellow for ground pieces, cyan for fill, grey for dirt
-    function drawNumbers() {
-      const s = TILE * Z, sc = $('scroller');
+    function drawNumbers(v) {
+      const s = TILE * Z;
       if (s < 14) return;
       const fs = Math.max(9, Math.min(16, Math.round(s / 3.2)));
-      const xa = Math.max(0, Math.floor(sc.scrollLeft / s)), xb = Math.min(L.width, Math.ceil((sc.scrollLeft + sc.clientWidth) / s));
-      const ya = Math.max(0, Math.floor(sc.scrollTop / s)), yb = Math.min(L.height, Math.ceil((sc.scrollTop + sc.clientHeight) / s));
       ox.font = `bold ${fs}px system-ui, sans-serif`; ox.textAlign = 'center'; ox.textBaseline = 'middle';
       ox.lineWidth = 3; ox.lineJoin = 'round'; ox.strokeStyle = 'rgba(0,0,0,0.85)';
-      for (let y = ya; y < yb; y++) for (let x = xa; x < xb; x++) {
+      for (let y = v.ya; y < v.yb; y++) for (let x = v.xa; x < v.xb; x++) {
         const id = L.tiles[y][x];
         if (id === SKY) continue;
         const cx = (x + 0.5) * s, cy = (y + 0.5) * s;
-        ox.fillStyle = kit.isPiece.has(id) ? '#ffe14d' : id === DIRT ? 'rgba(200,200,200,0.6)' : '#5ee8ff';
+        ox.fillStyle = numColour(id);
         ox.strokeText(id, cx, cy); ox.fillText(id, cx, cy);
       }
       ox.textAlign = 'start'; ox.textBaseline = 'alphabetic';
     }
-    function drawOver() {
+    const rect = (x0, y0, x1, y1, color, dash) => {
       const s = TILE * Z;
+      ox.strokeStyle = color; ox.lineWidth = 2; ox.setLineDash(dash || []);
+      ox.strokeRect(x0 * s + 1, y0 * s + 1, (x1 - x0 + 1) * s - 2, (y1 - y0 + 1) * s - 2);
+      ox.setLineDash([]);
+    };
+    function drawOver() {
+      if (!L || !vw) return;
+      const s = TILE * Z, v = seen(), top = sy(), bottom = sy() + vh, W = L.width * s, H = L.height * s;
+      ox.setTransform(1, 0, 0, 1, 0, 0);
       ox.clearRect(0, 0, oc.width, oc.height);
-      if ($('grid').checked && Z >= 0.25) {
-        ox.strokeStyle = 'rgba(0,0,0,0.12)'; ox.lineWidth = 1;
+      toView(ox);
+      if ($('grid').checked && Z >= 0.2) {
+        ox.strokeStyle = 'rgba(0,0,0,0.13)'; ox.lineWidth = 1;
         ox.beginPath();
-        for (let x = 0; x <= L.width; x++) { ox.moveTo(Math.floor(x * s) + 0.5, 0); ox.lineTo(Math.floor(x * s) + 0.5, oc.height); }
-        for (let y = 0; y <= L.height; y++) { ox.moveTo(0, Math.floor(y * s) + 0.5); ox.lineTo(oc.width, Math.floor(y * s) + 0.5); }
+        for (let x = v.xa; x <= v.xb; x++) { ox.moveTo(Math.floor(x * s) + 0.5, Math.max(0, top)); ox.lineTo(Math.floor(x * s) + 0.5, Math.min(H, bottom)); }
+        for (let y = v.ya; y <= v.yb; y++) { ox.moveTo(Math.max(0, sx()), Math.floor(y * s) + 0.5); ox.lineTo(Math.min(W, sx() + vw), Math.floor(y * s) + 0.5); }
         ox.stroke();
-        // every 10 columns, darker, with the distance
-        ox.fillStyle = 'rgba(0,0,0,0.55)'; ox.font = '11px sans-serif';
-        for (let x = 0; x < L.width; x += 10) { ox.fillRect(Math.floor(x * s), 0, 1, oc.height); ox.fillText(`${x} · ${x * METRES_PER_TILE} m`, x * s + 3, 12); }
       }
+      // every 10 columns, darker, with the distance
+      ox.fillStyle = 'rgba(0,0,0,0.5)'; ox.font = '11px system-ui, sans-serif';
+      for (let x = Math.floor(v.xa / 10) * 10; x < v.xb; x += 10) { ox.fillRect(Math.floor(x * s), Math.max(0, top), 1, Math.min(H, bottom) - Math.max(0, top)); ox.fillText(`${x} · ${x * METRES_PER_TILE} m`, x * s + 4, Math.max(0, top) + 13); }
       if ($('coll').checked) {
         // collision segments; the short tick points out of the ground (the side the truck rides on)
         ox.strokeStyle = '#ff3355'; ox.lineWidth = 2;
-        for (let y = 0; y < L.height; y++) for (let x = 0; x < L.width; x++) {
+        for (let y = v.ya; y < v.yb; y++) for (let x = v.xa; x < v.xb; x++) {
           const d = collision[L.tiles[y][x]] || [];
           for (let i = 0; i < d.length; i += 5) {
             const x1 = (x * TILE + d[i]) * Z, y1 = (y * TILE + d[i + 1]) * Z, x2 = (x * TILE + d[i + 2]) * Z, y2 = (y * TILE + d[i + 3]) * Z;
@@ -313,41 +563,132 @@
           }
         }
       }
-      if ($('nums').checked) drawNumbers();
+      if ($('nums').checked) drawNumbers(v);
       // the finish line: a chequered stripe down the level
       if (Number.isFinite(L.finish)) {
-        const fx = L.finish * Z, sq = Math.max(4, 12 * Z);
-        for (let y = 0, i = 0; y < oc.height; y += sq, i++) for (let k = 0; k < 2; k++) {
+        const fx = L.finish * Z, sq = Math.max(4, 12 * Z), y0 = Math.max(0, Math.floor(top / sq) * sq);
+        for (let y = y0, i = Math.floor(y0 / sq); y < Math.min(H, bottom); y += sq, i++) for (let k = 0; k < 2; k++) {
           ox.fillStyle = (i + k) % 2 ? 'rgba(20,20,20,0.75)' : 'rgba(255,255,255,0.85)';
           ox.fillRect(fx - sq + k * sq, y, sq, sq);
         }
-        ox.fillStyle = '#fff'; ox.strokeStyle = '#000'; ox.lineWidth = 3; ox.font = 'bold 12px sans-serif';
-        ox.strokeText('finish', fx + sq + 4, 16); ox.fillText('finish', fx + sq + 4, 16);
+        ox.fillStyle = '#fff'; ox.strokeStyle = '#000'; ox.lineWidth = 3; ox.font = 'bold 12px system-ui, sans-serif';
+        ox.strokeText('finish', fx + sq + 4, Math.max(0, top) + 30); ox.fillText('finish', fx + sq + 4, Math.max(0, top) + 30);
       }
       // where the truck drops in
-      ox.fillStyle = '#ffd54a'; ox.strokeStyle = '#000'; ox.lineWidth = 1;
-      ox.beginPath(); ox.arc(L.start[0] * Z, L.start[1] * Z, Math.max(5, 20 * Z), 0, Math.PI * 2); ox.fill(); ox.stroke();
-      ox.fillStyle = '#000'; ox.font = 'bold 11px sans-serif'; ox.fillText('start', L.start[0] * Z + 8, L.start[1] * Z - 8);
-      const rect = (x0, y0, x1, y1, color) => { ox.strokeStyle = color; ox.lineWidth = 2; ox.strokeRect(x0 * s + 1, y0 * s + 1, (x1 - x0 + 1) * s - 2, (y1 - y0 + 1) * s - 2); };
-      if (L.guide && ($('showPath').checked || mode === 'path')) drawGuide();
-      if (box) rect(Math.min(box.x0, box.x1), Math.min(box.y0, box.y1), Math.max(box.x0, box.x1), Math.max(box.y0, box.y1), '#ffd54a');
+      ox.fillStyle = '#ffd54a'; ox.strokeStyle = '#000'; ox.lineWidth = 1.5;
+      ox.beginPath(); ox.arc(L.start[0] * Z, L.start[1] * Z, Math.max(6, 20 * Z), 0, Math.PI * 2); ox.fill(); ox.stroke();
+      ox.fillStyle = '#000'; ox.font = 'bold 11px system-ui, sans-serif'; ox.fillText('start', L.start[0] * Z + Math.max(8, 22 * Z), L.start[1] * Z - 6);
+      if (L.guide && ($('showPath').checked || tool === 'path')) drawGuide();
+      if (box && tool === 'select') {
+        ox.fillStyle = flt ? 'rgba(255,213,74,0.10)' : 'rgba(255,213,74,0.06)';
+        ox.fillRect(box.x0 * s, box.y0 * s, (box.x1 - box.x0 + 1) * s, (box.y1 - box.y0 + 1) * s);
+        rect(box.x0, box.y0, box.x1, box.y1, '#ffd54a', flt ? [] : [6, 4]);
+      }
       if (hover) {
-        if (mode === 'paste' && clip) {
-          ox.globalAlpha = 0.6;
-          clip.forEach((row, dy) => row.forEach((id, dx) => {
-            const X = hover.x + dx, Y = hover.y + dy;
-            if (X < L.width && Y < L.height && id !== SKY) ox.drawImage(a.tiles[id], X * s, Y * s, s, s);
-          }));
-          ox.globalAlpha = 1;
-          rect(hover.x, hover.y, hover.x + clip[0].length - 1, hover.y + clip.length - 1, '#fff');
-        } else if (mode === 'paint') {
+        if (tool === 'paint' && !dragging) {
           ox.globalAlpha = 0.55;
           if (sel !== SKY) ox.drawImage(a.tiles[sel], hover.x * s, hover.y * s, s, s);
           ox.globalAlpha = 1;
           rect(hover.x, hover.y, hover.x, hover.y, '#fff');
-        } else if (mode !== 'path') rect(hover.x, hover.y, hover.x, hover.y, '#fff');
+        } else if (tool === 'select' && !dragging && !inBox(hover)) rect(hover.x, hover.y, hover.x, hover.y, 'rgba(255,255,255,0.6)');
       }
+      // the level's edge
+      ox.strokeStyle = 'rgba(0,0,0,0.6)'; ox.lineWidth = 1; ox.strokeRect(-0.5, -0.5, W + 1, H + 1);
+      updateSelBox();
     }
+
+    // ---- the strip at the bottom: the whole level, and the part in view
+    const mini = $('mini'), mx = mini.getContext('2d');
+    const miniImg = document.createElement('canvas');
+    let miniPending = false;
+    function drawMini() {
+      if (miniPending || !L) return;
+      miniPending = true;
+      requestAnimationFrame(() => {
+        miniPending = false;
+        miniImg.width = L.width; miniImg.height = L.height;
+        const g = miniImg.getContext('2d'), img = g.createImageData(L.width, L.height);
+        for (let y = 0; y < L.height; y++) for (let x = 0; x < L.width; x++) {
+          const c = avg[L.tiles[y][x]] || avg[SKY], i = (y * L.width + x) * 4;
+          img.data[i] = c[0]; img.data[i + 1] = c[1]; img.data[i + 2] = c[2]; img.data[i + 3] = 255;
+        }
+        g.putImageData(img, 0, 0);
+        drawMiniView();
+      });
+    }
+    let miniScale = 1, miniOff = 0;
+    function drawMiniView() {
+      const w = mini.clientWidth;
+      if (!w || !L) return;
+      // as wide as the view, and as tall as that makes the level (within reason)
+      const h = Math.round(clamp(L.height * (w - 8) / L.width + 6, 40, 80));
+      if (mini.clientHeight !== h) mini.style.height = `${h}px`;
+      if (mini.width !== Math.round(w * dpr) || mini.height !== Math.round(h * dpr)) { mini.width = Math.round(w * dpr); mini.height = Math.round(h * dpr); }
+      mx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      mx.fillStyle = '#121110'; mx.fillRect(0, 0, w, h);
+      miniScale = Math.min((w - 8) / L.width, (h - 6) / L.height);
+      miniOff = 4;
+      const mh = L.height * miniScale, oy = (h - mh) / 2;
+      mx.imageSmoothingEnabled = miniScale < 1;
+      mx.drawImage(miniImg, miniOff, oy, L.width * miniScale, mh);
+      // the view
+      const k = miniScale / (TILE * Z);
+      mx.strokeStyle = '#ffd54a'; mx.lineWidth = 1.5;
+      mx.strokeRect(miniOff + sx() * k, oy + sy() * k, Math.min(vw * k, L.width * miniScale), Math.min(vh * k, mh));
+      if (Number.isFinite(L.finish)) { mx.fillStyle = '#fff'; mx.fillRect(miniOff + L.finish / TILE * miniScale - 1, oy, 2, mh); }
+      mx.fillStyle = '#ffd54a'; mx.beginPath(); mx.arc(miniOff + L.start[0] / TILE * miniScale, oy + L.start[1] / TILE * miniScale, 3, 0, Math.PI * 2); mx.fill();
+    }
+    function miniJump(e) {
+      const r = mini.getBoundingClientRect(), mh = L.height * miniScale, oy = (r.height - mh) / 2;
+      const wx = (e.clientX - r.left - miniOff) / miniScale * TILE * Z, wy = (e.clientY - r.top - oy) / miniScale * TILE * Z;
+      scroller.scrollLeft = wx - vw / 2; scroller.scrollTop = wy - vh / 2;
+    }
+    let miniDrag = false;
+    mini.addEventListener('mousedown', (e) => { miniDrag = true; miniJump(e); e.preventDefault(); });
+    window.addEventListener('mousemove', (e) => { if (miniDrag) miniJump(e); });
+    window.addEventListener('mouseup', () => { miniDrag = false; });
+
+    // ---- zoom: pinch on a trackpad (Ctrl+wheel in Chrome and Firefox, gesture events in Safari), buttons, keys
+    function setZoom(z, ax = vw / 2, ay = vh / 2) {
+      z = clamp(z, 0.08, 2);
+      if (Math.abs(z - Z) < 1e-4) return;
+      const wx = (sx() + ax) / Z, wy = (sy() + ay) / Z;
+      Z = z;
+      spacer.style.width = `${Math.ceil(L.width * TILE * Z)}px`; spacer.style.height = `${Math.ceil(L.height * TILE * Z)}px`;
+      scroller.scrollLeft = wx * Z - ax; scroller.scrollTop = wy * Z - ay;
+      $('zoomPct').textContent = `${Math.round(Z * 100)}%`;
+      drawAll(); drawMiniView(); saveView();
+    }
+    const fitHeight = () => setZoom((vh - 4) / (L.height * TILE), 0, 0);
+    const local = (e) => { const r = scroller.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    let gesture = null;
+    scroller.addEventListener('wheel', (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;      // plain scrolling moves around
+      e.preventDefault();
+      if (gesture) return;
+      const d = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      setZoom(Z * Math.exp(-d * (e.ctrlKey && Math.abs(d) < 50 ? 0.012 : 0.002)), ...local(e));
+    }, { passive: false });
+    scroller.addEventListener('gesturestart', (e) => { e.preventDefault(); gesture = { z: Z }; });
+    scroller.addEventListener('gesturechange', (e) => { e.preventDefault(); if (gesture) setZoom(gesture.z * e.scale, ...local(e)); });
+    scroller.addEventListener('gestureend', (e) => { e.preventDefault(); gesture = null; });
+    $('zoomIn').onclick = () => setZoom(Z * 1.25);
+    $('zoomOut').onclick = () => setZoom(Z / 1.25);
+    $('zoomFit').onclick = fitHeight;
+
+    // the view settings are this browser's, kept between visits
+    function saveView() {
+      try { localStorage.setItem(VIEW_KEY, JSON.stringify({ z: Z, grid: $('grid').checked, coll: $('coll').checked, path: $('showPath').checked, nums: $('nums').checked })); } catch { /* none */ }
+    }
+    try {
+      const v = JSON.parse(localStorage.getItem(VIEW_KEY));
+      if (v && typeof v === 'object') {
+        if (Number.isFinite(v.z)) Z = clamp(v.z, 0.08, 2);
+        for (const [k, id] of [['grid', 'grid'], ['coll', 'coll'], ['path', 'showPath'], ['nums', 'nums']]) if (typeof v[k] === 'boolean') $(id).checked = v[k];
+      }
+    } catch { /* none */ }
+    for (const id of ['grid', 'coll', 'showPath']) $(id).onchange = () => { drawOver(); saveView(); };
+    $('nums').onchange = () => { drawPalette(); drawOver(); saveView(); };
 
     // ---- editing
     let saveTimer = 0;
@@ -355,59 +696,200 @@
       L.name = $('name').value || 'My Track';
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(L)); } catch { /* full */ } }, 150);
+      drawMini();
     }
     function set(x, y, id) {
-      if (x < 0 || y < 0 || x >= L.width || y >= L.height) return;
+      if (x < 0 || y < 0 || x >= L.width || y >= L.height || L.tiles[y][x] === id) return;
       L.tiles[y][x] = id; drawTile(x, y);
     }
     function paintAt(x, y, id) {
       set(x, y, id);
       if (id !== SKY && $('fill').checked) for (let r = y + 1; r < L.height; r++) set(x, r, DIRT);
     }
+    /** The level's tiles made `next` (redrawing the cells that changed). */
+    function apply(next) {
+      for (let y = 0; y < L.height; y++) for (let x = 0; x < L.width; x++) if (next[y][x] !== L.tiles[y][x]) { L.tiles[y][x] = next[y][x]; drawTile(x, y); }
+    }
     const cell = (e) => {
-      const r = oc.getBoundingClientRect(), s = TILE * Z;
-      return { x: Math.floor((e.clientX - r.left) / s), y: Math.floor((e.clientY - r.top) / s), px: (e.clientX - r.left) / Z, py: (e.clientY - r.top) / Z };
+      const [lx, ly] = local(e), X = (lx + sx()) / Z, Y = (ly + sy()) / Z;
+      return { x: Math.floor(X / TILE), y: Math.floor(Y / TILE), px: X, py: Y };
     };
-    let dragging = null;
-    oc.addEventListener('contextmenu', (e) => e.preventDefault());
-    oc.addEventListener('mousedown', (e) => {
-      const c = cell(e);
-      if (e.shiftKey) { remember(); L.start = [Math.round(c.px), Math.round(c.py)]; drawOver(); save(); return; }
-      if (e.altKey && mode !== 'path') { pick(L.tiles[c.y]?.[c.x] ?? SKY); return; }
-      if (mode === 'paste' && clip) {
-        remember();
-        clip.forEach((row, dy) => row.forEach((id, dx) => set(c.x + dx, c.y + dy, id)));
-        drawOver(); save(); return;
-      }
-      if (mode === 'select') { box = { x0: c.x, y0: c.y, x1: c.x, y1: c.y }; dragging = 'box'; drawOver(); return; }
-      if (mode === 'path') { pathDown(e, c); return; }
-      if (mode === 'finish') { remember(); setFinish(c.px); dragging = 'finish'; return; }
+    /** The cells on a line from a to b, so a quick drag leaves no gaps. */
+    function* cellsBetween(a, b) {
+      const n = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+      for (let i = 1; i <= n; i++) yield [Math.round(a.x + (b.x - a.x) * i / n), Math.round(a.y + (b.y - a.y) * i / n)];
+    }
+
+    // ---- selection: a box of tiles; moved, pasted or copied areas float over a copy of the level
+    // (flt.base) until dropped, so moving one further doesn't wipe what it passed over.
+    const inBox = (c) => !!box && c.x >= box.x0 && c.x <= box.x1 && c.y >= box.y0 && c.y <= box.y1;
+    const norm = (p, q) => ({ x0: Math.min(p.x, q.x), y0: Math.min(p.y, q.y), x1: Math.max(p.x, q.x), y1: Math.max(p.y, q.y) });
+    const clipBox = (b) => ({ x0: clamp(b.x0, 0, L.width - 1), y0: clamp(b.y0, 0, L.height - 1), x1: clamp(b.x1, 0, L.width - 1), y1: clamp(b.y1, 0, L.height - 1) });
+    const region = (b) => L.tiles.slice(b.y0, b.y1 + 1).map((r) => r.slice(b.x0, b.x1 + 1));
+    function lift(copy) {
+      const base = L.tiles.map((r) => r.slice());
+      if (!copy) for (let y = box.y0; y <= box.y1; y++) for (let x = box.x0; x <= box.x1; x++) base[y][x] = SKY;
+      flt = { tiles: region(box), x: box.x0, y: box.y0, base };
+    }
+    function placeFloat() {
+      const next = flt.base.map((r) => r.slice());
+      flt.tiles.forEach((row, dy) => row.forEach((id, dx) => {
+        const X = flt.x + dx, Y = flt.y + dy;
+        if (X >= 0 && Y >= 0 && X < L.width && Y < L.height) next[Y][X] = id;
+      }));
+      apply(next);
+      box = { x0: flt.x, y0: flt.y, x1: flt.x + flt.tiles[0].length - 1, y1: flt.y + flt.tiles.length - 1 };
+      drawOver();
+    }
+    /** Drop what's floating where it is (the tiles are already in the level). */
+    function dropFloat() {
+      if (!flt) return;
+      flt = null;
+      if (box) box = clipBox(box);
+      save(); drawOver();
+    }
+    function selCopy(cut) {
+      if (!box) { say('Select an area first: drag a box with the Select tool (S).'); return; }
+      clip = flt ? flt.tiles.map((r) => r.slice()) : region(box);
+      if (cut) selClear();
+      say(`${cut ? 'Cut' : 'Copied'} ${clip[0].length} × ${clip.length} tiles. Paste with Ctrl+V.`);
+    }
+    function selClear() {
+      if (!box) return;
       remember();
-      dragging = e.button === 2 ? SKY : sel;
-      if (dragging === SKY) set(c.x, c.y, SKY); else paintAt(c.x, c.y, dragging);
+      if (flt) { apply(flt.base); flt = null; }
+      else for (let y = box.y0; y <= box.y1; y++) for (let x = box.x0; x <= box.x1; x++) set(x, y, SKY);
+      box = null; drawOver(); save();
+    }
+    function selPaste() {
+      if (!clip) { say('Nothing copied yet: select an area and press Ctrl+C.'); return; }
+      dropFloat(); setTool('select'); remember();
+      const w = clip[0].length, h = clip.length;
+      const at = hover && hover.x >= 0 && hover.y >= 0 ? hover : { x: Math.floor((sx() + vw / 2) / (TILE * Z) - w / 2), y: Math.floor((sy() + vh / 2) / (TILE * Z) - h / 2) };
+      flt = { tiles: clip.map((r) => r.slice()), x: at.x, y: at.y, base: L.tiles.map((r) => r.slice()) };
+      placeFloat(); save();
+      say('Pasted: drag it into place, then click outside it or press Enter.');
+    }
+    function selFlip() {
+      if (!box) { say('Select an area first: drag a box with the Select tool (S).'); return; }
+      remember();
+      const t = flt ? flt.tiles : region(box);
+      const kept = t.flat().filter((id) => NO_MIRROR.has(id)).length;
+      if (flt) { flt.tiles = flipTiles(flt.tiles); placeFloat(); }
+      else { flipTiles(t).forEach((row, dy) => row.forEach((id, dx) => set(box.x0 + dx, box.y0 + dy, id))); drawOver(); }
+      save();
+      say(`Flipped left to right${kept ? `; ${kept} kicker tile${kept === 1 ? '' : 's'} (41 to 55) have no mirror and stayed as they were` : ''}.`);
+    }
+    function selNudge(dx, dy) {
+      if (!box) return;
+      remember();
+      if (!flt) lift(false);
+      flt.x += dx; flt.y += dy;
+      placeFloat(); save();
+    }
+    function selAll() { dropFloat(); setTool('select'); box = { x0: 0, y0: 0, x1: L.width - 1, y1: L.height - 1 }; drawOver(); }
+    function updateSelBox() {
+      const on = tool === 'select' && !!box;
+      $('selBox').classList.toggle('on', on);
+      if (on) $('selInfo').textContent = `${box.x1 - box.x0 + 1} × ${box.y1 - box.y0 + 1}${flt ? ' · floating' : ''}`;
+      $('fbDone').style.display = flt ? '' : 'none';
+    }
+    $('selCopy').onclick = $('fbCopy').onclick = () => selCopy(false);
+    $('selCut').onclick = () => selCopy(true);
+    $('selPaste').onclick = selPaste;
+    $('selFlip').onclick = $('fbFlip').onclick = selFlip;
+    $('selDel').onclick = $('fbDel').onclick = selClear;
+    $('selAll').onclick = selAll;
+    $('fbDone').onclick = () => { dropFloat(); say('Dropped.'); };
+
+    // ---- mouse on the stage
+    let spaceDown = false;
+    const onScrollbar = (e) => { const [lx, ly] = local(e); return lx >= scroller.clientWidth || ly >= scroller.clientHeight; };
+    scroller.addEventListener('contextmenu', (e) => e.preventDefault());
+    scroller.addEventListener('mousedown', (e) => {
+      if (onScrollbar(e)) return;
+      const c = cell(e);
+      if (e.button === 1 || spaceDown) { dragging = { pan: true, x: e.clientX, y: e.clientY, sl: sx(), st: sy() }; scroller.style.cursor = 'grabbing'; e.preventDefault(); return; }
+      if (tool === 'start' || (tool === 'paint' && e.shiftKey)) { remember(); setStart(c); dragging = 'start'; return; }
+      if (tool === 'paint' && e.altKey) { pick(L.tiles[c.y]?.[c.x] ?? SKY); return; }
+      if (tool === 'select') {
+        if (e.button === 2) { dropFloat(); box = null; drawOver(); return; }
+        if (inBox(c)) {
+          remember();
+          if (!flt) lift(e.altKey);
+          else if (e.altKey) { dropFloat(); lift(true); }
+          dragging = { move: true, c0: c, fx: flt.x, fy: flt.y };
+          return;
+        }
+        dropFloat();
+        box = norm(c, c); box = clipBox(box);
+        dragging = { box: true, a: c };
+        drawOver(); return;
+      }
+      if (tool === 'path') { pathDown(e, c); return; }
+      if (tool === 'finish') { remember(); setFinish(c.px); dragging = 'finish'; return; }
+      // paint
+      remember();
+      dragging = { paint: e.button === 2 ? SKY : sel, last: c };
+      if (dragging.paint === SKY) set(c.x, c.y, SKY); else paintAt(c.x, c.y, dragging.paint);
       drawOver();
     });
-    oc.addEventListener('mousemove', (e) => {
+    scroller.addEventListener('mousemove', (e) => {
+      if (dragging?.pan) return;
       const c = cell(e);
       hover = c;
-      if (dragging === 'box') { box.x1 = c.x; box.y1 = c.y; }
-      else if (dragging?.path) pathDrag(e, c);
-      else if (dragging === 'finish') { L.finish = Math.max(2, Math.min(L.width - 2, Math.round(c.px / TILE))) * TILE; }
-      else if (dragging !== null) { if (dragging === SKY) set(c.x, c.y, SKY); else paintAt(c.x, c.y, dragging); }
+      if (dragging?.box) box = clipBox(norm(dragging.a, c));
+      else if (dragging?.move) {
+        const nx = dragging.fx + c.x - dragging.c0.x, ny = dragging.fy + c.y - dragging.c0.y;
+        if (nx !== flt.x || ny !== flt.y) { flt.x = nx; flt.y = ny; placeFloat(); }
+      } else if (dragging?.path) pathDrag(e, c);
+      else if (dragging === 'finish') L.finish = clamp(Math.round(c.px / TILE), 2, L.width - 2) * TILE;
+      else if (dragging === 'start') setStart(c);
+      else if (dragging?.paint !== undefined) {
+        for (const [x, y] of cellsBetween(dragging.last, c)) { if (dragging.paint === SKY) set(x, y, SKY); else paintAt(x, y, dragging.paint); }
+        dragging.last = c;
+      }
       const id = L.tiles[c.y]?.[c.x];
-      $('status').textContent = `column ${c.x}, row ${c.y}  ·  ${(c.x * METRES_PER_TILE).toFixed(1)} m  ·  tile here: ${id ?? '-'}  ·  selected: ${sel}  ·  ${L.width}×${L.height} tiles  ·  mode: ${mode}`;
+      $('where').textContent = id === undefined ? `${L.width} × ${L.height} tiles` : `column ${c.x} · row ${c.y} · ${(c.x * METRES_PER_TILE).toFixed(1)} m · tile ${id}`;
+      scroller.style.cursor = spaceDown ? 'grab' : tool === 'select' && inBox(c) ? 'move' : tool === 'path' ? 'default' : 'crosshair';
       drawOver();
     });
-    window.addEventListener('mouseup', () => {
-      if (dragging?.path) { layGuide(); save(); }
-      else if (dragging !== null && dragging !== 'box') save();
-      dragging = null;
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging?.pan) return;
+      scroller.scrollLeft = dragging.sl - (e.clientX - dragging.x); scroller.scrollTop = dragging.st - (e.clientY - dragging.y);
     });
-    oc.addEventListener('dblclick', (e) => {
-      if (mode !== 'path' || !L.guide) return;
+    window.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      if (dragging.pan) scroller.style.cursor = spaceDown ? 'grab' : '';
+      else if (dragging.path) { layGuide(); save(); }
+      else if (dragging.box) { if (box) say(`${box.x1 - box.x0 + 1} × ${box.y1 - box.y0 + 1} tiles selected: drag inside to move, Alt-drag to copy, H flips.`); }
+      else save();
+      dragging = null;
+      drawOver();
+    });
+    scroller.addEventListener('dblclick', (e) => {
+      if (tool !== 'path' || !L.guide) return;
       const h = pathHit(cell(e));
       if (h?.part === 'pt') { remember(true); L.guide.pts[h.i].auto = true; layGuide(); save(); }
     });
+    scroller.addEventListener('mouseleave', () => { hover = null; drawOver(); });
+
+    function setStart(c) {
+      L.start = [clamp(Math.round(c.px), TILE / 2, L.width * TILE - TILE / 2), clamp(Math.round(c.py), TILE / 2, L.height * TILE - TILE / 2)];
+      $('startInfo').textContent = `The truck drops in ${(L.start[0] / TILE * METRES_PER_TILE).toFixed(1)} m along.`;
+      drawOver(); drawMiniView(); save();
+    }
+    /** Put the finish line at x (px), on a column edge, inside the level. */
+    function setFinish(x) {
+      L.finish = clamp(Math.round(x / TILE), 2, L.width - 2) * TILE;
+      drawOver(); save();
+      say(`Finish line ${Math.round(L.finish / TILE * METRES_PER_TILE)} m along. Drag to move it; No finish line takes it away.`);
+    }
+    $('noFinish').onclick = () => {
+      if (!Number.isFinite(L.finish)) { say('There is no finish line.'); return; }
+      remember(); delete L.finish; drawOver(); save();
+      say('No finish line: the stage goes on until you quit.');
+    };
 
     // ---- the Path tool: a curve through points (cubic Bézier), and the tiles that follow it.
     // L.guide = { pts: [{ x, y, auto, ix, iy, ox, oy }], base }: points left to right in stage pixels,
@@ -442,21 +924,20 @@
       if (!g) return;
       if (!g.base) g.base = L.tiles.map((r) => r.slice());
       const r = g.pts.length > 1 ? drawPath({ ...L, tiles: g.base }, guideLine(), kit, { smooth: 2 }) : null;
-      const next = r ? r.tiles : g.base.map((row) => row.slice());
-      for (let y = 0; y < L.height; y++) for (let x = 0; x < L.width; x++) if (next[y][x] !== L.tiles[y][x]) { L.tiles[y][x] = next[y][x]; drawTile(x, y); }
+      apply(r ? r.tiles : g.base.map((row) => row.slice()));
       drawOver();
-      $('status').textContent = r ? `${g.pts.length} points · ${r.chain.length} ground pieces over columns ${r.x0} to ${r.x1 - 1}`
-        : g.pts.length > 1 ? 'No ground fits that curve: keep it inside the level, running left to right.' : 'Click to add the next point.';
+      say(r ? `${g.pts.length} points · ${r.chain.length} ground pieces over columns ${r.x0} to ${r.x1 - 1}`
+        : g.pts.length > 1 ? 'No ground fits that curve: keep it inside the level, running left to right.' : 'Click to add the next point.');
     }
     function pathHit(c) {
       const g = L.guide;
       if (!g) return null;
-      const near = (x, y) => Math.hypot((x - c.px) * Z, (y - c.py) * Z) <= HIT;
+      const close = (x, y) => Math.hypot((x - c.px) * Z, (y - c.py) * Z) <= HIT;
       for (let i = g.pts.length - 1; i >= 0; i--) {
         const p = g.pts[i], h = handles(i);
-        if (near(p.x, p.y)) return { i, part: 'pt' };
-        if (i > 0 && near(p.x + h.ix, p.y + h.iy)) return { i, part: 'in' };
-        if (i + 1 < g.pts.length && near(p.x + h.ox, p.y + h.oy)) return { i, part: 'out' };
+        if (close(p.x, p.y)) return { i, part: 'pt' };
+        if (i > 0 && close(p.x + h.ix, p.y + h.iy)) return { i, part: 'in' };
+        if (i + 1 < g.pts.length && close(p.x + h.ox, p.y + h.oy)) return { i, part: 'out' };
       }
       return null;
     }
@@ -490,12 +971,12 @@
       } else {
         if (p.auto) Object.assign(p, handles(d.i), { auto: false });
         const hx = c.px - p.x, hy = c.py - p.y;
-        const [mx, my, ox, oy] = d.part === 'in' ? ['ix', 'iy', 'ox', 'oy'] : ['ox', 'oy', 'ix', 'iy'];
+        const [mx, my, ox2, oy2] = d.part === 'in' ? ['ix', 'iy', 'ox', 'oy'] : ['ox', 'oy', 'ix', 'iy'];
         p[mx] = hx; p[my] = hy;
         if (!e.altKey) {
           // the other handle stays opposite (keeping its length), so the curve stays smooth here
-          const len = Math.hypot(p[ox], p[oy]) || Math.hypot(hx, hy), l2 = Math.hypot(hx, hy) || 1;
-          p[ox] = -hx / l2 * len; p[oy] = -hy / l2 * len;
+          const len = Math.hypot(p[ox2], p[oy2]) || Math.hypot(hx, hy), l2 = Math.hypot(hx, hy) || 1;
+          p[ox2] = -hx / l2 * len; p[oy2] = -hy / l2 * len;
         }
       }
       if (!pathPending) { pathPending = true; requestAnimationFrame(() => { pathPending = false; layGuide(); }); }
@@ -511,7 +992,7 @@
           ox.beginPath(); line.forEach(([x, y], i) => (i ? ox.lineTo(x * Z, y * Z) : ox.moveTo(x * Z, y * Z))); ox.stroke();
         }
       }
-      if (mode !== 'path') return;
+      if (tool !== 'path') return;
       P.forEach((p, i) => {
         const h = handles(i);
         ox.strokeStyle = 'rgba(255,255,255,0.8)'; ox.lineWidth = 1;
@@ -525,86 +1006,83 @@
         ox.fillRect(p.x * Z - 5, p.y * Z - 5, 10, 10); ox.strokeRect(p.x * Z - 5, p.y * Z - 5, 10, 10);
       });
     }
-    $('pathNew').onclick = () => {
-      if (!L.guide) { setMode('path'); return; }
-      remember(); L.guide = null; pathSel = -1; setMode('path');
-      $('status').textContent = 'The tiles stay as they are. Click to start a new path.';
-    };
-    $('showPath').onchange = () => drawOver();
-    $('nums').onchange = () => drawOver();
-    let numsPending = false;
-    $('scroller').addEventListener('scroll', () => {
-      if (!$('nums').checked || numsPending) return;
-      numsPending = true; requestAnimationFrame(() => { numsPending = false; drawOver(); });
-    });
-    oc.addEventListener('mouseleave', () => { hover = null; drawOver(); });
-
-    /** Put the finish line at x (px), on a column edge, inside the level. */
-    function setFinish(x) {
-      L.finish = Math.max(2, Math.min(L.width - 2, Math.round(x / TILE))) * TILE;
-      drawOver(); save();
-      $('status').textContent = `Finish line ${Math.round(L.finish / TILE * 2.5)} m along. Drag to move it; No finish takes it away.`;
+    function pathDeletePoint() {
+      if (!L.guide?.pts[pathSel]) { say('Click a point first.'); return; }
+      remember(true); L.guide.pts.splice(pathSel, 1); pathSel = -1; layGuide(); save();
     }
-    $('noFinish').onclick = () => {
-      if (!Number.isFinite(L.finish)) return;
-      remember(); delete L.finish; drawOver(); save();
-      $('status').textContent = 'No finish line: the stage goes on until you quit.';
+    $('pathDel').onclick = pathDeletePoint;
+    $('pathNew').onclick = () => {
+      if (!L.guide) { setTool('path'); say('Click to start a path.'); return; }
+      remember(); L.guide = null; pathSel = -1; setTool('path');
+      say('The tiles stay as they are. Click to start a new path.');
     };
-    function setMode(m) {
-      mode = m;
-      $('modeFinish').classList.toggle('on', m === 'finish');
-      $('modePaint').classList.toggle('on', m === 'paint');
-      $('modeSelect').classList.toggle('on', m === 'select' || m === 'paste');
-      $('modePath').classList.toggle('on', m === 'path');
-      if (m === 'paint') box = null;
+
+    // ---- tools
+    const TITLES = { paint: 'Paint', select: 'Select', path: 'Path', start: 'Start point', finish: 'Finish line' };
+    function setTool(t) {
+      if (t !== 'select') { dropFloat(); box = null; }
+      tool = t;
+      document.querySelectorAll('.tool').forEach((b) => b.classList.toggle('on', b.dataset.tool === t));
+      document.querySelectorAll('.tp').forEach((p) => p.classList.toggle('on', p.dataset.tp === t));
+      $('toolTitle').textContent = TITLES[t];
+      if (t === 'start') $('startInfo').textContent = `The truck drops in ${(L.start[0] / TILE * METRES_PER_TILE).toFixed(1)} m along.`;
+      if (t === 'finish') $('finishInfo').textContent = Number.isFinite(L.finish) ? `Now ${Math.round(L.finish / TILE * METRES_PER_TILE)} m along.` : 'There is none now.';
       drawOver();
     }
-    $('modePaint').onclick = () => setMode('paint');
-    $('modeSelect').onclick = () => setMode('select');
-    $('modePath').onclick = () => setMode('path');
-    $('modeFinish').onclick = () => setMode('finish');
-    const boxTiles = () => {
-      const x0 = Math.min(box.x0, box.x1), x1 = Math.max(box.x0, box.x1), y0 = Math.min(box.y0, box.y1), y1 = Math.max(box.y0, box.y1);
-      return { x0, x1, y0, y1, tiles: L.tiles.slice(y0, y1 + 1).map((r) => r.slice(x0, x1 + 1)) };
-    };
-    const doUndo = () => { if (undo.length) { redo.push(snapshot()); restore(undo.pop()); save(); } };
-    const doRedo = () => { if (redo.length) { undo.push(snapshot()); restore(redo.pop()); save(); } };
+    document.querySelectorAll('.tool').forEach((b) => { b.onclick = () => setTool(b.dataset.tool); });
+    // buttons don't keep the keyboard focus, so Space and the shortcuts keep working
+    document.addEventListener('mousedown', (e) => { if (e.target.closest('button, .tool, summary')) e.preventDefault(); });
+
+    const doUndo = () => { if (undo.length) { redo.push(snapshot()); restore(undo.pop()); save(); say('Undone.'); } };
+    const doRedo = () => { if (redo.length) { undo.push(snapshot()); restore(redo.pop()); save(); say('Redone.'); } };
     $('undo').onclick = doUndo; $('redo').onclick = doRedo;
+    const toggle = (id) => { $(id).checked = !$(id).checked; $(id).onchange(); };
     window.addEventListener('keydown', (e) => {
-      if (e.target.tagName === 'INPUT') return;
-      const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) doRedo(); else doUndo(); return; }
-      if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); doRedo(); return; }
-      if (mod && (e.key === 'c' || e.key === 'x') && box) {
-        const b = boxTiles(); clip = b.tiles;
-        if (e.key === 'x') { remember(); for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) set(x, y, SKY); save(); }
+      if (e.target.closest?.('input, select, textarea') || $('help').open) return;
+      const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+      if (e.key === ' ') { e.preventDefault(); if (!spaceDown) { spaceDown = true; scroller.style.cursor = 'grab'; } return; }
+      if (mod && k === 'z') { e.preventDefault(); if (e.shiftKey) doRedo(); else doUndo(); return; }
+      if (mod && k === 'y') { e.preventDefault(); doRedo(); return; }
+      if (mod && k === 'c') { e.preventDefault(); selCopy(false); return; }
+      if (mod && k === 'x') { e.preventDefault(); selCopy(true); return; }
+      if (mod && k === 'v') { e.preventDefault(); selPaste(); return; }
+      if (mod && k === 'a') { e.preventDefault(); selAll(); return; }
+      if (mod) return;
+      const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+      if (arrows[e.key]) {
+        if (e.shiftKey) { e.preventDefault(); shift(...arrows[e.key]); }
+        else if (tool === 'select' && box) { e.preventDefault(); selNudge(...arrows[e.key]); }
+        return;
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (tool === 'path') pathDeletePoint(); else if (tool === 'select') selClear();
         e.preventDefault(); return;
       }
-      if (mod && e.key === 'v' && clip) { e.preventDefault(); setMode('paste'); return; }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && mode === 'path' && L.guide?.pts[pathSel]) {
-        remember(true); L.guide.pts.splice(pathSel, 1); pathSel = -1; layGuide(); save(); return;
-      }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && box) { remember(); const b = boxTiles(); for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) set(x, y, SKY); drawOver(); save(); return; }
-      const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-      if (e.shiftKey && !mod && arrows[e.key]) { e.preventDefault(); shift(...arrows[e.key]); return; }
-      if (e.key === 'Escape') { setMode(mode === 'paste' ? 'select' : 'paint'); box = null; drawOver(); return; }
-      if (e.key === 's' || e.key === 'S') setMode('select');
-      if (e.key === 'p' || e.key === 'P') setMode('paint');
-      if (e.key === 'd' || e.key === 'D') setMode('path');
-      if (e.key === 'f' || e.key === 'F') setMode('finish');
+      if (e.key === 'Escape') { if (tool === 'select') { dropFloat(); box = null; drawOver(); } else if (tool === 'path') { pathSel = -1; drawOver(); } closeMenus(); return; }
+      if (e.key === 'Enter') { if (flt) { dropFloat(); say('Dropped.'); } return; }
+      if (e.key === '+' || e.key === '=') { setZoom(Z * 1.25); return; }
+      if (e.key === '-' || e.key === '_') { setZoom(Z / 1.25); return; }
+      if (e.key === '0') { fitHeight(); return; }
+      if (e.key === '?') { $('help').showModal(); return; }
+      const tools = { b: 'paint', p: 'paint', s: 'select', m: 'select', d: 'path', t: 'start', f: 'finish' };
+      if (tools[k]) { setTool(tools[k]); return; }
+      if (k === 'h') { if (tool === 'select' && box) selFlip(); else flipTile(); return; }
+      if (k === 'g') toggle('grid');
+      if (k === 'c') toggle('coll');
+      if (k === 'n') toggle('nums');
     });
+    window.addEventListener('keyup', (e) => { if (e.key === ' ') { spaceDown = false; if (!dragging?.pan) scroller.style.cursor = ''; } });
+    window.addEventListener('blur', () => { spaceDown = false; });
 
-    // ---- view options
-    $('zoom').oninput = () => {
-      const sc = $('scroller'), fx = (sc.scrollLeft + sc.clientWidth / 2) / (L.width * TILE * Z), fy = (sc.scrollTop + sc.clientHeight / 2) / (L.height * TILE * Z);
-      sizeCanvas();
-      sc.scrollLeft = fx * L.width * TILE * Z - sc.clientWidth / 2; sc.scrollTop = fy * L.height * TILE * Z - sc.clientHeight / 2;
-    };
-    $('grid').onchange = drawOver; $('coll').onchange = drawOver;
+    // ---- menus, help
+    function closeMenus() { $('fileMenu').open = false; }
+    document.addEventListener('click', (e) => { if (!e.target.closest('#fileMenu')) closeMenus(); });
+    $('helpBtn').onclick = () => $('help').showModal();
     $('name').oninput = save;
 
     // ---- play, save, open
     $('play').onclick = () => {
+      dropFloat();
       L.name = $('name').value || 'My Track';
       try { localStorage.setItem(KEY, JSON.stringify(L)); } catch { alert('Could not store the level in this browser'); return; }
       window.open(`../index.html?test=custom${$('nodamage').checked ? '&damage=0' : ''}`, 'funkytruck-play');
@@ -614,6 +1092,7 @@
     const json = () => JSON.stringify({ ...stageOf(), ...(L.guide?.pts.length ? { path: L.guide.pts } : {}) });
     // Save to Game: into the game's list of stages (src/stages.js: newest first, same name replaced).
     $('toGame').onclick = () => {
+      dropFloat();
       L.name = $('name').value || 'My Track';
       try {
         let list = JSON.parse(localStorage.getItem('funkytruck.stages'));
@@ -621,7 +1100,7 @@
         const replaced = list.some((o) => o?.name === L.name);
         list = [{ ...stageOf(), saved: Date.now() }, ...list.filter((o) => o?.name !== L.name)].slice(0, 40);
         localStorage.setItem('funkytruck.stages', JSON.stringify(list));
-        $('status').textContent = `Saved "${L.name}" to the game (Stage Editor, Load Stage)${replaced ? ', replacing the one of the same name' : ''}.`;
+        say(`Saved "${L.name}" to the game (Stage Editor, Load Stage)${replaced ? ', replacing the one of the same name' : ''}.`);
       } catch { alert('Could not save the stage in this browser (its storage may be full or blocked).'); }
     };
     /** A saved path's points, checked, or null. */
@@ -634,23 +1113,28 @@
       return ok.length ? { pts: ok, base: null } : null;
     }
     $('export').onclick = () => {
+      closeMenus(); dropFloat();
       const url = URL.createObjectURL(new Blob([json()], { type: 'application/json' }));
       const link = Object.assign(document.createElement('a'), { href: url, download: `${(L.name || 'track').replace(/[^\w-]+/g, '-')}.json` });
       link.click(); URL.revokeObjectURL(url);
     };
-    $('copy').onclick = async () => { try { await navigator.clipboard.writeText(json()); $('status').textContent = 'Copied the level as JSON.'; } catch { $('status').textContent = 'Could not copy (the browser refused).'; } };
-    $('import').onclick = () => $('file').click();
+    $('copy').onclick = async () => {
+      closeMenus(); dropFloat();
+      try { await navigator.clipboard.writeText(json()); say('Copied the level as JSON.'); } catch { say('Could not copy (the browser refused).'); }
+    };
+    $('import').onclick = () => { closeMenus(); $('file').click(); };
     $('file').onchange = async () => {
       const f = $('file').files[0];
       if (!f) return;
       try {
         const v = JSON.parse(await f.text());
         if (!Array.isArray(v.tiles) || !v.tiles.length || !v.tiles.every((r) => Array.isArray(r) && r.length === v.tiles[0].length && r.every((id) => Number.isInteger(id) && id >= 0 && id < NT))) throw new Error('not a level');
-        remember();
+        dropFloat(); remember();
         L = { name: v.name || f.name.replace(/\.json$/, ''), width: v.tiles[0].length, height: v.tiles.length, tiles: v.tiles, start: Array.isArray(v.start) ? v.start : [3 * TILE, 3 * TILE], guide: readGuide(v.path) };
         if (Number.isFinite(v.finish) && v.finish > 0 && v.finish < L.width * TILE) L.finish = v.finish;
         $('w').value = L.width; $('h').value = L.height; $('name').value = L.name;
-        sizeCanvas(); save();
+        sizeLevel(); fitHeight(); save();
+        say(`Opened ${f.name}.`);
       } catch (err) { alert(`Couldn't open that file: ${err.message}`); }
       $('file').value = '';
     };
@@ -658,17 +1142,21 @@
     // ---- start: the last level edited in this browser, or a blank one
     try {
       const v = JSON.parse(localStorage.getItem(KEY));
-      if (v && Array.isArray(v.tiles)) {
+      if (v && Array.isArray(v.tiles) && v.tiles.length && v.tiles.every((r) => Array.isArray(r) && r.length === v.tiles[0].length)) {
         const base = v.guide?.base;
         const baseOk = Array.isArray(base) && base.length === v.tiles.length && base.every((r, y) => Array.isArray(r) && r.length === v.tiles[y].length);
-        L = { ...v, guide: readGuide(v.guide?.pts) };
+        L = { ...v, width: v.tiles[0].length, height: v.tiles.length, guide: readGuide(v.guide?.pts) };
+        if (!Array.isArray(L.start) || !L.start.every(Number.isFinite)) L.start = [3 * TILE, 3 * TILE];
         if (L.guide && baseOk) L.guide.base = base;
       }
     } catch { /* none */ }
     if (!L) L = blank(60, 24);
     $('w').value = L.width; $('h').value = L.height; $('name').value = L.name || 'My Track';
-    sizeCanvas();
-    $('status').textContent = 'Ready. Pick a tile on the left and paint; Load starts from one of the stages.';
+    drawPalette(); pick(2);
+    sizeView(); sizeLevel();
+    // open looking at the start point
+    scroller.scrollLeft = L.start[0] * Z - vw * 0.25; scroller.scrollTop = L.start[1] * Z - vh * 0.5;
+    say('Ready. Press ? for the keyboard and mouse.');
   </script>
 </body>
 </html>

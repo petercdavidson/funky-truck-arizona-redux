@@ -138,3 +138,61 @@ test('a long sketch on a wide level is quick', () => {
   assertJoined(r.chain);
   assert.ok(ms < 2500, `${ms.toFixed(0)} ms`);
 });
+
+// ---- the look (the tiles' art at their edges) and mirrors
+
+import { TILE_EDGES } from '../src/tile-art.js';
+import { MIRROR_PAIRS, NO_MIRROR, mirrorOf, flipTiles } from '../src/autotile.js';
+
+const artKit = buildKit(data.collision, data.levels, TILE, { edges: TILE_EDGES });
+
+/** A hill on flat ground, as a sketch (tile units in, px out). */
+function hillSketch(f) {
+  const pts = [];
+  for (let x = 1; x <= 16; x += 0.1) pts.push([x * TILE, f(x) * TILE]);
+  return pts;
+}
+
+test('the look pass joins the art up without changing the ground', () => {
+  let before = 0, after = 0;
+  for (const f of [(x) => Math.min(8.5, 3.55 + 0.88 * (x - 6.3) ** 2), (x) => Math.min(8.5, 3.6 + 1.25 * (x - 6.5) ** 2),
+    (x) => Math.min(8.5, 4.2 + 0.25 * (x - 8) ** 2), (x) => 8.5 - 1.2 * Math.max(0, Math.sin((x - 2) / 8 * Math.PI))]) {
+    const level = blank(18, 14, 8), line = hillSketch(f);
+    const plain = drawPath(level, line, artKit, { smooth: 2, look: false, art: 0 });
+    const looked = drawPath(level, line, artKit, { smooth: 2 });
+    assertJoined(looked.chain);
+    before += artKit.seamTotal(plain.tiles, 0, 18); after += artKit.seamTotal(looked.tiles, 0, 18);
+    // the same ground to drive on: only tiles with the same collision were swapped
+    assert.deepEqual(surface({ ...level, tiles: looked.tiles }, 1, 16), surface({ ...level, tiles: plain.tiles }, 1, 16));
+  }
+  assert.ok(after < before * 0.85, `seams ${before.toFixed(2)} -> ${after.toFixed(2)}`);
+});
+
+test('a sharp peak never puts two pieces in one cell', () => {
+  const r = drawPath(blank(18, 14, 8), hillSketch((x) => Math.min(8.5, 3.6 + 1.25 * (x - 6.5) ** 2)), artKit, { smooth: 2 });
+  const cells = r.chain.map((c) => `${c.x},${c.y}`);
+  assert.equal(new Set(cells).size, cells.length, cells.join(' '));
+  // each piece is in the tiles (or one of the same shape)
+  for (const c of r.chain) assert.ok(artKit.variants.get(c.id).includes(r.tiles[c.y][c.x]), `piece ${c.id} at ${c.x},${c.y}`);
+});
+
+test('mirrored tiles have mirrored collision, and flipping twice changes nothing', () => {
+  const seg = (d) => { const out = []; for (let i = 0; i < d.length; i += 5) out.push([d[i], d[i + 1], d[i + 2], d[i + 3]].map((v) => (v >= 63 ? 64 : v))); return out; };
+  const seen = new Set();
+  for (const [a, b] of MIRROR_PAIRS) {
+    assert.ok(!seen.has(a) && !seen.has(b), `${a} or ${b} listed twice`); seen.add(a); seen.add(b);
+    assert.ok(!NO_MIRROR.has(a) && !NO_MIRROR.has(b));
+    const A = seg(data.collision[a]), B = seg(data.collision[b]);
+    assert.equal(A.length, B.length, `${a} and ${b}: the same number of lines`);
+    for (const [x1, y1, x2, y2] of A) {
+      const m = [64 - x2, y2, 64 - x1, y1];
+      assert.ok(B.some((s) => s.every((v, k) => Math.abs(v - m[k]) <= 2)), `${a} mirrored is a line of ${b}`);
+    }
+    assert.equal(mirrorOf(mirrorOf(a)), a);
+  }
+  // every piece of ground but the kickers has a mirror (2 is its own)
+  for (const p of kit.pieces) if (!NO_MIRROR.has(p.id) && p.id !== 2) assert.ok(seen.has(p.id), `piece ${p.id} has a mirror`);
+  const rows = [[0, 4, 14, 97], [45, 1, 110, 2]];
+  assert.deepEqual(flipTiles(rows), [[94, 34, 24, 0], [2, 117, 1, 45]]);
+  assert.deepEqual(flipTiles(flipTiles(rows)), rows);
+});

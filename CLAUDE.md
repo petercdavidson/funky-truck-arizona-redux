@@ -67,7 +67,11 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `src/autotile.js` (no DOM): the editor's Path tool. Every tile with collision is a piece of
   floor running from one edge point to another; a sketched line becomes the chain of pieces that
   follows it best (a shortest-path search preferring joins the stages use), with the fill below
-  chosen as the stages do. Tested in `tests/autotile.test.mjs`.
+  chosen as the stages do, then a look pass that swaps fill tiles (and pieces of the same shape) so
+  the art joins up at tile edges, scored from `src/tile-art.js` (each tile's edge pixels, made by
+  `tools/make-tile-art.mjs`; rerun it if the tile art changes). Also `MIRROR_PAIRS` / `mirrorOf` /
+  `flipTiles`: which tiles are each other's left-right mirror (41 to 55, the kickers, have none).
+  Tested in `tests/autotile.test.mjs`.
 - `tools/map.html`: draws whole tracks as maps (serve the repo, open `/tools/map.html?stages=9,10,11`).
 - `tests/bot.mjs`: a simulated driver (backs up for run-ups when it stalls) for checking that
   generated courses can be driven. Endless never climbs more than `MAX_RISE` tiles within
