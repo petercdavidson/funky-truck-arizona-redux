@@ -448,7 +448,7 @@ export class Battle {
   /** An enemy is wrecked: it comes apart, blows up, and pays out. */
   takedown(e) {
     const g = this.game;
-    e.wreck = new Wreck(e.truck, this.mirror, this.mirrorThin);
+    e.wreck = new Wreck(e.truck, this.mirror, this.mirrorThin, e.look.body);
     e.health = 0;
     const [x, y] = e.centre;
     this.takedowns++;

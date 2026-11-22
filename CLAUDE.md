@@ -28,7 +28,9 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `src/sound-events.js` (no DOM) turns game state into sound cues; `src/audio.js` synthesises them
   with Web Audio (sound is on/off, off by default). `sounds.html` plays every sound. No
   sound files.
-- `src/wreck.js` (no DOM): the ragdoll wreck, a wrecked truck's loose pieces.
+- `src/wreck.js` (no DOM): the ragdoll wreck, a wrecked truck's loose pieces. Its body collides as
+  that body's own outline, `src/wreck-shapes.js`, made from the sprites by `tools/make-wreck-shapes.mjs`
+  (rerun it if the body art changes).
 - `src/battle.js` (no DOM): Sandbox's cars: rival cars (`Enemy`s with `s = 1`, kind `racer`, in
   `battle.racers`) and enemy cars (`s = -1`, in `battle.enemies`), truck-on-truck collisions,
   missiles, explosions, your boost and jump. Enemies are ordinary `Truck`s simulated in a mirrored

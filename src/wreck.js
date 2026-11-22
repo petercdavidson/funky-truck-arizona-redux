@@ -7,23 +7,32 @@
 // is one point that collides
 // with the normal (wheel-sized) collision world. The box and bars use a second collision world
 // built with a thin offset, so they rest on the ground rather than floating a wheel's height up.
-// The two wheels also hit each other and the body box (the bars pass through everything).
+// The two wheels also hit each other and the body (the bars pass through everything). The body is
+// each body sprite's own outline (BODY_SHAPES, traced from the sprites), not a plain box. The
+// wheels start overlapping the body, so those collisions ease in over WRECK.easeIn steps: at
+// first any overlap there was at the wreck is allowed, and it shrinks to none, so the pieces drift
+// apart rather than being shot apart; they're soft, too (an overlap is undone over a few steps).
+
+import { BODY_SHAPES } from './wreck-shapes.js';
 
 const GRAVITY = 0.11;     // the truck's gravity per step (Truck.integrate)
 
-// The body sprite's outline in its own frame (origin at the rear body mount, x towards the front
-// mount, 0.7 scale as drawn), shrunk a little so the corners sit on the ground convincingly. The
-// four corners come first; the points after them sit along the long edges, so a bump in the
-// ground can't poke up through the middle of the body.
-const BODY_BOX = [[-10, -26], [62, -26], [62, 10], [-10, 10], [14, -26], [38, -26], [38, 10], [14, 10]];
+// A body's outline in its own frame (origin at the rear body mount, x towards the front mount, 0.7
+// scale as drawn), shrunk a little so it sits on the ground convincingly: a plain box, used if a
+// body has no traced outline (see BODY_SHAPES). Points go round the outline in order.
+const BODY_BOX = [[-10, -26], [14, -26], [38, -26], [62, -26], [62, 10], [38, 10], [14, 10], [-10, 10]];
 
 // Per piece: share of the speed into the ground that bounces back, share of the speed along the
 // ground kept on each contact, and share of the speed kept each step in the air.
 export const WRECK = {
   part: { bounce: 0.3, friction: 0.86, air: 0.998 },     // the body and bars scrape to a halt
-  wheel: { bounce: 0.5, friction: 0.997, air: 0.9998 },  // the wheels roll on and bounce
+  wheel: { bounce: 0.75, friction: 0.993, air: 0.9998 }, // the wheels roll on and bounce, like rubber
   wheelRadius: 22.5,                                      // the wheels hit each other and the body as circles this size
   bodyShare: 0.3,                                         // how much of a wheel-body overlap the (heavier) body is moved
+  easeIn: 140,                                            // steps (2 s) over which an overlap at the wreck stops being allowed
+  soft: 0.35,
+  restSpeed: 1,
+  pushStill: 0.6,                                         // the share of a wheel's push out of the body (or the other wheel) that doesn't become speed                                           // px a step into the ground below which nothing bounces                                             // the share of an overlap undone each pass (3 passes a step)
 };
 
 /** The point nearest (x, y) on the polygon `poly` ([[x, y], ...]), and whether (x, y) is inside it. */
@@ -45,8 +54,9 @@ export class Wreck {
    * @param truck     the Truck at the moment it was wrecked
    * @param wheelWorld the game's CollisionWorld (offset for the wheel radius)
    * @param thinWorld  a CollisionWorld of the same level built with a small offset
+   * @param bodyType   which truck body (look.body), for its outline
    */
-  constructor(truck, wheelWorld, thinWorld) {
+  constructor(truck, wheelWorld, thinWorld, bodyType = 0) {
     this.wheelWorld = wheelWorld;
     this.thinWorld = thinWorld;
     this.T = [];
@@ -61,10 +71,11 @@ export class Wreck {
     };
     const stick = (a, b) => this.sticks.push([a, b, Math.hypot(this.T[b * 2] - this.T[a * 2], this.T[b * 2 + 1] - this.T[a * 2 + 1])]);
 
-    // Body: the four box corners, placed from the body mounts now and a step ago.
+    // Body: its outline's points, placed from the body mounts now and a step ago.
+    this.shape = BODY_SHAPES[bodyType] || BODY_BOX;
     const frame = (A, ax, ay, bx, by) => {
       const ang = Math.atan2(by - ay, bx - ax), c = Math.cos(ang), s = Math.sin(ang);
-      return BODY_BOX.map(([x, y]) => [ax + x * c - y * s, ay + x * s + y * c]);
+      return this.shape.map(([x, y]) => [ax + x * c - y * s, ay + x * s + y * c]);
     };
     const now = frame(T, T[6], T[7], T[8], T[9]);
     const before = frame(P, P[6], P[7], P[8], P[9]);
@@ -101,7 +112,10 @@ export class Wreck {
       return { a, b, frame: frameIndex, mount: frameIndex === 1 };
     });
     this.liftClear([...knees, ...this.bars.map((bar) => bar.b)], refs);
-    for (const bar of this.bars) if (bar.mount) for (const c of this.body.slice(0, 3)) stick(bar.b, c);
+    const nb = this.body.length, anchors = [0, Math.floor(nb / 3), Math.floor(nb * 2 / 3)].map((i) => this.body[i]);
+    for (const bar of this.bars) if (bar.mount) for (const c of anchors) stick(bar.b, c);
+    // How far the wheels overlap each other and the body to begin with (allowed, at first).
+    this.overlap0 = this.overlaps();
     this.steps = 0;
     this.gravity = truck.gravity ?? GRAVITY; // (Sandbox can change it)
   }
@@ -132,46 +146,70 @@ export class Wreck {
     }
   }
 
+  /** The body's outline, as points in the world. */
+  outline() { return this.body.map((i) => [this.T[i * 2], this.T[i * 2 + 1]]); }
+
+  /** How far the wheels overlap each other ({ ww }) and the body ({ wb: [rear, front] }) now. */
+  overlaps() {
+    const T = this.T, R = WRECK.wheelRadius, [a, b] = this.wheels.map((w) => w.p), poly = this.outline();
+    const ww = Math.max(0, 2 * R - Math.hypot(T[b * 2] - T[a * 2], T[b * 2 + 1] - T[a * 2 + 1]));
+    const wb = [a, b].map((w) => {
+      const h = nearestOnPolygon(poly, T[w * 2], T[w * 2 + 1]);
+      return h.inside ? R + h.d : Math.max(0, R - h.d);
+    });
+    return { ww, wb };
+  }
+
   /**
    * The loose wheels hit each other and the body: overlaps are pushed apart (positions only; the
-   * ground collisions after this keep anything from being pushed into the ground).
+   * ground collisions after this keep anything from being pushed into the ground). The overlap
+   * there was at the wreck is allowed at first, less and less over WRECK.easeIn steps, and each
+   * pass undoes only part of what's left (WRECK.soft), so nothing is flung apart.
    */
   collidePieces() {
-    const T = this.T, R = WRECK.wheelRadius;
+    const T = this.T, R = WRECK.wheelRadius, k = WRECK.soft;
+    // Move point i by (dx, dy): mostly just moved (now and a step ago alike), so a squeeze
+    // between pieces doesn't fling them; the rest becomes speed, so they still push apart.
+    const P = this.P, still = WRECK.pushStill;
+    const push = (i, dx, dy) => { T[i * 2] += dx; T[i * 2 + 1] += dy; P[i * 2] += dx * still; P[i * 2 + 1] += dy * still; };
+    const ease = Math.max(0, 1 - this.steps / WRECK.easeIn), O = this.overlap0;
     const [a, b] = this.wheels.map((w) => w.p);
     // wheel against wheel: equal shares
-    let dx = T[b * 2] - T[a * 2], dy = T[b * 2 + 1] - T[a * 2 + 1], d = Math.hypot(dx, dy);
-    if (d < 2 * R) {
-      const nx = d > 1e-6 ? dx / d : 1, ny = d > 1e-6 ? dy / d : 0, o = (2 * R - d) / 2;
-      T[a * 2] -= nx * o; T[a * 2 + 1] -= ny * o;
-      T[b * 2] += nx * o; T[b * 2 + 1] += ny * o;
+    let dx = T[b * 2] - T[a * 2], dy = T[b * 2 + 1] - T[a * 2 + 1];
+    const d = Math.hypot(dx, dy), o = 2 * R - d - O.ww * ease;
+    if (o > 0) {
+      const nx = d > 1e-6 ? dx / d : 1, ny = d > 1e-6 ? dy / d : 0, m = o * k / 2;
+      push(a, -nx * m, -ny * m);
+      push(b, nx * m, ny * m);
     }
-    // wheel against the body's box (its four corners)
-    const corners = this.body.slice(0, 4);
-    for (const w of [a, b]) {
+    // wheel against the body's outline
+    [a, b].forEach((w, n) => {
       const x = T[w * 2], y = T[w * 2 + 1];
-      const h = nearestOnPolygon(corners.map((i) => [T[i * 2], T[i * 2 + 1]]), x, y);
-      if (!h.inside && h.d >= R) continue;
-      // out of the box along the line from the nearest edge point (through it, if it's inside)
+      const h = nearestOnPolygon(this.outline(), x, y);
+      const over = (h.inside ? R + h.d : R - h.d) - O.wb[n] * ease;
+      if (over <= 0) return;
+      // out of the body along the line from the nearest edge point (through it, if it's inside)
       let nx = x - h.x, ny = y - h.y;
       const l = Math.hypot(nx, ny) || 1e-6;
       nx /= l; ny /= l;
       if (h.inside) { nx = -nx; ny = -ny; }
-      const o = h.inside ? R + h.d : R - h.d, k = WRECK.bodyShare;
-      T[w * 2] += nx * o * (1 - k); T[w * 2 + 1] += ny * o * (1 - k);
-      for (const i of this.body) { T[i * 2] -= nx * o * k; T[i * 2 + 1] -= ny * o * k; }
-    }
+      this.wheelOnBody = true;
+      const m = over * k, s = WRECK.bodyShare;
+      push(w, nx * m * (1 - s), ny * m * (1 - s));
+      for (const i of this.body) push(i, -nx * m * s, -ny * m * s);
+    });
   }
 
   /** The body's middle, for the camera to follow. */
   get centre() {
     let x = 0, y = 0;
-    for (const i of this.body.slice(0, 4)) { x += this.T[i * 2]; y += this.T[i * 2 + 1]; }
-    return [x / 4, y / 4];
+    for (const i of this.body) { x += this.T[i * 2]; y += this.T[i * 2 + 1]; }
+    return [x / this.body.length, y / this.body.length];
   }
 
   step() {
     const T = this.T, P = this.P;
+    this.wheelOnBody = false;
     for (let i = 0; i < T.length; i += 2) {
       const x = T[i], y = T[i + 1];
       const air = (this.thin[i >> 1] ? WRECK.part : WRECK.wheel).air;
@@ -181,6 +219,9 @@ export class Wreck {
     }
     // P now holds where each point was at the start of the step: sweep collisions from there.
     const from = P.slice(0);
+    // (where each point was heading this step, before anything stopped it: a wheel's bounce is
+    // from its speed coming in, not from how far it got before it touched the ground)
+    const aimed = T.slice(0);
     const touched = new Array(this.thin.length).fill(null);
     for (let it = 0; it < 3; it++) {
       for (const [a, b, rest] of this.sticks) {
@@ -198,17 +239,19 @@ export class Wreck {
         if (h) { T[i * 2] = h.x; T[i * 2 + 1] = h.y; touched[i] = h; }
       }
     }
-    // Whether the body is touching the ground (any side of it), for damage to a truck wrecked on purpose.
-    this.bodyTouching = this.body.some((i) => touched[i]);
+    // Whether the body is touching the ground (any side of it) or resting on a wheel, for damage to a truck wrecked on purpose.
+    this.bodyTouching = this.wheelOnBody || this.body.some((i) => touched[i]);
     // Bounce and friction for the points that touched the ground.
     for (let i = 0; i < touched.length; i++) {
       const h = touched[i];
       if (!h) continue;
-      const vx = T[i * 2] - from[i * 2], vy = T[i * 2 + 1] - from[i * 2 + 1];
+      const wheel = !this.thin[i];
+      const vx = (wheel ? aimed : T)[i * 2] - from[i * 2], vy = (wheel ? aimed : T)[i * 2 + 1] - from[i * 2 + 1];
       const vn = vx * h.nx + vy * h.ny;
       const tx = vx - vn * h.nx, ty = vy - vn * h.ny;
       const m = this.thin[i] ? WRECK.part : WRECK.wheel;
-      const out = vn < 0 ? -vn * m.bounce : vn;
+      // (a slow touch doesn't bounce: resting on the ground, gravity alone would make it hop)
+      const out = vn < -WRECK.restSpeed ? -vn * m.bounce : vn < 0 ? 0 : vn;
       P[i * 2] = T[i * 2] - (tx * m.friction + h.nx * out);
       P[i * 2 + 1] = T[i * 2 + 1] - (ty * m.friction + h.ny * out);
     }
@@ -224,11 +267,13 @@ export class Wreck {
     this.steps++;
   }
 
-  /** Where to draw the body: the rear mount's position and the angle (radians). */
-  static bodyPose(T, body) {
-    const ax = T[body[0] * 2], ay = T[body[0] * 2 + 1], bx = T[body[1] * 2], by = T[body[1] * 2 + 1];
-    const ang = Math.atan2(by - ay, bx - ax), c = Math.cos(ang), s = Math.sin(ang);
-    const [x0, y0] = BODY_BOX[0];
+  /** Where to draw the body (points T, outline `shape`): the rear mount's position and the angle (radians). */
+  static bodyPose(T, body, shape = BODY_BOX) {
+    // from the outline's first point and the one furthest along it
+    const j = shape.reduce((best, p, i) => (Math.hypot(p[0] - shape[0][0], p[1] - shape[0][1]) > Math.hypot(shape[best][0] - shape[0][0], shape[best][1] - shape[0][1]) ? i : best), 1);
+    const ax = T[body[0] * 2], ay = T[body[0] * 2 + 1], bx = T[body[j] * 2], by = T[body[j] * 2 + 1];
+    const [x0, y0] = shape[0], [x1, y1] = shape[j];
+    const ang = Math.atan2(by - ay, bx - ax) - Math.atan2(y1 - y0, x1 - x0), c = Math.cos(ang), s = Math.sin(ang);
     return { x: ax - (x0 * c - y0 * s), y: ay - (x0 * s + y0 * c), ang };
   }
 }

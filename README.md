@@ -152,7 +152,7 @@ gold:
 | Rival Cars | 0 to 8 trucks going your way, to race (they can't be wrecked) |
 | Enemy Cars | 0 to 8 trucks coming at you, to dodge or take out with missiles, rams and stomps |
 | Slow Motion | Off, Half, Quarter |
-| Hitboxes | show what the physics sees: the ground's collision lines (orange where they scrape the cab), the wheels, the cab's roof probe, the circles trucks hit each other with, and a wreck's pieces |
+| Hitboxes | show what the physics sees: the ground's collision lines (orange where they scrape the cab), the wheels and the cab's roof probe (all that touches the ground: each collides as a circle 21.5 px across), the circles trucks bump each other with (when there are other cars), and a wreck's pieces |
 
 Boost, jumps and missiles never run out, and there's no damage. On a stage, the enemy cars are
 spread out along it, and the finish line still ends the run, with your time (the clock runs from
@@ -249,7 +249,8 @@ saved to storage while a test parameter is set.
 | `src/audio.js`, `src/sound-events.js` | Synthesised sound, and the watcher that turns game events into sound cues. |
 | `sounds.html` | A page for hearing every sound. |
 | `src/trial.js` | Time Trial: time formats, saved best times, and ghosts (recorded as the truck's pose every other step, packed small). No DOM. |
-| `src/wreck.js` | The ragdoll wreck: a wrecked truck's pieces (outside Classic). The wheels come off and hit each other and the body; the suspension hangs from the body like legs. |
+| `src/wreck.js` | The ragdoll wreck: a wrecked truck's pieces (outside Classic). The wheels come off and bounce like rubber, and hit each other and the body (each body's own outline, `src/wreck-shapes.js`); those collisions ease in over two seconds, so a wreck comes apart without being flung apart. The suspension hangs from the body like legs. |
+| `tools/make-wreck-shapes.mjs` | Traces each body sprite's outline into `src/wreck-shapes.js`: serve the repo, then `node tools/make-wreck-shapes.mjs`. |
 | `src/battle.js` | Sandbox's rival and enemy cars, collisions between trucks, missiles and explosions, your boost and jump. |
 | `src/render-battle.js` | Drawing Sandbox's cars, missiles and explosions, and its HUD. |
 | `src/sandbox.js` | Sandbox Mode's settings, putting them into the game, and its cars (placing and looping them). |

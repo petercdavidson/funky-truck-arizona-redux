@@ -1228,7 +1228,7 @@ export class Game {
   selfWreck() {
     if (!this.selfWreckAllowed || this.screen !== 'playing' || this.wreck || this.endTimer > 0) return false;
     this.bankTricks();
-    this.wreck = new Wreck(this.truck, this.world, this.thinWorld);
+    this.wreck = new Wreck(this.truck, this.world, this.thinWorld, this.look.body);
     this.selfWrecked = true;
     this.tricks.reset();
     this.canUpright = false; this.righting = 0; this.stuck = 0;
@@ -1535,7 +1535,7 @@ export class Game {
       if (!this.rules.classic) {
         // The truck comes apart and collapses; the pieces tumble for a moment before the game-over
         // screen. (One wrecked on purpose is in pieces already.)
-        if (!this.wreck) this.wreck = new Wreck(this.truck, this.world, this.thinWorld);
+        if (!this.wreck) this.wreck = new Wreck(this.truck, this.world, this.thinWorld, this.look.body);
         this.endTimer = 160;
         this.tricks.reset();
       }

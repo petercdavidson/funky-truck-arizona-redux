@@ -712,7 +712,7 @@ export class Renderer {
   wreck(wreck, W, look) {
     const ctx = this.ctx;
     for (const b of wreck.bars) this.bar(W[b.a * 2], W[b.a * 2 + 1], W[b.b * 2], W[b.b * 2 + 1], b.frame);
-    const pose = Wreck.bodyPose(W, wreck.body);
+    const pose = Wreck.bodyPose(W, wreck.body, wreck.shape);
     ctx.save();
     ctx.translate(pose.x, pose.y);
     ctx.rotate(pose.ang);
@@ -1266,11 +1266,13 @@ export class Renderer {
       ctx.strokeStyle = colour; ctx.setLineDash(dash ? [5 * z, 4 * z] : []);
       ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.stroke();
     };
-    const R = game.truck.wheelRadius, T = v.T;
+    // (The wheels and the roof probe collide with the ground's lines pushed out by world.offset, a
+    // wheel's radius less 1: so each is, in effect, a circle that size.)
+    const R = game.world?.offset ?? game.truck.wheelRadius - 1, T = v.T;
     // What touches the ground (solid): each truck's two wheels, and the probe on the cab's roof
-    // (drawn as a red dot on a line from the chassis), which is the only part of the body the
-    // ground can touch (touching it scrapes the cab). The body itself has no collision with the
-    // ground. Trucks hit each other as circles (dashed, faint): shown only when there are others.
+    // (red, on a line from the chassis: a circle as big as a wheel's), which is the only part of
+    // the body the ground can touch (touching it scrapes the cab). The body itself has no
+    // collision with the ground. Trucks hit each other as circles (dashed, faint): shown only when there are others.
     const cars = [{ T, t: game.truck, s: 1 }];
     if (game.battle) for (const e of game.battle.bots) if (!e.wreck) cars.push({ T: e.truck.T, t: e.truck, s: e.s });
     if (!game.wreck && cars.length > 1) {
@@ -1284,7 +1286,7 @@ export class Renderer {
       for (const h of w.wheels) ring(W[h.p * 2], W[h.p * 2 + 1], R, 'rgba(255, 240, 90, 0.95)');
       ctx.setLineDash([]); ctx.strokeStyle = 'rgba(255, 90, 90, 0.95)';
       ctx.beginPath();
-      w.body.slice(0, 4).forEach((i, n) => (n ? ctx.lineTo(W[i * 2], W[i * 2 + 1]) : ctx.moveTo(W[i * 2], W[i * 2 + 1])));
+      w.body.forEach((i, n) => (n ? ctx.lineTo(W[i * 2], W[i * 2 + 1]) : ctx.moveTo(W[i * 2], W[i * 2 + 1])));
       ctx.closePath(); ctx.stroke();
       for (const b of w.bars) { ctx.beginPath(); ctx.moveTo(W[b.a * 2], W[b.a * 2 + 1]); ctx.lineTo(W[b.b * 2], W[b.b * 2 + 1]); ctx.stroke(); }
     }
@@ -1295,7 +1297,8 @@ export class Renderer {
       const a = c.t.bodyRot * Math.PI / 180, px = 10 * Math.cos(a) + 30 * Math.sin(a) + P[0], py = 10 * Math.sin(a) - 30 * Math.cos(a) + P[1];
       ctx.setLineDash([]); ctx.strokeStyle = 'rgba(255, 90, 90, 0.8)'; ctx.fillStyle = 'rgba(255, 90, 90, 0.95)';
       ctx.beginPath(); ctx.moveTo(s * P[0], P[1]); ctx.lineTo(s * px, py); ctx.stroke();
-      ctx.beginPath(); ctx.arc(s * px, py, 5 * z, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(s * px, py, 3 * z, 0, Math.PI * 2); ctx.fill();
+      ring(s * px, py, R, 'rgba(255, 90, 90, 0.9)');
     }
     ctx.restore();
   }

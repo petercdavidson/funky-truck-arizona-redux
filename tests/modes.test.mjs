@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Game, TILE, BALANCE_ANGLE, STUCK_STEPS, CAMERA, UPRIGHT_LINGER, TRICK_COOLDOWN, KMH_PER_PX_STEP, unpackLevel } from '../src/game.js';
 import { turnOver, memoryStore } from './helpers.mjs';
-import { WRECK } from '../src/wreck.js';
+import { WRECK, Wreck } from '../src/wreck.js';
+import { BODY_SHAPES } from '../src/wreck-shapes.js';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
 const settle = (g, n = 120) => { for (let i = 0; i < n; i++) g.step(); };
@@ -115,7 +116,7 @@ test('outside Classic a wreck comes apart into pieces that fall and settle on th
   assert.equal(g.screen, 'gameOver');
   assert.ok(steps < 200, `game over after about two seconds (${steps} steps)`);
   for (let i = 1; i < w.T.length; i += 2) assert.ok(w.T[i] < maxY, 'no piece fell out of the level');
-  for (let i = 0; i < 300; i++) w.step();
+  for (let i = 0; i < 600; i++) w.step(); // (a loose wheel can rock back and forth in a dip for a while)
   let moving = 0;
   for (let i = 0; i < w.T.length; i++) moving = Math.max(moving, Math.abs(w.T[i] - w.P[i]));
   assert.ok(moving < 0.5, `the pieces came to rest (${moving.toFixed(2)})`);
@@ -136,8 +137,8 @@ test('a wreck\'s wheels hit each other and the body instead of passing through',
   const w = g.wreck, T = w.T, [a, b] = w.wheels.map((h) => h.p), R = WRECK.wheelRadius;
   // throw the front wheel at the rear one, and the rear one into the middle of the body
   // (both stopped dead, so only the collisions can part them)
-  const box = w.body.slice(0, 4);
-  const mid = (k) => box.reduce((sum, i) => sum + T[i * 2 + k], 0) / 4;
+  const box = w.body;
+  const mid = (k) => box.reduce((sum, i) => sum + T[i * 2 + k], 0) / box.length;
   const ax = mid(0), ay = mid(1);
   for (const [p, x, y] of [[a, ax, ay], [b, ax + 10, ay]]) { T[p * 2] = w.P[p * 2] = x; T[p * 2 + 1] = w.P[p * 2 + 1] = y; }
   let worst = 0;
@@ -150,11 +151,69 @@ test('a wreck\'s wheels hit each other and the body instead of passing through',
   const inBox = (x, y) => {
     const pts = box.map((i) => [T[i * 2], T[i * 2 + 1]]);
     let inside = false;
-    for (let i = 0, j = 3; i < 4; j = i++) if ((pts[j][1] > y) !== (pts[i][1] > y) && x < pts[j][0] + (y - pts[j][1]) / (pts[i][1] - pts[j][1]) * (pts[i][0] - pts[j][0])) inside = !inside;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) if ((pts[j][1] > y) !== (pts[i][1] > y) && x < pts[j][0] + (y - pts[j][1]) / (pts[i][1] - pts[j][1]) * (pts[i][0] - pts[j][0])) inside = !inside;
     return inside;
   };
   for (const p of [a, b]) assert.ok(!inBox(T[p * 2], T[p * 2 + 1]), 'no wheel ends up inside the body');
   for (const v of T) assert.ok(Number.isFinite(v));
+});
+
+test('a truck wrecked at rest comes apart gently: nothing is flung off', () => {
+  for (let body = 0; body < 6; body++) {
+    const g = new Game(data, { random: () => 0.5 });
+    g.look.body = body; g.look.paint = body;
+    g.startCampaign();
+    settle(g, 200);
+    g.selfWreck();
+    const w = g.wreck;
+    let up = 0, sideways = 0;
+    for (let i = 0; i < 280; i++) {
+      w.step();
+      for (let p = 0; p < w.T.length; p += 2) {
+        up = Math.max(up, w.P[p + 1] - w.T[p + 1]);
+        sideways = Math.max(sideways, Math.abs(w.T[p] - w.P[p]));
+      }
+    }
+    // (it collapses: pieces fall and tip, but none is thrown up or shot sideways; before the
+    // collisions eased in, pieces left at 9 px a step up and 6 sideways)
+    assert.ok(up < 3, `body ${body}: a piece went up at ${up.toFixed(2)} px a step`);
+    assert.ok(sideways < 4, `body ${body}: a piece went ${sideways.toFixed(2)} px a step sideways`);
+  }
+});
+
+test('each body\'s wreck outline is drawn where the truck\'s body was', () => {
+  for (let body = 0; body < 6; body++) {
+    const g = new Game(data);
+    g.look.body = body;
+    g.startCampaign();
+    settle(g);
+    const t = g.truck, mount = [t.T[6], t.T[7]], ang = Math.atan2(t.T[9] - t.T[7], t.T[8] - t.T[6]);
+    g.selfWreck();
+    const w = g.wreck;
+    assert.equal(w.shape, BODY_SHAPES[body]);
+    const pose = Wreck.bodyPose(w.T, w.body, w.shape);
+    assert.ok(Math.hypot(pose.x - mount[0], pose.y - mount[1]) < 8, `body ${body}: drawn at the mount (${pose.x.toFixed(1)}, ${pose.y.toFixed(1)})`);
+    assert.ok(Math.abs(pose.ang - ang) < 0.1, `body ${body}: at the body's angle`);
+  }
+});
+
+test('a wreck\'s wheels bounce like rubber', () => {
+  const g = new Game(data, { random: () => 0.5 });
+  g.startCampaign();
+  settle(g);
+  g.selfWreck();
+  const w = g.wreck, p = w.wheels[0].p, T = w.T, P = w.P;
+  // drop it from above the ground, clear of the other pieces, falling at 8 px a step
+  const x = T[p * 2] + 300, ground = g.world.collide(x, T[p * 2 + 1] - 1000, x, T[p * 2 + 1] + 600);
+  T[p * 2] = P[p * 2] = x; T[p * 2 + 1] = ground.y - 200; P[p * 2 + 1] = T[p * 2 + 1] - 8;
+  const slope = Math.abs(ground.nx);
+  let down = 0, up = 0;
+  for (let i = 0; i < 60; i++) {
+    w.step();
+    const vy = T[p * 2 + 1] - P[p * 2 + 1];
+    if (vy > 0 && !up) down = Math.max(down, vy); else if (vy < 0) up = Math.max(up, -vy);
+  }
+  assert.ok(up > down * 0.5, `it bounced back up at ${up.toFixed(1)} of ${down.toFixed(1)} px a step (ground slope ${slope.toFixed(2)})`);
 });
 
 test('one-button controls: the button drives on the ground and tilts back in the air', () => {
