@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Game, TILE, STUCK_STEPS, CAMERA, UPRIGHT_LINGER, TRICK_COOLDOWN } from '../src/game.js';
+import { Game, TILE, STUCK_STEPS, CAMERA, UPRIGHT_LINGER, TRICK_COOLDOWN, KMH_PER_PX_STEP } from '../src/game.js';
 import { turnOver, memoryStore } from './helpers.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
@@ -537,4 +537,19 @@ test('Endless scrolling the world never makes the camera jump', () => {
   }
   assert.ok(shifts > 0, 'the world scrolled');
   assert.ok(worst < 25, `the truck moved up to ${worst.toFixed(0)} across the screen in one step`);
+});
+
+test('the speedometer reads the truck speed in km/h', () => {
+  assert.ok(Math.abs(KMH_PER_PX_STEP - 9.84375) < 1e-9, '1 px/step is about 9.8 km/h');
+  const g = new Game(data);
+  g.startCampaign();
+  g.keys.up = true;
+  let max = 0;
+  for (let i = 0; i < 400; i++) {
+    g.step();
+    const t = g.truck, raw = Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]) * KMH_PER_PX_STEP;
+    if (i > 30) assert.ok(Math.abs(g.speedKmh - raw) < 25, `reads ${g.speedKmh.toFixed(0)}, truck doing ${raw.toFixed(0)}`);
+    max = Math.max(max, g.speedKmh);
+  }
+  assert.ok(max > 40 && max < 200, `a sensible top speed (${max.toFixed(0)} km/h)`);
 });

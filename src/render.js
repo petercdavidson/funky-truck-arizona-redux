@@ -14,6 +14,7 @@ const FILL_SCREENS = new Set(['playing', 'paused', 'gameOver']);
 const MENU_SCREENS = new Set(['title', 'help', 'garage', 'practiceSelect']);
 const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
+const SPEEDO_MAX = 160;  // km/h at which the speedometer's bar is full
 
 // ---------------------------------------------------------------------------------------------
 // Clickable areas per screen. `label` buttons are drawn by us; the rest are hotspots over the
@@ -473,19 +474,25 @@ export class Renderer {
     this.hud(game);
   }
 
-  hud(game) { // Symbol 305 / X3323
+  /** A HUD meter in the original damage bar's style: a label, a bar filled to `share`, and optionally a reading just right of the bar. */
+  meter(name, share, y, reading = '') {
     const ctx = this.ctx;
-    if (game.rules.damage) {
-      // The label's left edge lines up with the damage bar's.
-      const label = { size: 15, font: HUD_FONT, weight: '800', align: 'left' };
-      ctx.font = `${label.weight} ${label.size}px ${label.font}`;
-      ctx.textAlign = 'left';
-      this.text('damage', 13.1 + ctx.measureText('damage').actualBoundingBoxLeft, 7.5, label);
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.fillRect(13.1, 25, 80, 10);
-      ctx.fillStyle = 'rgba(255,255,255,0.8)';
-      ctx.fillRect(13.1, 25, 80 * game.damage / 1000, 10);
-    }
+    // The label's left edge lines up with the bar's.
+    const label = { size: 15, font: HUD_FONT, weight: '800', align: 'left' };
+    ctx.font = `${label.weight} ${label.size}px ${label.font}`;
+    this.text(name, 13.1 + ctx.measureText(name).actualBoundingBoxLeft, y, label);
+    if (reading) this.text(reading, 99, y + 16.2, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', color: 'rgba(255,255,255,0.9)' });
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(13.1, y + 17.5, 80, 10);
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillRect(13.1, y + 17.5, 80 * Math.max(0, Math.min(1, share)), 10);
+  }
+
+  hud(game) { // Symbol 305 / X3323
+    let y = 7.5;
+    if (game.rules.damage) { this.meter('damage', game.damage / 1000, y); y += 34; }
+    // Outside Classic: the speedometer, in km/h (the bar is full at SPEEDO_MAX).
+    if (!game.rules.classic) this.meter('speed', game.speedKmh / SPEEDO_MAX, y, `${Math.round(game.speedKmh)} km/h`);
     this.text('score', 566.5, 9, { size: 12.5, font: HUD_FONT, weight: '800', align: 'right' });
     const hud = { size: 12.85, font: HUD_FONT, weight: '800', align: 'right' };
     this.text(String(game.score), 566, 22, hud);

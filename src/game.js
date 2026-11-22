@@ -17,6 +17,8 @@ const PI = Math.PI;
 
 /** Endless Mode: metres shown per tile column travelled, and points per column. */
 export const METRES_PER_TILE = 2.5;
+/** The speedometer: km/h for a speed of one pixel per step (70 steps a second, 2.5 m a tile). */
+export const KMH_PER_PX_STEP = STEP_HZ * METRES_PER_TILE / TILE * 3.6;
 const POINTS_PER_TILE = 10;
 
 // ---------------------------------------------------------------------------------------------
@@ -516,6 +518,7 @@ export class Game {
     this.dynamicCamera = flag('dynamicCamera', true);
     this.wreck = null;                // the pieces of a wrecked truck (outside Classic)
     this.scraping = false;            // the cab is scraping the ground this step
+    this.speedKmh = 0;                // the speedometer (outside Classic), smoothed a little
     this.stuck = 0;                   // steps the truck has spent stuck (flip-upright assist)
     this.canUpright = false;
     this.righting = 0;                // steps left of a flip upright
@@ -630,6 +633,7 @@ export class Game {
     const s = this.levelData.start;
     this.truck.reset(s[0], s[1]);
     this.truck.rearWheelRot = 0; this.truck.frontWheelRot = 0;
+    this.speedKmh = 0;
     this.zoom = 1; this.zoomV = 0; this.ground = 0; this.groundV = 0; this.camSpeed = 0; this.camSpeedV = 0;
     this.camX = Math.min(Math.max(s[0] - 150, 0), this.maxCamX);       // s4833
     this.camY = s[1] - this.viewH / 2;
@@ -970,6 +974,7 @@ export class Game {
       case 'playing':
         if (!this.world) return;
         if (this.wreck) this.wreck.step(); else this.stepTruck(this.world);
+        this.updateSpeedometer();
         if (this.keys.upright) this.upright();
         if (this.mode === 'endless') this.updateEndless();
         this.updateCamera();
@@ -1000,6 +1005,13 @@ export class Game {
       default:
         break;
     }
+  }
+
+  /** The speedometer reads the truck's speed, smoothed so it doesn't flicker; a wreck reads 0. */
+  updateSpeedometer() {
+    const t = this.truck;
+    const raw = this.wreck ? 0 : Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]) * KMH_PER_PX_STEP;
+    this.speedKmh += (raw - this.speedKmh) * 0.15;
   }
 
   /** Toggle pause directly (for touch/gamepad buttons, which are taps rather than held keys). */
