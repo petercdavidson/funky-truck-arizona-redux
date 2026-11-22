@@ -216,6 +216,29 @@ test('a wreck\'s wheels bounce like rubber', () => {
   assert.ok(up > down * 0.5, `it bounced back up at ${up.toFixed(1)} of ${down.toFixed(1)} px a step (ground slope ${slope.toFixed(2)})`);
 });
 
+test('a wreck settles completely: no trembling, no wheel turning for ever, and it wakes if pushed', () => {
+  for (const [stage, drive, body] of [[0, 400, 0], [1, 300, 2], [2, 500, 4], [3, 250, 0], [5, 600, 4]]) {
+    const g = new Game(data, { random: () => 0.5 });
+    g.look.body = body;
+    g.startPractice(stage);
+    g.rules = { classic: false, damage: false };
+    for (let i = 0; i < drive; i++) { g.keys.up = true; g.step(); }
+    g.keys.up = false;
+    g.selfWreck();
+    const w = g.wreck;
+    for (let i = 0; i < 1400; i++) w.step();
+    const before = w.T.slice(), rot = w.wheels.map((h) => h.rot);
+    for (let i = 0; i < 140; i++) w.step();
+    const moved = Math.max(...w.T.map((v, i) => Math.abs(v - before[i])));
+    assert.ok(moved < 0.01, `stage ${stage + 1}, body ${body}: still moving (${moved.toFixed(3)} px in 2 s)`);
+    assert.deepEqual(w.wheels.map((h) => h.rot), rot, `stage ${stage + 1}, body ${body}: a wheel still turning`);
+    // something knocks it (a blast pushes its points): it wakes and moves
+    for (let i = 0; i < w.P.length; i += 2) w.P[i + 1] += 3;
+    w.step();
+    assert.ok(Math.max(...w.T.map((v, i) => Math.abs(v - before[i]))) > 1, 'woken by a push');
+  }
+});
+
 test('one-button controls: the button drives on the ground and tilts back in the air', () => {
   const g = new Game(data);
   g.toggle('oneButton');
@@ -348,7 +371,7 @@ test('outside Classic the camera follows a big jump up and back down; Classic st
   }
 });
 
-test('wreck wheels keep rolling after the body has stopped', () => {
+test('wreck wheels keep rolling and turning after a crash', () => {
   const g = new Game(data);
   g.startCampaign();
   g.keys.up = true;
@@ -360,9 +383,8 @@ test('wreck wheels keep rolling after the body has stopped', () => {
   for (let i = 0; i < 140; i++) w.step();
   const speed = (i) => Math.hypot(w.T[i * 2] - w.P[i * 2], w.T[i * 2 + 1] - w.P[i * 2 + 1]);
   const wheels = Math.max(...w.wheels.map((x) => speed(x.p)));
-  const body = Math.max(...w.body.map(speed));
   assert.ok(wheels > 1, `a wheel is still rolling (${wheels.toFixed(2)} px/step)`);
-  assert.ok(body < wheels, `faster than the body (${body.toFixed(2)})`);
+  assert.ok(w.wheels.some((x) => Math.abs(x.spin) > 0.5), 'and turning as it rolls');
 });
 
 test('a wreck that starts with its cab in the ground is lifted clear and never sinks in', () => {

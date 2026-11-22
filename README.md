@@ -249,7 +249,7 @@ saved to storage while a test parameter is set.
 | `src/audio.js`, `src/sound-events.js` | Synthesised sound, and the watcher that turns game events into sound cues. |
 | `sounds.html` | A page for hearing every sound. |
 | `src/trial.js` | Time Trial: time formats, saved best times, and ghosts (recorded as the truck's pose every other step, packed small). No DOM. |
-| `src/wreck.js` | The ragdoll wreck: a wrecked truck's pieces (outside Classic). The wheels come off and bounce like rubber, and hit each other and the body (each body's own outline, `src/wreck-shapes.js`); those collisions ease in over two seconds, so a wreck comes apart without being flung apart. The suspension hangs from the body like legs. |
+| `src/wreck.js` | The ragdoll wreck: a wrecked truck's pieces (outside Classic). The wheels come off and bounce like rubber, and hit each other and the body (each body's own outline, `src/wreck-shapes.js`); those collisions ease in over two seconds, so a wreck comes apart without being flung apart, and pieces resting on each other stay put (once everything has settled the wreck goes still until something knocks it). The suspension hangs from the body like legs. |
 | `tools/make-wreck-shapes.mjs` | Traces each body sprite's outline into `src/wreck-shapes.js`: serve the repo, then `node tools/make-wreck-shapes.mjs`. |
 | `src/battle.js` | Sandbox's rival and enemy cars, collisions between trucks, missiles and explosions, your boost and jump. |
 | `src/render-battle.js` | Drawing Sandbox's cars, missiles and explosions, and its HUD. |

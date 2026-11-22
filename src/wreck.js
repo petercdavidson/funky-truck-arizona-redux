@@ -32,7 +32,12 @@ export const WRECK = {
   easeIn: 140,                                            // steps (2 s) over which an overlap at the wreck stops being allowed
   soft: 0.35,
   restSpeed: 1,
-  pushStill: 0.6,                                         // the share of a wheel's push out of the body (or the other wheel) that doesn't become speed                                           // px a step into the ground below which nothing bounces                                             // the share of an overlap undone each pass (3 passes a step)
+  slop: 0.5,                                              // px of overlap between pieces let be (so resting contact doesn't jitter)
+  bodyRub: 0.85,
+  grip: 0.8,
+  staticSpeed: 0.15,                                      // px a step: a body or bar point on the ground sliding slower than this stops (static friction)                                              // pieces touching keep this share of their sliding speed along each other a pass                                          // a wheel against the body (and not the ground) keeps this share of its spin a step
+  sleepSpeed: 0.2,                                        // px a step: slower than this everywhere, on the ground, for sleepAfter steps, and the wreck stops
+  sleepAfter: 35,                                         // the share of a wheel's push out of the body (or the other wheel) that doesn't become speed                                           // px a step into the ground below which nothing bounces                                             // the share of an overlap undone each pass (3 passes a step)
 };
 
 /** The point nearest (x, y) on the polygon `poly` ([[x, y], ...]), and whether (x, y) is inside it. */
@@ -161,42 +166,68 @@ export class Wreck {
   }
 
   /**
-   * The loose wheels hit each other and the body: overlaps are pushed apart (positions only; the
-   * ground collisions after this keep anything from being pushed into the ground). The overlap
-   * there was at the wreck is allowed at first, less and less over WRECK.easeIn steps, and each
-   * pass undoes only part of what's left (WRECK.soft), so nothing is flung apart.
+   * The loose wheels hit each other and the body. Overlaps are moved apart (now and a step ago
+   * alike, so the move itself adds no speed), gently: the overlap there was at the wreck is
+   * allowed at first, less and less over WRECK.easeIn steps, a little (WRECK.slop) always is, and
+   * each pass undoes only part of what's left (WRECK.soft). Then the speed they have towards each
+   * other is taken away (bouncing back off a hard knock, as off the ground), so pieces resting on
+   * each other stay put instead of trembling. The ground collisions after this keep anything from
+   * being pushed into the ground.
    */
   collidePieces() {
-    const T = this.T, R = WRECK.wheelRadius, k = WRECK.soft;
-    // Move point i by (dx, dy): mostly just moved (now and a step ago alike), so a squeeze
-    // between pieces doesn't fling them; the rest becomes speed, so they still push apart.
-    const P = this.P, still = WRECK.pushStill;
-    const push = (i, dx, dy) => { T[i * 2] += dx; T[i * 2 + 1] += dy; P[i * 2] += dx * still; P[i * 2 + 1] += dy * still; };
+    const T = this.T, P = this.P, R = WRECK.wheelRadius, k = WRECK.soft;
     const ease = Math.max(0, 1 - this.steps / WRECK.easeIn), O = this.overlap0;
     const [a, b] = this.wheels.map((w) => w.p);
+    // (`shift` keeps these moves, so the ground's bounce and friction, after, don't count them as speed)
+    const sh = this.shift;
+    const move = (i, dx, dy) => { T[i * 2] += dx; T[i * 2 + 1] += dy; P[i * 2] += dx; P[i * 2 + 1] += dy; sh[i * 2] += dx; sh[i * 2 + 1] += dy; };
+    const vel = (i) => [T[i * 2] - P[i * 2], T[i * 2 + 1] - P[i * 2 + 1]];
+    // (`kick` keeps these, so a wheel's ground bounce, after, starts from its speed with them)
+    const kick = this.kick;
+    const speedUp = (i, dx, dy) => { P[i * 2] -= dx; P[i * 2 + 1] -= dy; kick[i * 2] += dx; kick[i * 2 + 1] += dy; };
+    /**
+     * Pieces A and B (lists of points; B moves `share` of what they're moved apart) touching
+     * along (nx, ny), from A to B: take away the speed they have towards each other, and some of
+     * their sliding along each other.
+     */
+    const stop = (A, B, nx, ny, share) => {
+      const avg = (L) => L.reduce((s, i) => { const v = vel(i); return [s[0] + v[0] / L.length, s[1] + v[1] / L.length]; }, [0, 0]);
+      const va = avg(A), vb = avg(B), rx = vb[0] - va[0], ry = vb[1] - va[1], vn = rx * nx + ry * ny;
+      // grip: some of their sliding along each other goes (pieces can rest on each other, not skate)
+      const tx = rx - vn * nx, ty = ry - vn * ny, g = 1 - WRECK.grip;
+      for (const i of A) speedUp(i, tx * g * (1 - share), ty * g * (1 - share));
+      for (const i of B) speedUp(i, -tx * g * share, -ty * g * share);
+      if (vn >= 0) return; // already parting
+      const j = -vn * (1 + (-vn > WRECK.restSpeed ? WRECK.wheel.bounce : 0));
+      for (const i of A) speedUp(i, -nx * j * (1 - share), -ny * j * (1 - share));
+      for (const i of B) speedUp(i, nx * j * share, ny * j * share);
+    };
     // wheel against wheel: equal shares
-    let dx = T[b * 2] - T[a * 2], dy = T[b * 2 + 1] - T[a * 2 + 1];
-    const d = Math.hypot(dx, dy), o = 2 * R - d - O.ww * ease;
+    const dx = T[b * 2] - T[a * 2], dy = T[b * 2 + 1] - T[a * 2 + 1];
+    const d = Math.hypot(dx, dy), o = 2 * R - d - O.ww * ease - WRECK.slop;
     if (o > 0) {
       const nx = d > 1e-6 ? dx / d : 1, ny = d > 1e-6 ? dy / d : 0, m = o * k / 2;
-      push(a, -nx * m, -ny * m);
-      push(b, nx * m, ny * m);
+      move(a, -nx * m, -ny * m);
+      move(b, nx * m, ny * m);
+      stop([a], [b], nx, ny, 0.5);
     }
-    // wheel against the body's outline
+    // wheel against the body's outline (the body, heavier, moves WRECK.bodyShare of it)
     [a, b].forEach((w, n) => {
       const x = T[w * 2], y = T[w * 2 + 1];
       const h = nearestOnPolygon(this.outline(), x, y);
-      const over = (h.inside ? R + h.d : R - h.d) - O.wb[n] * ease;
+      const over = (h.inside ? R + h.d : R - h.d) - O.wb[n] * ease - WRECK.slop;
       if (over <= 0) return;
+      this.wheelOnBody = true;
+      this.rubbing[n] = true;
       // out of the body along the line from the nearest edge point (through it, if it's inside)
       let nx = x - h.x, ny = y - h.y;
       const l = Math.hypot(nx, ny) || 1e-6;
       nx /= l; ny /= l;
       if (h.inside) { nx = -nx; ny = -ny; }
-      this.wheelOnBody = true;
       const m = over * k, s = WRECK.bodyShare;
-      push(w, nx * m * (1 - s), ny * m * (1 - s));
-      for (const i of this.body) push(i, -nx * m * s, -ny * m * s);
+      move(w, nx * m * (1 - s), ny * m * (1 - s));
+      for (const i of this.body) move(i, -nx * m * s, -ny * m * s);
+      stop(this.body, [w], nx, ny, 1 - s);
     });
   }
 
@@ -209,7 +240,17 @@ export class Wreck {
 
   step() {
     const T = this.T, P = this.P;
+    // Asleep (settled, see below): nothing moves until something moves it (a blast, a truck).
+    if (this.asleep) {
+      let moved = false;
+      for (let i = 0; i < T.length && !moved; i++) moved = T[i] !== this.asleep[i] || P[i] !== T[i];
+      if (!moved) { this.steps++; return; }
+      this.asleep = null; this.still = 0;
+    }
     this.wheelOnBody = false;
+    this.rubbing = [false, false];
+    this.shift = new Float64Array(T.length);
+    this.kick = new Float64Array(T.length);
     for (let i = 0; i < T.length; i += 2) {
       const x = T[i], y = T[i + 1];
       const air = (this.thin[i >> 1] ? WRECK.part : WRECK.wheel).air;
@@ -245,26 +286,43 @@ export class Wreck {
     for (let i = 0; i < touched.length; i++) {
       const h = touched[i];
       if (!h) continue;
-      const wheel = !this.thin[i];
-      const vx = (wheel ? aimed : T)[i * 2] - from[i * 2], vy = (wheel ? aimed : T)[i * 2 + 1] - from[i * 2 + 1];
+      // (a wheel: its speed coming in; a body or bar point: where it got to, less any move out of a
+      // wheel, which isn't speed)
+      const wheel = !this.thin[i], sh = this.shift;
+      const kk = this.kick;
+      const vx = wheel ? aimed[i * 2] - from[i * 2] + kk[i * 2] : T[i * 2] - from[i * 2] - sh[i * 2];
+      const vy = wheel ? aimed[i * 2 + 1] - from[i * 2 + 1] + kk[i * 2 + 1] : T[i * 2 + 1] - from[i * 2 + 1] - sh[i * 2 + 1];
       const vn = vx * h.nx + vy * h.ny;
-      const tx = vx - vn * h.nx, ty = vy - vn * h.ny;
+      let tx = vx - vn * h.nx, ty = vy - vn * h.ny;
+      // static friction: a body or bar point barely sliding on the ground stays put
+      if (!wheel && Math.hypot(tx, ty) < WRECK.staticSpeed) { tx = 0; ty = 0; }
       const m = this.thin[i] ? WRECK.part : WRECK.wheel;
       // (a slow touch doesn't bounce: resting on the ground, gravity alone would make it hop)
       const out = vn < -WRECK.restSpeed ? -vn * m.bounce : vn < 0 ? 0 : vn;
       P[i * 2] = T[i * 2] - (tx * m.friction + h.nx * out);
       P[i * 2 + 1] = T[i * 2 + 1] - (ty * m.friction + h.ny * out);
     }
-    // Wheels roll on the ground and keep spinning in the air.
-    for (const w of this.wheels) {
+    // Wheels roll on the ground, rub to a stop against the body, and keep spinning in the air.
+    this.wheels.forEach((w, n) => {
       const h = touched[w.p];
       if (h) {
         const vx = T[w.p * 2] - P[w.p * 2], vy = T[w.p * 2 + 1] - P[w.p * 2 + 1];
         w.spin = (h.ny * vx - h.nx * vy) / this.circumference * -360;
-      }
+      } else if (this.rubbing[n]) w.spin *= WRECK.bodyRub;
       w.rot += w.spin;
-    }
+    });
     this.steps++;
+    // Settled: everything slower than WRECK.sleepSpeed, and on the ground, for a while. Then it
+    // stops for good (until something moves it), rather than trembling for ever.
+    let fastest = 0;
+    for (let i = 0; i < T.length; i += 2) fastest = Math.max(fastest, Math.hypot(T[i] - P[i], T[i + 1] - P[i + 1]));
+    const grounded = touched.some(Boolean);
+    this.still = fastest < WRECK.sleepSpeed && grounded && this.gravity > 0 && this.steps > WRECK.easeIn ? (this.still || 0) + 1 : 0;
+    if (this.still >= WRECK.sleepAfter) {
+      for (let i = 0; i < T.length; i++) P[i] = T[i];
+      for (const w of this.wheels) w.spin = 0;
+      this.asleep = T.slice(0);
+    }
   }
 
   /** Where to draw the body (points T, outline `shape`): the rear mount's position and the angle (radians). */
