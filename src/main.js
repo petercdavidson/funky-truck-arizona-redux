@@ -84,6 +84,7 @@ function chooseMode() {
 function escape() {
   if (game.screen === 'playing' && game.selfWreck()) { sound.play('wreck'); return; }
   if (game.screen === 'pauseOptions') { doAction('pauseBack'); return; }
+  if (game.screen === 'sandboxTweaks') { doAction('tweaksBack'); return; }
   if (game.screen === 'stats' && game.resetConfirm) { doAction('resetNo'); return; }
   if (game.screen !== 'title') goMenu();
 }
@@ -158,6 +159,14 @@ function doAction(a) {
   else if (a === 'classic') game.startCampaign(true);
   else if (a === 'endless') game.startEndless();
   else if (a === 'battle') game.startBattle();
+  else if (a === 'rally') game.showMenu('rallySelect');
+  else if (/^rally\d$/.test(a)) game.startRally(Number(a.slice(5)));
+  else if (a === 'sandbox') game.showMenu('sandbox');
+  else if (a === 'sbGo') game.startSandbox();
+  else if (a === 'sbReset') game.resetSandbox();
+  else if (a.startsWith('sb:')) { const [, key, d] = a.split(':'); game.stepSandbox(key, Number(d)); }
+  else if (a === 'tweaks') game.openTweaks();
+  else if (a === 'tweaksBack') game.closeTweaks();
   else if (a === 'endRun') game.endRun();
   else if (a === 'practice') game.showMenu('practiceSelect');
   else if (a === 'trial') game.showMenu('trialSelect');
@@ -167,7 +176,7 @@ function doAction(a) {
   else if (a === 'help') game.showMenu('help');
   else if (a === 'menu') goMenu();
   else if (a === 'again') game.restart();
-  else if (a === 'nextStage') { if (game.mode === 'trial') game.nextTrial(); else game.nextPractice(); }
+  else if (a === 'nextStage') { if (game.mode === 'trial') game.nextTrial(); else if (game.mode === 'rally') game.nextRally(); else game.nextPractice(); }
   else if (a === 'resume') game.togglePause();
   else if (a.startsWith('stage')) game.startPractice(Number(a.slice(5)));
   else {
@@ -392,7 +401,9 @@ function frame(now) {
   placeView();
   countFrame(now);
   if (!last) last = now;
-  acc += Math.min(now - last, 250);
+  // Sandbox's slow motion runs fewer steps a second (each step is the same as ever).
+  const slow = game.mode === 'sandbox' && game.screen === 'playing' ? game.slowMotion : 1;
+  acc += Math.min(now - last, 250) * slow;
   last = now;
   pollGamepads();
   const before = game.screen;
@@ -431,15 +442,15 @@ function frame(now) {
   if (ds.onebutton !== one) ds.onebutton = one;
   if (ds.upright !== up) ds.upright = up;
   if (ds.mode !== game.mode) ds.mode = game.mode;
-  if (game.battle) showCounts(game.battle);
+  if (game.battle?.opts.weapons) showCounts(game.battle);
 }
 
 /** Battle: what's left, on the touch buttons. */
 const fireCount = document.getElementById('fire-count'), jumpCount = document.getElementById('jump-count');
 function showCounts(b) {
-  const f = String(b.missilesLeft), j = String(b.jumps);
-  if (fireCount.textContent !== f) { fireCount.textContent = f; fireCount.parentElement.classList.toggle('empty', b.missilesLeft === 0); }
-  if (jumpCount.textContent !== j) { jumpCount.textContent = j; jumpCount.parentElement.classList.toggle('empty', b.jumps === 0); }
+  const U = b.tune.unlimited, f = U ? '∞' : String(b.missilesLeft), j = U ? '∞' : String(b.jumps);
+  if (fireCount.textContent !== f) { fireCount.textContent = f; fireCount.parentElement.classList.toggle('empty', !U && b.missilesLeft === 0); }
+  if (jumpCount.textContent !== j) { jumpCount.textContent = j; jumpCount.parentElement.classList.toggle('empty', !U && b.jumps === 0); }
 }
 
 function fit() {
@@ -450,7 +461,8 @@ function fit() {
 
 /**
  * Test hook for automated screenshots, e.g. ?test=play&stage=5&frames=400&touch=1
- *   test   = title | modes | stats | options | garage | help | practice | trials | play | trial | endless | battle | paused | gameover
+ *   test   = title | modes | stats | options | garage | help | practice | trials | rallies | sandboxSetup | play | trial
+ *            | endless | battle | rally | sandbox | paused | gameover
  *            (trial: a Time Trial of `stage`, 9 for All Nine)
  *   stage  = stage index for play (0-8), frames = steps to simulate with the gas held
  *   seed   = for endless: a number, so the same course comes up every time
@@ -482,7 +494,7 @@ function applyTestParams() {
     Object.assign(game.look, { body, tyre, hub, paint: Number.isInteger(paint) ? paint : body });
   }
   const frames = Number(q.get('frames')) || 0;
-  const screens = { garage: 'garage', help: 'help', practice: 'practiceSelect', trials: 'trialSelect', title: 'title', modes: 'modes', stats: 'stats', options: 'options' };
+  const screens = { garage: 'garage', help: 'help', practice: 'practiceSelect', trials: 'trialSelect', rallies: 'rallySelect', sandboxSetup: 'sandbox', title: 'title', modes: 'modes', stats: 'stats', options: 'options' };
   if (screens[test]) {
     game.showMenu(screens[test]);
     for (let i = 0; i < 300; i++) game.step();
@@ -496,6 +508,13 @@ function applyTestParams() {
     let s = Number(q.get('seed')) || 1;
     game.random = () => (s = (s * 16807) % 2147483647) / 2147483647;
     game.startBattle();
+  } else if (test === 'rally') {
+    let s = Number(q.get('seed')) || 1;
+    game.random = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    game.startRally(Number(q.get('stage')) || 0);
+  } else if (test === 'sandbox') {
+    game.sandbox.track = Number(q.get('stage')) || 0;
+    game.startSandbox();
   } else if (test === 'trial') {
     game.startTrial(Number(q.get('stage')) || 0);
   } else if (test === 'custom') {

@@ -252,6 +252,33 @@ try {
   await load('?test=play&touch=1');
   check(!await center('[data-press="fire"]'), 'battle buttons only show in Battle');
 
+  // Rally and Sandbox on a phone held upright: starting each from its own screen.
+  await phone(390, 844);
+  const tapButton = async (screen, action) => {
+    const at = await evaluate(`(() => { const { renderer, game } = window.__funkyTruck; const r = document.getElementById('game').getBoundingClientRect();
+      const p = renderer.buttonCentre('${screen}', '${action}', game); return p && [r.x + p[0], r.y + p[1]]; })()`);
+    if (at) { await touch('touchStart', [at]); await touch('touchEnd', []); await sleep(300); }
+    return !!at;
+  };
+  await load('?test=rallies&touch=1');
+  await shot('phone-portrait-rally-stages');
+  check(await tapButton('rallySelect', 'rally2'), 'rally: stage 3 has a button');
+  check(await evaluate('(() => { const g = window.__funkyTruck.game; return g.mode === "rally" && g.track === 2 && g.battle.racers.length === 5; })()'), 'rally: tapping a stage starts a race with five rivals');
+  await sleep(4000);
+  await shot('phone-portrait-rally');
+  check(await evaluate('window.__funkyTruck.game.race.holding') === false, 'rally: the countdown ends');
+  check(!await center('[data-press="fire"]'), 'rally: no weapon buttons');
+  await load('?test=sandboxSetup&touch=1');
+  await shot('phone-portrait-sandbox-settings');
+  check(await tapButton('sandbox', 'sb:gravity:-1'), 'sandbox: gravity has a - button');
+  check(await evaluate('window.__funkyTruck.game.sandbox.gravity') === 2, 'sandbox: tapping - lowers the gravity');
+  check(await tapButton('sandbox', 'sbGo'), 'sandbox: there is a Go! button');
+  check(await evaluate('window.__funkyTruck.game.mode') === 'sandbox', 'sandbox: Go! starts it');
+  await sleep(800);
+  check(!!await center('[data-press="fire"]') && !!await center('[data-key="boost"]'), 'sandbox: the fire, jump and boost buttons are there');
+  check(await evaluate('document.getElementById("fire-count").textContent') === '∞', 'sandbox: unlimited missiles show as ∞');
+  await shot('phone-portrait-sandbox');
+
   ws.close();
 } catch (err) {
   console.error(err);

@@ -29,6 +29,8 @@ sight and falls back down.
 | **Endless** | A course generated as you drive that never ends. No damage: it's free play. **End Run** in the pause menu finishes the run and saves your best distance. |
 | **Time Trial** | Any of the nine stages, or **All Nine** in a row, against the clock, by Standard's rules (a wreck doesn't finish). The clock runs from when the truck first lands on each stage to its finish line. Your best run on each track comes back as a see-through **ghost** to race, and the clock's readout shows how far ahead (green) or behind (pink) of it you are at the same point on the track. The stage list shows each best time; a **Ghost** switch there turns the ghost off. Finishing offers **Retry**, **Next** and **Stages**; quitting (from the pause menu or the finish box) goes back to the stage list. |
 | **Battle** | Endless's course, with damage, and enemy trucks charging at you from the right in waves. Get past them, or take them out with missiles, rams and stomps. Pick up more missiles, jumps, boost, repairs and shields along the way. The run ends when your truck is wrecked. See [Battle Mode](#battle-mode). |
+| **Rally** | Race five rival trucks to the finish line of any of the nine stages, or all nine as a **Championship**. Same truck-on-truck collisions as Battle, no weapons, no damage. See [Rally Mode](#rally-mode). |
+| **Sandbox** | Any stage or stunt track with no damage and no finish, and the physics as you like: drive power, gravity, boost, jumps, missiles, traffic, slow motion... See [Sandbox Mode](#sandbox-mode). |
 | **Practice** | One stage of your choice, played like Standard, or one of three **stunt tracks**, where tricks always score and there's no finish line: **Mega Ramp** (a 450 m accelerator at 45°, a launch ramp good for about 470 km/h and 13 s in the air, then a long run-out ending in a quarter pipe), **Kicker Run** (a bumpy downhill of small kickers that goes on for ever) and **Halfpipe** (a bowl: walls nearly vertical at the lips, easing to a flat floor, with a ledge along each top). Options on the stage screen switch **Damage** off and play by **Classic** rules. The pause menu can **Restart** the stage. Finishing offers **Again**, **Next** and **Stages**; quitting goes back to the stage list. |
 
 Outside Classic, the driving view fills the window, on a phone held either way up (the
@@ -113,6 +115,8 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Battle: jump | Z | jump button (left) | LB |
 | Battle: boost (hold) | C or Shift | boost button (right) | RB |
 
+The Battle keys work in Sandbox too.
+
 **Options** (on the title screen) has the switches for sound, the controls (Standard / Pedals or
 One Button), the dynamic camera, the dynamic crash cam, and **Show Frame Rate** (frames per second
 in the bottom left corner). Options for one mode stay on that mode's screen (Practice's Damage and
@@ -165,6 +169,54 @@ your tricks as usual. Off-screen enemies show as a pulsing marker at the right e
 cab does less damage than in Standard, and the **Flip** button turns you back over when you're
 stuck. Battle keeps its own best score, and the High Scores screen counts your takedowns. The
 tuning is `BATTLE` and `ENEMY_KINDS` in `src/battle.js`.
+
+## Rally Mode
+
+Pick a stage (or the **Championship**, all nine in a row) from Rally's stage list. Five rivals line
+up on the grid ahead of you (the stages start near their left edge, so you start at the back), each
+in a different truck from yours and from each other's, with a name (places in Utah). Everyone is
+dropped in together, and nobody moves until the countdown's **3, 2, 1, GO!**
+
+The rivals are real trucks with your truck's physics. They drive flat out, lean to keep their noses
+down on climbs, back up for another go when they get stuck, hop a wall they keep failing at (with a
+burst of boost), and turn themselves back over if they land on their roofs. One that's hopelessly
+stuck is moved a few tiles on, where you can't see it (or, if it's still stuck, where you can, in a
+puff of smoke). They keep it close: a little faster when well behind you, a little slower when well
+ahead. Trucks crash into each other exactly as in Battle, but nobody takes damage, and your Flip
+button is there when you need it.
+
+The HUD shows your place (1st to 6th) and the race clock, a strip of everyone's progress along the
+stage (you in white, the rivals in their colours) and, at the screen's edge, markers for rivals out
+of view. You're placed behind everyone who crossed the line before you. If every rival has finished
+and you still haven't after 30 seconds, your race is over in last place. The Championship scores
+10, 8, 6, 5, 4 and 3 points a stage and adds them up. The stage list shows your best place on each
+stage and in the Championship, and the High Scores screen counts your wins. The settings are
+`RALLY` in `src/rally.js` and `RACER` in `src/battle.js`.
+
+## Sandbox Mode
+
+Sandbox's screen sets things up, and **Tweaks** in the pause menu changes them during a run (they
+take effect at once). They're saved. Each has − and + buttons, and anything changed from normal
+shows in gold:
+
+| Setting | Choices |
+| --- | --- |
+| Track | the nine stages and the three stunt tracks (before a run only) |
+| Drive Power | ×½, ×1, ×1.5, ×2, ×3, ×5 |
+| Gravity | None, Moon, Low, Earth, High, Jupiter |
+| Air Spin | how hard the tilt keys turn the truck: ×½, ×1, ×2, ×4 |
+| Suspension | Floppy, Normal, Stiff, Rigid |
+| Boost Power | ×½ to ×8 |
+| Boost | Normal (the meter) or Unlimited |
+| Jump Power | ×½ to ×5 |
+| Jumps & Missiles | Normal (they run out) or Unlimited |
+| Air Jumps | jump again in mid-air |
+| Traffic | 0 to 8 trucks driving the track, to race or blow up |
+| Slow Motion | Off, Half, Quarter |
+
+There's no damage and no finish line, so you play until you quit. Slow motion runs fewer steps a
+second, not slower ones, so the physics is exactly the same, only slower. `SANDBOX_ROWS` in
+`src/sandbox.js`.
 
 ## Endless Mode
 
@@ -254,7 +306,9 @@ saved to storage while a test parameter is set.
 | `src/trial.js` | Time Trial: time formats, saved best times, and ghosts (recorded as the truck's pose every other step, packed small). No DOM. |
 | `src/wreck.js` | The ragdoll wreck: a wrecked truck's loose pieces (outside Classic). |
 | `src/battle.js` | Battle Mode: enemy trucks, collisions between trucks, missiles, explosions, pickups and waves. |
-| `src/render-battle.js` | Drawing Battle Mode, and its HUD. |
+| `src/render-battle.js` | Drawing Battle Mode, Rally's racers and HUD, and Sandbox's HUD. |
+| `src/rally.js` | Rally Mode: the grid, the countdown, places, the Championship's points. |
+| `src/sandbox.js` | Sandbox Mode's settings, and putting them into the game. |
 | `src/tricks.js` | Spots tricks (flips, airtime, wheelies, clean landings) and scores them in chains. |
 | `src/stats.js` | The High Scores screen's records and totals: counting, and checking what's read back from storage. |
 | `src/version.js` | The version shown on the title screen (keep it in step with `package.json`). |

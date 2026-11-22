@@ -9,11 +9,13 @@ import { TRICK } from './tricks.js';
 import { VERSION, BUILD } from './version.js';
 import { Wreck } from './wreck.js';
 import { TRIAL_ALL, formatTime, formatGap } from './trial.js';
-import { battleBack, battleFront, battleHud } from './render-battle.js';
+import { battleBack, battleFront, battleHud, rallyHud } from './render-battle.js';
+import { RALLY_ALL, ordinal } from './rally.js';
+import { SANDBOX_ROWS } from './sandbox.js';
 
 const DEG = Math.PI / 180;
-const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'gameOver']);
-const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'help', 'garage', 'practiceSelect', 'trialSelect']);
+const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'sandboxTweaks', 'gameOver']);
+const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'help', 'garage', 'practiceSelect', 'trialSelect', 'rallySelect', 'sandbox']);
 const AHEAD = '#8ff0a4', BEHIND = '#ffb0a0'; // Time Trial gaps: ahead of / behind your best
 const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
@@ -91,8 +93,10 @@ export const MODES = [
   ['Time Trial', 'trial', 'Race the clock, and your best run\'s ghost'],
   ['Practice', 'practice', 'Any one stage, and the stunt tracks'],
   ['Battle', 'battle', 'Enemy trucks charge at you: get past them!'],
+  ['Rally', 'rally', 'Race five rival trucks to the finish line'],
+  ['Sandbox', 'sandbox', 'Turn the physics up (or down) and go wild'],
 ];
-const modeRow = (i, tall) => (tall ? r(40, 104 + 76 * i, 280, 40) : r(112, 114 + 36 * i, 120, 28));
+const modeRow = (i, tall) => (tall ? r(40, 96 + 66 * i, 280, 38) : r(112, 100 + 30 * i, 120, 25));
 const PRACTICE_OPTIONS = [
   [(g) => `Damage: ${onOff(g.practiceDamage)}`, 'practiceDamage'],
   [(g) => `Classic: ${onOff(g.practiceClassic)}`, 'practiceClassic'],
@@ -122,12 +126,16 @@ function pauseButtons(place) {
     ['practice', (g) => g.mode === 'practice' && !g.rules.classic],
     ['trial', (g) => g.mode === 'trial'],
     ['battle', (g) => g.mode === 'battle'],
+    ['rally', (g) => g.mode === 'rally'],
+    ['sandbox', (g) => g.mode === 'sandbox'],
   ];
   return kinds.flatMap(([kind, when]) => [
     { label: 'Resume', action: 'resume' },
     kind === 'endless' && { label: 'End Run', action: 'endRun' },
     // Practice and Time Trial can start the run again (the stunt tracks have no end)
-    (kind.startsWith('practice') || kind === 'trial' || kind === 'battle') && { label: 'Restart', action: 'again' },
+    (kind.startsWith('practice') || ['trial', 'battle', 'rally', 'sandbox'].includes(kind)) && { label: 'Restart', action: 'again' },
+    // Sandbox's settings, during the run
+    kind === 'sandbox' && { label: 'Tweaks', action: 'tweaks' },
     // Quitting Practice or Time Trial goes back to its list of stages
     { label: (g) => (g.quitScreen === 'title' ? 'Quit to Menu' : 'Quit to Stages'), action: 'menu' },
     { label: 'Options', action: 'pauseOptions' },
@@ -140,23 +148,48 @@ function pauseButtons(place) {
  * Other runs get Play Again and Menu in a column (placed by `column(i)`).
  */
 function gameOverButtons(column, grid) {
-  const practice = (g) => g.mode === 'practice', trial = (g) => g.mode === 'trial';
+  const practice = (g) => g.mode === 'practice', trial = (g) => g.mode === 'trial' || g.mode === 'rally';
   const gridded = (g) => practice(g) || trial(g), other = (g) => !gridded(g);
   return [
     { label: 'Play Again', action: 'again', rect: column(0), show: other },
     { label: 'Menu', action: 'menu', rect: column(1), show: other },
     { label: (g) => (trial(g) ? 'Retry' : 'Again'), action: 'again', rect: grid(0), show: gridded },
-    { label: 'Next', action: 'nextStage', rect: grid(1), show: (g) => (practice(g) && g.hasNextPractice) || (trial(g) && g.hasNextTrial) },
+    { label: 'Next', action: 'nextStage', rect: grid(1), show: (g) => (practice(g) && g.hasNextPractice) || (g.mode === 'trial' && g.hasNextTrial) || g.hasNextRally },
     // back to the list of stages, across the width of both columns
     { label: 'Stages', action: 'menu', rect: { ...grid(2), w: grid(3).x + grid(3).w - grid(2).x }, show: gridded },
   ];
+}
+
+/** Sandbox's settings (all of them before a run, those that can change during one in Tweaks). */
+const sandboxRows = (tweaks) => SANDBOX_ROWS.filter((row) => !tweaks || row.live !== false);
+/** Where setting row i goes: its label on the left, then a - button, the value and a + button. */
+const sbRow = (i, tall) => (tall ? { x: 20, y: 70 + 44 * i, w: 320, h: 34, lw: 136, bw: 38 }
+  : { x: i < 6 ? 28 : 302, y: 72 + 40 * (i % 6), w: 246, h: 28, lw: 104, bw: 26 });
+function sandboxButtons(tall, tweaks, extra = {}) {
+  const rows = sandboxRows(tweaks);
+  const steppers = rows.flatMap((row, i) => {
+    const R = sbRow(i, tall);
+    return [
+      { rect: r(R.x + R.lw, R.y, R.bw, R.h), label: '−', action: `sb:${row.key}:-1`, ...extra },
+      { rect: r(R.x + R.w - R.bw, R.y, R.bw, R.h), label: '+', action: `sb:${row.key}:1`, ...extra },
+    ];
+  });
+  const y = tall ? 70 + 44 * rows.length + 14 : 330;
+  const big = tall ? T_BIG : {};
+  const bottom = tweaks
+    ? [{ rect: tall ? r(30, y, 145, 40) : r(170, y, 110, 26), label: 'Reset', action: 'sbReset', ...big },
+      { rect: tall ? r(185, y, 145, 40) : r(296, y, 110, 26), label: 'Back', action: 'tweaksBack', ...big }]
+    : [{ rect: tall ? r(20, y, 100, 40) : r(124, y + 2, 100, 26), label: 'Reset', action: 'sbReset', ...big },
+      { rect: tall ? r(130, y, 100, 40) : r(238, y - 2, 100, 34), label: 'Go!', action: 'sbGo', ...(tall ? T_BIG : { size: 15 }) },
+      { rect: tall ? r(240, y, 100, 40) : r(352, y + 2, 100, 26), label: 'Menu', action: 'menu', ...big }];
+  return [...steppers, ...bottom];
 }
 
 export const BUTTONS = {
   title: MENU.map(([label, action], i) => ({ rect: r(223, 248 + 29 * i, 130, 25), label, action })),
   modes: [
     ...MODES.map(([label, action], i) => ({ rect: modeRow(i, false), label, action })),
-    { rect: r(228, 340, 120, 24), label: 'Back', action: 'back' },
+    { rect: r(228, 352, 120, 24), label: 'Back', action: 'back' },
   ],
   stats: statsButtons(false),
   options: [
@@ -185,13 +218,20 @@ export const BUTTONS = {
     { rect: r(198, 336, 120, 25), label: 'Menu', action: 'menu' },
     option(120, (g) => `Ghost: ${onOff(g.ghostOn)}`, 'ghostOn'),
   ],
+  rallySelect: [
+    ...Array.from({ length: 9 }, (_, i) => ({ rect: r(trialCard(i).x, trialCard(i).y, 92, 58), action: `rally${i}` })),
+    { rect: r(112, 274, 292, 40), action: `rally${RALLY_ALL}` },
+    { rect: r(198, 336, 120, 25), label: 'Menu', action: 'menu' },
+  ],
+  sandbox: sandboxButtons(false, false),
+  sandboxTweaks: sandboxButtons(false, true),
   gameOver: gameOverButtons((i) => r(229, 250 + 31 * i, 120, 25), (i) => r(165 + 126 * (i % 2), 250 + 31 * Math.floor(i / 2), 120, 25)),
   paused: pauseButtons((i) => r(213, 250 + 31 * i, 150, 25)),
   playing: [],
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 680, modes: 680, stats: 760, options: 620, pauseOptions: 620, help: 560, garage: 580, practiceSelect: 540, trialSelect: 540, paused: 410, gameOver: 330 };
+export const TALL_H = { title: 680, modes: 680, stats: 760, options: 620, pauseOptions: 620, help: 560, garage: 580, practiceSelect: 540, trialSelect: 540, rallySelect: 540, sandbox: 680, sandboxTweaks: 640, paused: 460, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
@@ -201,7 +241,7 @@ export const TALL_BUTTONS = {
   title: MENU.map(([label, action], i) => ({ rect: r(60, 262 + 54 * i, 240, 42), label, action, ...T_BIG })),
   modes: [
     ...MODES.map(([label, action], i) => ({ rect: modeRow(i, true), label, action, ...T_BIG })),
-    { rect: r(80, 576, 200, 38), label: 'Back', action: 'back', ...T_BIG },
+    { rect: r(80, 630, 200, 36), label: 'Back', action: 'back', ...T_BIG },
   ],
   stats: statsButtons(true, T_BIG),
   options: [
@@ -230,6 +270,13 @@ export const TALL_BUTTONS = {
     { rect: r(95, 428, 170, 28), label: (g) => `Ghost: ${onOff(g.ghostOn)}`, action: 'ghostOn', ...T_SMALL },
     { rect: r(80, 476, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
   ],
+  rallySelect: [
+    ...Array.from({ length: 9 }, (_, i) => ({ rect: r(tallTrialCard(i).x, tallTrialCard(i).y, 100, 80), action: `rally${i}` })),
+    { rect: r(20, 360, 320, 52), action: `rally${RALLY_ALL}` },
+    { rect: r(80, 440, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
+  ],
+  sandbox: sandboxButtons(true, false),
+  sandboxTweaks: sandboxButtons(true, true),
   gameOver: gameOverButtons((i) => ({ ...r(60, 200 + 50 * i, 240, 40), ...T_BIG }),
     (i) => ({ ...r(60 + 125 * (i % 2), 200 + 50 * Math.floor(i / 2), 115, 40), ...T_BIG })),
   paused: pauseButtons((i) => ({ ...r(60, 160 + 48 * i, 240, 40), ...T_BIG })),
@@ -248,6 +295,8 @@ export function buttonsFor(screen, tall = false) {
 export function runName(game) {
   if (game.mode === 'endless') return `Endless  ·  ${game.metres} m`;
   if (game.mode === 'battle') return `Battle  ·  Wave ${Math.max(1, game.battle.wave)}  ·  ${game.metres} m`;
+  if (game.mode === 'rally') return `Rally  ·  ${game.race.championship ? `Championship  ·  ${game.stageName(game.level)}` : game.stageName(game.level)}`;
+  if (game.mode === 'sandbox') return `Sandbox  ·  ${game.stageName(game.level)}`;
   if (game.mode === 'trial') return `Time Trial  ·  ${trialName(game, game.track)}`;
   const stage = game.stageName(game.level);
   if (game.mode === 'campaign') return `${game.rules.classic ? 'Classic' : 'Standard'}  ·  ${stage}`;
@@ -261,12 +310,31 @@ export function runName(game) {
  */
 export function reachedLine(game) {
   if (game.mode === 'endless') return '';
+  if (game.mode === 'rally') return game.race.championship ? 'Championship  ·  All Nine' : game.stageName(game.level);
   if (game.mode === 'battle') { const b = game.battle; return `Wave ${Math.max(1, b.wave)}  ·  ${b.takedowns} takedown${b.takedowns === 1 ? '' : 's'}`; }
   const stage = game.stageName(game.level);
   const n = game.data.levels.length;
   const allNine = game.mode === 'campaign' || (game.mode === 'trial' && game.track === TRIAL_ALL);
   if (allNine) return game.wrecked ? `Got to stage ${game.level + 1} of ${n}` : `All ${n} stages`;
   return stage;
+}
+
+/** The game-over title for a rally. */
+function rallyTitle(race) {
+  const r = race.result;
+  if (!r) return 'Race Over';
+  if (race.championship) return r.place === 1 ? 'Champion!' : `${ordinal(r.place)} Overall`;
+  if (r.dnf) return 'Race Over';
+  return r.place === 1 ? 'You Won!' : `${ordinal(r.place)} Place`;
+}
+
+/** The game-over lines for a rally: the time (or points), and your best. */
+function rallyLines(game) {
+  const r = game.race.result;
+  if (!r) return ['', ''];
+  const best = r.record ? (r.best ? 'A new best!' : '') : `Best: ${ordinal(r.best)}`;
+  if (game.race.championship) return [`${r.points} points`, best];
+  return [r.dnf ? 'Did not finish' : `Time: ${formatTime(r.time)}`, best];
 }
 
 /** A Time Trial track's name: a stage's, or All Nine. */
@@ -302,6 +370,7 @@ export function statsColumns(game) {
     ['Best trick chain', or(S.bestChain, (v) => `${n(v)} pts`)],
     ['Longest trick chain', or(S.longestChain, (v) => `${n(v)} tricks`)],
     ['Battle takedowns', n(S.takedowns)],
+    ['Rally wins', n(S.rallyWins)],
   ], [
     ['Totals'],
     ['Distance driven', dist(S.distance)],
@@ -799,13 +868,14 @@ export class Renderer {
     if (game.rules.damage) { this.meter('damage', game.damage / 1000, y); y += 34; }
     // Outside Classic: the speedometer, in km/h (the bar is full at SPEEDO_MAX).
     if (!game.rules.classic) this.meter('speed', game.speedKmh / SPEEDO_MAX, y, `${Math.round(game.speedKmh)} km/h`);
-    if (game.battle) battleHud(this, game, y + 34);
+    if (game.battle?.opts.weapons) battleHud(this, game, y + 34);
     const hud = { size: 12.85, font: HUD_FONT, weight: '800', align: 'right' };
     if (game.mode === 'trial') { this.trialHud(game, R, hud); return; }
+    if (game.mode === 'rally') { rallyHud(this, game); this.trickNames(game); return; }
     this.text('score', R + 0.5, 9, { size: 12.5, font: HUD_FONT, weight: '800', align: 'right' });
     this.text(String(game.score), R, 22, hud);
     if (game.onCourse) this.text(`${game.metres} m`, R, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
-    else this.text(`+${game.bonus}`, R, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
+    else if (game.mode !== 'sandbox') this.text(`+${game.bonus}`, R, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
     const chain = game.tricks.chain;
     if (game.rules.classic) {
       if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, R, 46, { ...hud, color: 'rgba(255,255,255,0.9)' });
@@ -912,11 +982,11 @@ export class Renderer {
     const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
     const about = { weight: '600', color: 'rgba(255,255,255,0.85)' };
     if (tall) {
-      this.roundRect(16, 40, TALL_W - 32, 598, 12, BOX_FILL, BOX_EDGE);
-      this.text('Choose a Mode', cx, 60, { size: 26, weight: '900' });
+      this.roundRect(16, 36, TALL_W - 32, 642, 12, BOX_FILL, BOX_EDGE);
+      this.text('Choose a Mode', cx, 50, { size: 26, weight: '900' });
     } else {
-      this.roundRect(96, 68, 384, 312, 10, BOX_FILL, BOX_EDGE);
-      this.text('Choose a Mode', cx, 80, { size: 20, weight: '900' });
+      this.roundRect(96, 60, 384, 328, 10, BOX_FILL, BOX_EDGE);
+      this.text('Choose a Mode', cx, 70, { size: 20, weight: '900' });
     }
     MODES.forEach(([, , text], i) => {
       const b = modeRow(i, tall);
@@ -1088,6 +1158,50 @@ export class Renderer {
     this.buttons('trialSelect', game);
   }
 
+  /** Rally's stage list: a card per stage with your best place, then the championship. */
+  rallySelect(game) {
+    const tall = this.tall, cx = tall ? TALL_W / 2 : 258;
+    const best = (t) => (game.rallyBests[t] ? ordinal(game.rallyBests[t]) : '—');
+    const card = (x, y, w, h, big, small, bigSize, smallSize) => {
+      this.roundRect(x, y, w, h, tall ? 8 : 6, BUTTON_FILL);
+      this.text(big, x + w / 2, y + h * 0.16, { size: bigSize, weight: '800' });
+      this.text(small, x + w / 2, y + h * 0.62, { size: smallSize, weight: '700', color: small === '—' ? 'rgba(255,255,255,0.6)' : small === '1st' ? MILESTONE_GOLD : '#fff' });
+    };
+    const about = 'Five rival trucks, one finish line. Bump your way to the front!';
+    if (tall) {
+      this.text('Rally', cx, 18, { size: 22, weight: '800' });
+      this.fitText(about, cx, 48, 330, { size: 13, weight: '600', color: 'rgba(255,255,255,0.8)' });
+      for (let i = 0; i < 9; i++) { const { x, y } = tallTrialCard(i); card(x, y, 100, 80, String(i + 1), best(i), 26, 14); }
+      card(20, 360, 320, 52, 'Championship  ·  All Nine', best(RALLY_ALL), 17, 14);
+    } else {
+      this.text('Rally', cx, 16, { size: 20, weight: '800' });
+      this.text(about, cx, 42, { size: 12, weight: '600', color: 'rgba(255,255,255,0.8)' });
+      for (let i = 0; i < 9; i++) { const { x, y } = trialCard(i); card(x, y, 92, 58, String(i + 1), best(i), 19, 12); }
+      card(112, 274, 292, 40, 'Championship  ·  All Nine', best(RALLY_ALL), 14, 11);
+    }
+    this.buttons('rallySelect', game);
+  }
+
+  /** Sandbox's settings: before a run (with the track and Go!), or during one (Tweaks). */
+  sandboxScreen(game, screen) {
+    const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2, tweaks = screen === 'sandboxTweaks';
+    const shadow = tweaks ? 'rgba(38,38,38,0.7)' : null;
+    this.text(tweaks ? 'Tweaks' : 'Sandbox', cx, tall ? 16 : 12, { size: tall ? 26 : 22, weight: '900', shadow });
+    const sub = tweaks ? 'Changes take effect at once' : 'Set things up, then go wild. Tweaks in the pause menu changes them as you play.';
+    this.fitText(sub, cx, tall ? 48 : 42, tall ? 330 : 540, { size: tall ? 13 : 11.5, weight: '600', color: 'rgba(255,255,255,0.85)', shadow });
+    sandboxRows(tweaks).forEach((row, i) => {
+      const R = sbRow(i, tall);
+      const label = { size: tall ? 15 : 12, weight: '700', align: 'left', baseline: 'middle', shadow };
+      this.fitText(row.name, R.x, R.y + R.h / 2 + 1, R.lw - 8, label);
+      const vx = R.x + R.lw + R.bw + 3, vw = R.w - R.lw - 2 * R.bw - 6;
+      this.roundRect(vx, R.y, vw, R.h, 4, 'rgba(0,0,0,0.22)');
+      const v = row.key === 'track' ? game.stageName(game.sandbox.track) : row.choices[game.sandbox[row.key]][1];
+      const changed = row.key !== 'track' && game.sandbox[row.key] !== row.dflt;
+      this.centredLabel(v, vx + vw / 2, R.y + R.h / 2, vw - 6, { size: tall ? 15 : 12, weight: '800', color: changed ? MILESTONE_GOLD : '#fff' });
+    });
+    this.buttons(screen, game);
+  }
+
   overlayDim(alpha) {
     this.ctx.fillStyle = `rgba(0,0,0,${alpha})`;
     this.ctx.save();
@@ -1101,10 +1215,12 @@ export class Renderer {
     let title = game.wrecked ? 'Truck Wrecked' : (game.finished && game.mode === 'campaign' ? 'Well Driven!' : 'Game Over');
     if (game.mode === 'endless') title = 'Nice Run!';
     else if (game.mode === 'battle') title = 'Battle Over';
+    else if (game.mode === 'rally') title = rallyTitle(game.race);
     else if (game.mode === 'practice' && !game.wrecked) title = 'Practice Complete';
     let lines = game.mode === 'endless'
       ? [`${game.metres} m  ·  ${game.lastScore}`, `Best: ${game.bestEndless} m`]
       : game.mode === 'battle' ? [`Score: ${game.lastScore}  ·  ${game.metres} m`, `Best: ${game.bestBattle}`]
+      : game.mode === 'rally' ? rallyLines(game)
       : [`Score: ${game.lastScore}`, game.rules.damage ? `Best: ${game.bestForRules}` : ''];
     let gapColor = null;
     if (game.mode === 'trial') {
@@ -1190,6 +1306,9 @@ export class Renderer {
         case 'garage': this.garage(game, v); break;
         case 'practiceSelect': this.practiceSelect(game); break;
         case 'trialSelect': this.trialSelect(game); break;
+        case 'rallySelect': this.rallySelect(game); break;
+        case 'sandbox': this.sandboxScreen(game, 'sandbox'); break;
+        case 'sandboxTweaks': this.overlayDim(0.55); this.sandboxScreen(game, 'sandboxTweaks'); break;
         case 'paused': this.paused(game); break;
         case 'pauseOptions': this.pauseOptions(game); break;
         case 'gameOver': this.gameOver(game); break;

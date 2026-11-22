@@ -7,11 +7,12 @@
 //   start, land, bump, flip, trick, flipCount, milestone, stage, win, wreck, click, boing
 //                     one-shot sounds
 //   missile, enemyMissile, boom, crunch, pickup, jump, boost, takedown, wave
-//                     Battle Mode's one-shot sounds
+//                     Battle Mode's one-shot sounds (Sandbox uses some too)
+//   count, go         Rally's countdown
 // SoundWatcher (sound-events.js) decides when cues happen; this file decides how they sound.
 
 export const CUES = ['start', 'land', 'bump', 'flip', 'trick', 'flipCount', 'milestone', 'stage', 'win', 'wreck', 'click', 'boing',
-  'missile', 'enemyMissile', 'boom', 'crunch', 'pickup', 'jump', 'boost', 'takedown', 'wave'];
+  'missile', 'enemyMissile', 'boom', 'crunch', 'pickup', 'jump', 'boost', 'takedown', 'wave', 'count', 'go'];
 
 
 const note = (n) => 440 * Math.pow(2, (n - 69) / 12); // MIDI note number -> Hz
@@ -205,6 +206,13 @@ const SET = {
   takedown(k, { combo = 1 } = {}) {
     const up = 2 * Math.min(combo - 1, 5);
     melody(k, [72 + up, 79 + up, 84 + up], 0.08, (f, t, i) => bell(k, f, 0.15 + t, 0.12, i === 2 ? 0.9 : 0.4));
+  },
+  /** Rally's countdown: a beep for each of 3, 2, 1... */
+  count(k) { tone(k, { type: 'square', f: note(69), dur: 0.22, gain: 0.07 }); tone(k, { f: note(69), dur: 0.3, gain: 0.1 }); },
+  /** ...and a higher, longer one for GO. */
+  go(k) {
+    tone(k, { type: 'square', f: note(81), dur: 0.6, gain: 0.07 }); tone(k, { f: note(81), dur: 0.7, gain: 0.12 });
+    noise(k, { t: 0.05, dur: 0.6, gain: 0.08, type: 'bandpass', f: 300, f2: 1400, Q: 0.8 });
   },
   /** A wave coming: a klaxon, twice. */
   wave(k) {

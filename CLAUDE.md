@@ -33,6 +33,13 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   collisions, missiles, explosions, pickups and waves, on Endless's course. Enemies are ordinary
   `Truck`s simulated in a mirrored world (`MirrorWorld`, x -> -x) so they face left; mirror their
   points (x -> -x) wherever they meet the real world. `src/render-battle.js` draws it.
+  The same class runs Rally's racers and Sandbox's traffic: `Enemy`s with `s = 1` (no mirror) and
+  kind `racer`, in `battle.racers`; `opts` says which parts a mode uses (waves, pickups, weapons).
+- `src/rally.js` (no DOM): Rally Mode (`mode: 'rally'`, `game.race`): grid, countdown (`race.holding`
+  stops all driving), places, Championship points, best places (`funkytruck.rallyBests`).
+- `src/sandbox.js` (no DOM): Sandbox Mode's settings (`funkytruck.sandbox`, choice indices) and
+  `applySandbox`, which sets the truck's `power`, `gravity`, `tiltPower` and `springK` (Truck
+  properties whose defaults are the original's; `startStage` puts them back for every other mode).
 - `src/trial.js` (no DOM): Time Trial's time formats, saved bests and ghosts. `Game.updateTrial` runs
   the clock (from first landing to the finish line) and records the ghost; ghosts are poses, not
   inputs, so they survive physics changes.
@@ -81,7 +88,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   for game state. `Renderer` scales the stage to fit the screen.
 - The physics is a faithful port of the original game. Treat changes to `Truck` / `CollisionWorld`
   as gameplay changes: say so explicitly and add or adjust tests.
-- Screens are `game.screen` strings: `title`, `modes` (the mode picker over the title), `stats`, `pauseOptions`, `options`, `help`, `garage`, `practiceSelect`, `trialSelect`, `playing`,
+- Screens are `game.screen` strings: `title`, `modes` (the mode picker over the title), `stats`, `pauseOptions`, `options`, `help`, `garage`, `practiceSelect`, `trialSelect`, `rallySelect`, `sandbox`, `sandboxTweaks`, `playing`,
   `paused`, `gameOver`. A new screen needs an entry in `BUTTONS`, a case in `Renderer.draw`, and
   `body[data-screen]` CSS if it affects touch controls.
 - Saved data goes through `game.store` (key prefix `funkytruck.` in localStorage). Validate

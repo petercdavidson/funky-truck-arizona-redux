@@ -185,10 +185,11 @@ body.touch-mode[data-onebutton="1"][data-screen="playing"] #tap { display: flex;
 }
 body[data-onebutton="1"] #touch .pad { visibility: hidden; }
 
-/* Battle Mode's buttons: jump above the tilt buttons, fire and boost above the pedals. With one
+/* Battle and Sandbox's buttons: jump above the tilt buttons, fire and boost above the pedals. With one
    button they drop to the bottom corners and sit over the hold-anywhere area. */
 .actions { display: none; position: fixed; gap: var(--ctl-gap); z-index: 3; }
-body.touch-mode[data-screen="playing"][data-mode="battle"] .actions { display: flex; }
+body.touch-mode[data-screen="playing"][data-mode="battle"] .actions,
+body.touch-mode[data-screen="playing"][data-mode="sandbox"] .actions { display: flex; }
 .actions-left { left: var(--edge); bottom: calc(var(--edge-b) + var(--ctl-size) + var(--ctl-gap)); }
 .actions-right { right: var(--edge-r); bottom: calc(var(--edge-b) + var(--ctl-size) * 1.35 + var(--ctl-gap)); }
 body[data-onebutton="1"] .actions-left,

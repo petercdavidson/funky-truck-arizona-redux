@@ -9,7 +9,9 @@ import { TrickTracker } from './tricks.js';
 import { Wreck } from './wreck.js';
 import { TRIAL_ALL, TRIAL_TRACKS, GHOST_EVERY, validBests, loadGhost, saveGhost, ghostPose } from './trial.js';
 import { validStats, emptyStats, countTrick, countChain } from './stats.js';
-import { Battle, BATTLE } from './battle.js';
+import { Battle, BATTLE, enemyLook } from './battle.js';
+import { Race, RALLY_ALL, validRallyBests, ordinal } from './rally.js';
+import { validSandbox, applySandbox, SANDBOX_ROW } from './sandbox.js';
 
 export const TILE = 64;          // s4c2
 export const STAGE_W = 576;      // Z7552
@@ -25,6 +27,8 @@ export const METRES_PER_TILE = 2.5;
 /** The speedometer: km/h for a speed of one pixel per step (70 steps a second, 2.5 m a tile). */
 export const KMH_PER_PX_STEP = STEP_HZ * METRES_PER_TILE / TILE * 3.6;
 const POINTS_PER_TILE = 10;
+/** How many choices Sandbox setting `key` has. */
+const SANDBOX_CHOICES = (key) => SANDBOX_ROW[key].choices.length;
 
 // ---------------------------------------------------------------------------------------------
 // Collision world (H312 / i0c3 / F335 / a80D / k44F)
@@ -178,7 +182,11 @@ export class Truck {
     this.probePrev = null;                               // N5555
     this.probeHit = null;                                // what the roof probe last touched
     this.airborne = false; this.flipLast = 0; this.flipAccum = 0; // s0a55, T1B55, u2c55
-    this.power = 1;                    // drive power (Battle's enemies differ; yours is always 1)
+    // Drive power, gravity and how hard the tilt keys turn it. The original's values; Battle's
+    // enemies and Rally's racers have their own power, and Sandbox changes all three.
+    this.power = 1;
+    this.gravity = 0.11;
+    this.tiltPower = 1;
   }
 
   reset(x, y) { // u4095 + parts of s46B2
@@ -207,7 +215,7 @@ export class Truck {
     for (let i = 0; i < 10; i += 2) {
       const x = T[i], y = T[i + 1];
       T[i] += x - P[i];
-      T[i + 1] += (y - P[i + 1]) + 0.11;
+      T[i + 1] += (y - P[i + 1]) + this.gravity;
       P[i] = x; P[i + 1] = y;
     }
   }
@@ -337,15 +345,15 @@ export class Truck {
     if (l !== 0) { dx /= l; dy /= l; }
     const px = -dy, py = dx;
     if (keys.left) {
-      if (!this.rearContact && !this.frontContact) { P[4] += px * 0.2; P[5] += py * 0.2; }
+      if (!this.rearContact && !this.frontContact) { P[4] += px * (0.2 * this.tiltPower); P[5] += py * (0.2 * this.tiltPower); }
       else if (this.rearContact) {
-        const n = this.rearN, s = (n[0] * px + n[1] * py) * 0.1;
+        const n = this.rearN, s = (n[0] * px + n[1] * py) * (0.1 * this.tiltPower);
         P[4] += n[0] * s; P[5] += n[1] * s;
       }
     } else if (keys.right) {
-      if (!this.rearContact && !this.frontContact) { P[4] -= px * 0.2; P[5] -= py * 0.2; }
+      if (!this.rearContact && !this.frontContact) { P[4] -= px * (0.2 * this.tiltPower); P[5] -= py * (0.2 * this.tiltPower); }
       else if (this.frontContact) {
-        const n = this.frontN, s = (n[0] * px + n[1] * py) * 0.1;
+        const n = this.frontN, s = (n[0] * px + n[1] * py) * (0.1 * this.tiltPower);
         P[2] += n[0] * s; P[3] += n[1] * s;
       }
     }
@@ -530,6 +538,8 @@ export const RULES = {
   classic: { classic: true, damage: true },
   endless: { classic: false, damage: false },
   battle: { classic: false, damage: true },
+  rally: { classic: false, damage: false },
+  sandbox: { classic: false, damage: false },
 };
 
 /**
@@ -602,7 +612,8 @@ const STATS_SAVE_EVERY = 700;
  * 'practiceSelect' | 'trialSelect' | 'playing' | 'paused' | 'pauseOptions' | 'gameOver'
  * Modes: 'campaign' (all nine stages), 'practice' (one stage), 'endless' (a generated course),
  * 'trial' (Time Trial: a stage or all nine against the clock, see trial.js), 'battle' (Endless's
- * course with enemy trucks, see battle.js).
+ * course with enemy trucks, see battle.js), 'rally' (race rival trucks on a stage or all nine,
+ * see rally.js), 'sandbox' (any track, the physics as you like, see sandbox.js).
  * The title screen's Play and Classic both start a campaign, under different rules.
  */
 export class Game {
@@ -645,7 +656,11 @@ export class Game {
     this.bestPlay = validCount(this.store.get('bestPlay'));
     this.bestEndless = validCount(this.store.get('bestEndless'));
     this.bestBattle = validCount(this.store.get('bestBattle'));
-    this.battle = null;               // Battle Mode's enemies, missiles and pickups (battle.js)
+    this.battle = null;               // Battle Mode's enemies, missiles and pickups; Rally's and Sandbox's trucks (battle.js)
+    this.race = null;                 // Rally Mode's race (rally.js)
+    this.rallyBests = validRallyBests(this.store.get('rallyBests'));
+    // Sandbox Mode's settings (sandbox.js): which choice of each.
+    this.sandbox = validSandbox(this.store.get('sandbox'), data.levels.length + (data.stunts?.length || 0));
     // Options (all off by default, apart from damage in Practice).
     const flag = (k, dflt) => { const v = this.store.get(k); return typeof v === 'boolean' ? v : dflt; };
     this.soundOn = flag('sound', false);
@@ -742,7 +757,7 @@ export class Game {
   /** Practice's stunt tracks (assets/stunts.json), which come after the nine stages. */
   get stunts() { return this.data.stunts || []; }
   /** Whether this run is on a stunt track. */
-  get isStunt() { return this.mode === 'practice' && this.level >= this.data.levels.length; }
+  get isStunt() { return (this.mode === 'practice' || this.mode === 'sandbox') && this.level >= this.data.levels.length; }
   /** The name of stage `i` of Practice: "Stage One" ... "Stage Nine", then the stunt tracks. */
   stageName(i) { return i < this.data.levels.length ? STAGE_NAMES[i] : this.stunts[i - this.data.levels.length]?.name ?? ''; }
   get maxCamX() { return this.levelData.width * TILE - this.viewW * this.zoom; }   // N53D4
@@ -820,8 +835,74 @@ export class Game {
     this.milestone = null; this.milestones = [];
   }
 
-  /** Battle: fire a missile or jump ('fire', 'jump') at the next step. */
-  press(what) { if (this.mode === 'battle' && this.battle && this.screen === 'playing') this.battle.request(what); }
+  /** Battle and Sandbox: fire a missile or jump ('fire', 'jump') at the next step. */
+  press(what) { if (this.battle?.opts.weapons && this.screen === 'playing') this.battle.request(what); }
+
+  /**
+   * Rally: race five rival trucks to the finish of a stage (0-8), or all nine (RALLY_ALL) as a
+   * championship (rally.js). No damage, no weapons.
+   */
+  startRally(track) {
+    this.mode = 'rally';
+    this.rules = RULES.rally;
+    this.track = track;
+    this.race = new Race(this, track);
+    this.beginRun(track === RALLY_ALL ? 0 : track);
+  }
+
+  get hasNextRally() { return this.mode === 'rally' && this.track < this.data.levels.length - 1; }
+  nextRally() { if (this.hasNextRally) this.startRally(this.track + 1); }
+
+  /** Rally: every rival has finished and you've run out of time. Your race is over, in last place. */
+  raceOver() {
+    if (!this.race || this.endTimer > 0) return;
+    this.race.finish(true);
+    this.ticker = 'Race over'; this.tickerTimer = 140; this.endTimer = 140;
+    this.bankTricks();
+  }
+
+  /** Sandbox: the chosen track, with the physics as set (sandbox.js). No damage, no finish line. */
+  startSandbox() {
+    this.mode = 'sandbox';
+    this.rules = RULES.sandbox;
+    this.beginRun(this.sandbox.track);
+  }
+
+  /** Sandbox: step setting `key` by `delta` choices (wrapping round), save it, and use it now. */
+  stepSandbox(key, delta) {
+    const n = key === 'track' ? this.practiceCount : SANDBOX_CHOICES(key);
+    this.sandbox[key] = (this.sandbox[key] + delta + n) % n;
+    this.store.set('sandbox', this.sandbox);
+    if (this.mode === 'sandbox' && this.battle) applySandbox(this);
+  }
+
+  /** Sandbox: every setting back to its default. */
+  resetSandbox() {
+    const track = this.sandbox.track;
+    this.sandbox = { ...validSandbox(null), track };
+    this.store.set('sandbox', this.sandbox);
+    if (this.mode === 'sandbox' && this.battle) applySandbox(this);
+  }
+
+  /** Sandbox: `n` more trucks driving along the track ahead of you. */
+  addTraffic(n) {
+    const b = this.battle, end = (this.levelData.width - 4) * TILE;
+    let x = this.truck.T[0] + 260;
+    for (let i = 0; i < n; i++) {
+      while (b.racers.some((e) => Math.abs(e.centre[0] - x) < 140)) x += 140;
+      if (x > end) x = Math.max(300, this.truck.T[0] - 400 - 160 * i);
+      const e = b.addRacer(enemyLook(this.look, this.random), x);
+      if (e) { e.skill = 0.9 + this.random() * 0.2; e.truck.power = e.skill * this.truck.power; e.truck.springK = this.truck.springK; e.truck.tiltPower = this.truck.tiltPower; }
+      x += 160;
+    }
+  }
+
+  /** Sandbox's slow motion: the share of the usual steps a second that run (1: none). */
+  get slowMotion() { return SANDBOX_ROW.slow.choices[this.sandbox.slow]?.[0] ?? 1; }
+
+  /** Sandbox: the pause menu's Tweaks (the settings, during a run). */
+  openTweaks() { if (this.screen === 'paused' && this.mode === 'sandbox') this.screen = 'sandboxTweaks'; }
+  closeTweaks() { if (this.screen === 'sandboxTweaks') { this.screen = 'paused'; this.pauseStage = 99; } }
 
   /**
    * Time Trial: a stage (0-8), or all nine in a row (TRIAL_ALL), against the clock, by Play's rules.
@@ -874,7 +955,8 @@ export class Game {
   beginRun(firstLevel) { // H5D52
     if (this.mode !== 'trial') { this.ghost = null; this.ghostT = null; this.split = null; }
     if (this.mode !== 'battle') this.battle = null;
-    if (this.mode === 'campaign' || (this.mode === 'trial' && this.track === TRIAL_ALL)) { this.lastLevel = this.data.levels.length - 1; this.level = 0; }
+    if (this.mode !== 'rally') this.race = null;
+    if (this.mode === 'campaign' || (this.mode === 'trial' && this.track === TRIAL_ALL) || (this.mode === 'rally' && this.track === RALLY_ALL)) { this.lastLevel = this.data.levels.length - 1; this.level = 0; }
     else { this.level = firstLevel; this.lastLevel = firstLevel; }
     this.score = 0; this.bonus = 0; this.damage = 0;
     this.wrecked = false; this.finished = false;
@@ -893,6 +975,8 @@ export class Game {
     this.landed = false; // the truck is dropped in at the start; until it lands it isn't driving
     this.uprightLinger = 0; this.trickCooldown = 0;
     const s = this.levelData.start;
+    // Your truck's own physics (Sandbox changes them; everywhere else they're the original's).
+    Object.assign(this.truck, { power: 1, gravity: 0.11, tiltPower: 1, springK: 0.1 });
     this.truck.reset(s[0], s[1]);
     this.truck.rearWheelRot = 0; this.truck.frontWheelRot = 0;
     this.speedKmh = 0;
@@ -908,7 +992,13 @@ export class Game {
     this.bonus = (this.level + 1) * 10000;
     if (this.onCourse) { this.ticker = this.mode === 'battle' ? 'Battle' : 'Endless'; this.bonus = 0; }
     if (this.isStunt) this.bonus = 0; // stunt tracks are all about the tricks: no time bonus
-    if (this.mode === 'trial') this.bonus = 0; // the clock is what counts
+    if (this.mode === 'trial' || this.mode === 'rally' || this.mode === 'sandbox') this.bonus = 0; // the clock (or nothing) is what counts
+    if (this.mode === 'rally') this.race.startStage();
+    if (this.mode === 'sandbox') {
+      this.battle = new Battle(this, { waves: false, pickups: false, weapons: true });
+      this.ticker = `Sandbox  ·  ${this.stageName(this.level)}`;
+      applySandbox(this);
+    }
     this.flipBonusTimer = 0;
     this.tricks.reset();
     for (const d of this.dirt) d.life = 0;
@@ -928,6 +1018,8 @@ export class Game {
     if (this.mode === 'campaign') this.startCampaign(this.rules.classic);
     else if (this.mode === 'endless') this.startEndless();
     else if (this.mode === 'battle') this.startBattle();
+    else if (this.mode === 'rally') this.startRally(this.track);
+    else if (this.mode === 'sandbox') this.startSandbox();
     else if (this.mode === 'trial') this.startTrial(this.track);
     else this.startPractice(this.lastLevel);
   }
@@ -1034,7 +1126,9 @@ export class Game {
    * Where quitting a run goes: back to its list of stages for Practice and Time Trial, otherwise
    * the title screen.
    */
-  get quitScreen() { return this.mode === 'practice' ? 'practiceSelect' : this.mode === 'trial' ? 'trialSelect' : 'title'; }
+  get quitScreen() {
+    return { practice: 'practiceSelect', trial: 'trialSelect', rally: 'rallySelect', sandbox: 'sandbox' }[this.mode] || 'title';
+  }
 
   showMenu(screen) {
     // Leaving an Endless run part-way (quitting from pause, say) still counts its distance.
@@ -1087,7 +1181,7 @@ export class Game {
   // ---- the Esc easter egg: wreck the truck on purpose
 
   /** Wrecking on purpose works outside Classic rules and Time Trial. */
-  get selfWreckAllowed() { return !this.rules.classic && this.mode !== 'trial'; }
+  get selfWreckAllowed() { return !this.rules.classic && this.mode !== 'trial' && this.mode !== 'rally'; }
 
   /**
    * Wreck the truck now: it comes apart as a damage wreck does, but there's no game over. With
@@ -1271,6 +1365,8 @@ export class Game {
    */
   driveKeys() {
     const k = this.keys;
+    // Rally's countdown: you can lean, but not go.
+    if (this.race?.holding) return { ...k, up: false, down: false, one: false, left: false, right: false };
     if (!this.oneButtonActive) return k;
     const one = k.one || k.up;
     const air = this.airSteps >= ONE_BUTTON_AIR;
@@ -1321,7 +1417,7 @@ export class Game {
     // Flips and the other tricks are scored in chains by TrickTracker. A flip still pays the
     // original game's points (its degrees), as part of its chain.
     // Tricks score while the time bonus is running (as flips always did), or all run in Endless.
-    const scoring = (this.onCourse || this.isStunt || this.bonus !== 0) && this.endTimer === 0;
+    const scoring = (this.onCourse || this.isStunt || this.bonus !== 0 || this.mode === 'rally' || this.mode === 'sandbox') && this.endTimer === 0;
     if (this.righting > 0 || this.trickCooldown > 0) {
       // A flip upright isn't a trick: tricks aren't watched for until the truck has been back on
       // its wheels for a moment, and then the trick tracker starts afresh.
@@ -1397,8 +1493,9 @@ export class Game {
     }
     // The stunt tracks have no finish: they're for playing on.
     // (A truck wrecked on purpose finishes if its body gets over the line.)
-    if (!this.onCourse && !this.isStunt && this.focus[0] >= (this.levelData.width - 9) * TILE) {
+    if (!this.onCourse && !this.isStunt && this.mode !== 'sandbox' && this.focus[0] >= (this.levelData.width - 9) * TILE) {
       this.ticker = 'Stage Complete !'; this.tickerTimer = 140; this.endTimer = 210;
+      if (this.race) { this.race.finish(); this.ticker = `${ordinal(this.race.place)} place!`; }
       this.bankTricks(); // a chain still going at the finish line is paid out
     }
     if (this.damage === 1000 && this.rules.damage) {
@@ -1417,6 +1514,7 @@ export class Game {
     for (const d of this.dirt) d.life = 0;
     const isWrecked = this.damage === 1000;
     if (isWrecked) this.stats.wrecks++; else this.stats.stages++;
+    if (this.race && !isWrecked) this.race.award();
     if (this.level === this.lastLevel || isWrecked) {
       this.score += this.bonus;
       if (this.mode === 'campaign' && !isWrecked) this.score += 100000;
@@ -1426,6 +1524,7 @@ export class Game {
       this.lastScore = this.score;
       if (this.mode === 'endless') this.saveEndlessBest();
       else if (this.mode === 'battle') this.saveBattleBest();
+      else if (this.mode === 'rally') this.race.finishRun();
       else if (this.mode === 'trial') { if (!isWrecked) this.finishTrial(); }
       else if (this.rules.damage && !this.isStunt) this.saveBest(this.score);
       this.restartLatch = true;
@@ -1466,6 +1565,7 @@ export class Game {
         if (!this.world) return;
         if (this.wreck) this.stepWreck(); else this.stepTruck(this.world);
         if (this.battle) this.battle.step();
+        if (this.race) this.race.step();
         this.updateSpeedometer();
         this.stats.driveSteps++;
         if (++this.statsSince >= STATS_SAVE_EVERY) this.saveStats();

@@ -79,6 +79,7 @@ export class Wreck {
       return { a, b, frame: frameIndex };
     });
     this.steps = 0;
+    this.gravity = truck.gravity ?? GRAVITY; // (Sandbox can change it)
   }
 
   /**
@@ -120,7 +121,7 @@ export class Wreck {
       const x = T[i], y = T[i + 1];
       const air = (this.thin[i >> 1] ? WRECK.part : WRECK.wheel).air;
       T[i] += (x - P[i]) * air;
-      T[i + 1] += (y - P[i + 1]) * air + GRAVITY;
+      T[i + 1] += (y - P[i + 1]) * air + this.gravity;
       P[i] = x; P[i + 1] = y;
     }
     // P now holds where each point was at the start of the step: sweep collisions from there.
