@@ -11,6 +11,7 @@ import { TRIAL_ALL, TRIAL_TRACKS, GHOST_EVERY, validBests, loadGhost, saveGhost,
 import { validStats, emptyStats, countTrick, countChain } from './stats.js';
 import { Battle } from './battle.js';
 import { validSandbox, applySandbox, stepTraffic, SANDBOX_ROW } from './sandbox.js';
+import { validStage, validStages, addStage } from './stages.js';
 
 export const TILE = 64;          // s4c2
 export const STAGE_W = 576;      // Z7552
@@ -602,6 +603,8 @@ export const MILESTONES = { metres: [100, 250, 500, 750, 1000], every: 500, scor
 export const MILESTONE_SHOW = 150;
 /** Stats are saved at least this often while driving (10 s). */
 const STATS_SAVE_EVERY = 700;
+/** How many saved stages the Load Stage screen lists at a time. */
+export const STAGES_PER_PAGE = 6;
 
 /**
  * Screens: 'title' | 'modes' (the mode picker over the title) | 'stats' | 'options' | 'help' | 'garage' |
@@ -655,11 +658,18 @@ export class Game {
     // Sandbox Mode's settings (sandbox.js): which choice of each.
     this.sandbox = validSandbox(this.store.get('sandbox'), this.sandboxCourses);
     this.sandboxPick = null;          // the setting whose list of choices is open on the Sandbox screen
+    // The Stage Editor's stages (stages.js), and the one picked on the Load Stage screen.
+    this.stages = validStages(this.store.get('stages'), data.collision.length);
+    this.stagePick = -1;
+    this.stagePage = 0;
+    this.customLevel = null;          // the custom stage being played
     // Options (all off by default, apart from damage in Practice).
     const flag = (k, dflt) => { const v = this.store.get(k); return typeof v === 'boolean' ? v : dflt; };
     this.soundOn = flag('sound', false);
     this.oneButton = flag('oneButton', false);
     this.practiceDamage = flag('practiceDamage', true);
+    this.customDamage = flag('customDamage', false);
+    this.customClassic = flag('customClassic', false);
     this.practiceClassic = flag('practiceClassic', false);
     this.dynamicCamera = flag('dynamicCamera', true);
     this.crashCam = flag('crashCam', true);
@@ -739,6 +749,7 @@ export class Game {
 
   get levelData() {
     if (this.onCourse) return this.course.level;
+    if (this.mode === 'custom') return this.customLevel;
     return this.isStunt ? this.stunts[this.level - this.data.levels.length] : this.data.levels[this.level];
   }
 
@@ -751,7 +762,13 @@ export class Game {
   /** Practice's stunt tracks (assets/stunts.json), which come after the nine stages. */
   get stunts() { return this.data.stunts || []; }
   /** Whether this run is on a stunt track. */
-  get isStunt() { return (this.mode === 'practice' || this.mode === 'sandbox') && !this.onCourse && this.level >= this.data.levels.length; }
+  get isStunt() {
+    // (a custom stage with no finish line is played like a stunt track)
+    if (this.mode === 'custom') return !Number.isFinite(this.customLevel?.finish);
+    return (this.mode === 'practice' || this.mode === 'sandbox') && !this.onCourse && this.level >= this.data.levels.length;
+  }
+  /** Where this stage's finish line is (px): the stages' own, or a custom stage's. */
+  get finishX() { return this.mode === 'custom' ? this.customLevel.finish : (this.levelData.width - 9) * TILE; }
   /** The name of stage `i` of Practice: "Stage One" ... "Stage Nine", then the stunt tracks. */
   stageName(i) { return i < this.data.levels.length ? STAGE_NAMES[i] : this.stunts[i - this.data.levels.length]?.name ?? ''; }
   get maxCamX() { return this.levelData.width * TILE - this.viewW * this.zoom; }   // N53D4
@@ -772,7 +789,7 @@ export class Game {
 
   /** Flip an on/off option and save it: 'soundOn', 'oneButton', 'practiceDamage', 'practiceClassic', 'dynamicCamera', 'crashCam', 'ghostOn', 'showFps'. */
   toggle(option) {
-    const key = { soundOn: 'sound', oneButton: 'oneButton', practiceDamage: 'practiceDamage', practiceClassic: 'practiceClassic', dynamicCamera: 'dynamicCamera', crashCam: 'crashCam', ghostOn: 'ghost', showFps: 'showFps' }[option];
+    const key = { soundOn: 'sound', oneButton: 'oneButton', practiceDamage: 'practiceDamage', practiceClassic: 'practiceClassic', customDamage: 'customDamage', customClassic: 'customClassic', dynamicCamera: 'dynamicCamera', crashCam: 'crashCam', ghostOn: 'ghost', showFps: 'showFps' }[option];
     if (!key) return;
     this[option] = !this[option];
     this.store.set(key, this[option]);
@@ -818,6 +835,56 @@ export class Game {
 
   /** Sandbox: fire a missile or jump ('fire', 'jump') at the next step. */
   press(what) { if (this.battle?.opts.weapons && this.screen === 'playing') this.battle.request(what); }
+
+  // ---- the Stage Editor's stages (stages.js)
+
+  /** Read the saved stages again (the editor, in another tab, may have saved more). */
+  reloadStages() {
+    this.stages = validStages(this.store.get('stages'), this.data.collision.length);
+    if (this.stagePick >= this.stages.length) this.stagePick = -1;
+    this.stagePage = Math.min(this.stagePage, Math.max(0, Math.ceil(this.stages.length / STAGES_PER_PAGE) - 1));
+  }
+
+  /** The Load Stage screen, with the stages read again. */
+  openStageLoad() { this.reloadStages(); this.showMenu('stageLoad'); }
+
+  /** A stage from a file (parsed JSON): kept with the others and picked. Returns whether it was a stage. */
+  bringInStage(v) {
+    const stage = validStage(v, this.data.collision.length);
+    if (!stage) return false;
+    const { list, index } = addStage(this.stages, stage);
+    this.stages = list;
+    this.store.set('stages', list);
+    this.stagePick = index; this.stagePage = 0;
+    return true;
+  }
+
+  pickStage(i) { if (i >= 0 && i < this.stages.length) this.stagePick = i; }
+
+  /** Forget saved stage i. */
+  deleteStage(i) {
+    if (i < 0 || i >= this.stages.length) return;
+    this.stages = this.stages.filter((_, k) => k !== i);
+    this.store.set('stages', this.stages);
+    if (this.stagePick === i) this.stagePick = -1; else if (this.stagePick > i) this.stagePick--;
+    this.reloadStages();
+  }
+
+  turnStagePage(d) {
+    const pages = Math.max(1, Math.ceil(this.stages.length / STAGES_PER_PAGE));
+    this.stagePage = (this.stagePage + d + pages) % pages;
+  }
+
+  /** Play saved stage i (or `level`, a stage given directly), with the Damage and Classic switches as set. */
+  startCustom(i = this.stagePick, level = null) {
+    const stage = level || this.stages[i];
+    if (!stage) return;
+    this.mode = 'custom';
+    this.customIndex = level ? -1 : i;
+    this.customLevel = stage;
+    this.rules = { classic: this.customClassic, damage: this.customDamage };
+    this.beginRun(0);
+  }
 
   /** Sandbox: how many tracks it offers (Endless, then the nine stages, then the stunt tracks). */
   get sandboxCourses() { return 1 + this.data.levels.length + (this.data.stunts?.length || 0); }
@@ -959,7 +1026,7 @@ export class Game {
     this.camY = s[1] - this.viewH / 2;
     if (this.rules.classic) this.camY = Math.min(Math.max(this.camY, 0), this.maxCamY);
     this.updateCamera();
-    this.ticker = this.stageName(this.level); this.tickerTimer = 140;   // m2813
+    this.ticker = this.mode === 'custom' ? this.customLevel.name : this.stageName(this.level); this.tickerTimer = 140;   // m2813
     this.endTimer = 0;
     this.score += this.bonus;
     this.bonus = (this.level + 1) * 10000;
@@ -990,6 +1057,7 @@ export class Game {
     if (this.mode === 'campaign') this.startCampaign(this.rules.classic);
     else if (this.mode === 'endless') this.startEndless();
     else if (this.mode === 'sandbox') this.startSandbox();
+    else if (this.mode === 'custom') this.startCustom(this.customIndex, this.customIndex < 0 ? this.customLevel : null);
     else if (this.mode === 'trial') this.startTrial(this.track);
     else this.startPractice(this.lastLevel);
   }
@@ -1093,7 +1161,7 @@ export class Game {
    * the title screen.
    */
   get quitScreen() {
-    return { practice: 'practiceSelect', trial: 'trialSelect', sandbox: 'sandbox' }[this.mode] || 'title';
+    return { practice: 'practiceSelect', trial: 'trialSelect', sandbox: 'sandbox', custom: 'stageLoad' }[this.mode] || 'title';
   }
 
   showMenu(screen) {
@@ -1458,7 +1526,7 @@ export class Game {
     }
     // The stunt tracks have no finish: they're for playing on.
     // (A truck wrecked on purpose finishes if its body gets over the line.)
-    if (!this.onCourse && !this.isStunt && this.focus[0] >= (this.levelData.width - 9) * TILE) {
+    if (!this.onCourse && !this.isStunt && this.focus[0] >= this.finishX) {
       this.ticker = 'Stage Complete !'; this.tickerTimer = 140; this.endTimer = 210;
       this.bankTricks(); // a chain still going at the finish line is paid out
     }
@@ -1487,7 +1555,7 @@ export class Game {
       this.lastScore = this.score;
       if (this.mode === 'endless') this.saveEndlessBest();
       else if (this.mode === 'trial') { if (!isWrecked) this.finishTrial(); }
-      else if (this.rules.damage && !this.isStunt) this.saveBest(this.score);
+      else if (this.rules.damage && !this.isStunt && this.mode !== 'custom') this.saveBest(this.score);
       this.restartLatch = true;
       this.screen = 'gameOver';
       this.saveStats();

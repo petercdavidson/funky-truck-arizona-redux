@@ -3,7 +3,8 @@
 // All drawing uses the original 576x448 stage coordinates (y down, clockwise rotation), scaled to
 // the canvas. Tiles are drawn in device pixels with snapped edges so they never show seams.
 
-import { TILE, STAGE_W, STAGE_H, STEP_HZ, RESET_WAIT } from './game.js';
+import { TILE, STAGE_W, STAGE_H, STEP_HZ, RESET_WAIT, STAGES_PER_PAGE } from './game.js';
+import { groundTop } from './stages.js';
 import { HUD_FONT, TITLE_FONT, BODY_PAINTS } from './assets.js';
 import { TRICK } from './tricks.js';
 import { VERSION, BUILD } from './version.js';
@@ -15,7 +16,7 @@ import { SANDBOX_ROWS, SANDBOX_ROW, sandboxValue } from './sandbox.js';
 
 const DEG = Math.PI / 180;
 const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'sandboxTweaks', 'gameOver']);
-const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'help', 'garage', 'practiceSelect', 'trialSelect', 'sandbox']);
+const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'help', 'garage', 'practiceSelect', 'trialSelect', 'sandbox', 'stageEditor', 'stageLoad']);
 const AHEAD = '#8ff0a4', BEHIND = '#ffb0a0'; // Time Trial gaps: ahead of / behind your best
 const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
@@ -94,10 +95,43 @@ export const MODES = [
   ['Endless', 'endless', 'A course that goes on for ever: how far can you get?'],
   ['Time Trial', 'trial', 'Race the clock, and your best run\'s ghost'],
   ['Practice', 'practice', 'Any one stage, and the stunt tracks'],
+  ['Stage Editor', 'stageEditor', 'Build your own stages, and play them'],
 ];
 const modeRow = (i, tall) => (tall ? r(40, 96 + 66 * i, 280, 38) : r(112, 100 + 30 * i, 120, 25));
 /** Where the mode picker's Back button goes, under the last mode (the box ends below it). */
 const modesBack = (tall) => (tall ? r(80, 96 + 66 * MODES.length + 20, 200, 36) : r(228, 100 + 30 * MODES.length + 14, 120, 24));
+/** The Stage Editor's stages: whether row i of this page has one, and its name. */
+const stageAt = (g, i) => g.stages?.[(g.stagePage || 0) * STAGES_PER_PAGE + i];
+const CUSTOM_OPTIONS = [
+  [(g) => `Damage: ${onOff(g.customDamage)}`, 'customDamage'],
+  [(g) => `Classic: ${onOff(g.customClassic)}`, 'customClassic'],
+];
+/** The Load Stage screen's buttons. */
+function stageLoadButtons(tall) {
+  const B = tall ? T_BIG : {};
+  const many = (g) => (g.stages?.length || 0) > STAGES_PER_PAGE;
+  return [
+    { rect: tall ? r(80, 60, 200, 38) : r(208, 46, 160, 25), label: 'From File…', action: 'stageFile', ...B },
+    ...Array.from({ length: STAGES_PER_PAGE }, (_, i) => [
+      { rect: tall ? r(20, 112 + 46 * i, 268, 38) : r(128, 84 + 30 * i, 272, 25), label: (g) => stageAt(g, i)?.name ?? '', action: `stage:${i}`, show: (g) => !!stageAt(g, i), ...(tall ? { size: 14 } : {}) },
+      { rect: tall ? r(296, 112 + 46 * i, 44, 38) : r(406, 84 + 30 * i, 26, 25), label: '×', action: `stageDel:${i}`, show: (g) => !!stageAt(g, i), small: true, ...(tall ? { size: 16 } : { size: 13 }) },
+    ]).flat(),
+    { rect: tall ? r(20, 392, 80, 32) : r(128, 268, 60, 22), label: '◀', action: 'stagePrev', show: many, small: true },
+    { rect: tall ? r(260, 392, 80, 32) : r(340, 268, 60, 22), label: '▶', action: 'stageNext', show: many, small: true },
+    ...CUSTOM_OPTIONS.map(([label, action], i) => (tall ? { rect: r(95, 440 + 36 * i, 170, 28), label, action, ...T_SMALL } : option(300 + 24 * i, label, action))),
+    { rect: tall ? r(30, 560, 145, 38) : r(160, 400, 120, 25), label: 'Play', action: 'stagePlay', disabled: (g) => g.stagePick < 0, ...B },
+    { rect: tall ? r(185, 560, 145, 38) : r(296, 400, 120, 25), label: 'Back', action: 'stageEditor', ...B },
+  ];
+}
+function stageEditorButtons(tall) {
+  const B = tall ? T_BIG : {};
+  return [
+    { rect: tall ? r(60, 150, 240, 42) : r(208, 140, 160, 30), label: 'Load Stage', action: 'stageLoad', ...B },
+    { rect: tall ? r(60, 206, 240, 42) : r(208, 182, 160, 30), label: 'Open Editor', action: 'openEditor', ...B },
+    { rect: tall ? r(80, 420, 200, 38) : r(228, 400, 120, 25), label: 'Back', action: 'play', ...B },
+  ];
+}
+
 const PRACTICE_OPTIONS = [
   [(g) => `Damage: ${onOff(g.practiceDamage)}`, 'practiceDamage'],
   [(g) => `Classic: ${onOff(g.practiceClassic)}`, 'practiceClassic'],
@@ -127,12 +161,13 @@ function pauseButtons(place) {
     ['practice', (g) => g.mode === 'practice' && !g.rules.classic],
     ['trial', (g) => g.mode === 'trial'],
     ['sandbox', (g) => g.mode === 'sandbox'],
+    ['custom', (g) => g.mode === 'custom'],
   ];
   return kinds.flatMap(([kind, when]) => [
     { label: 'Resume', action: 'resume' },
     kind === 'endless' && { label: 'End Run', action: 'endRun' },
     // Practice and Time Trial can start the run again (the stunt tracks have no end)
-    (kind.startsWith('practice') || ['trial', 'sandbox'].includes(kind)) && { label: 'Restart', action: 'again' },
+    (kind.startsWith('practice') || ['trial', 'sandbox', 'custom'].includes(kind)) && { label: 'Restart', action: 'again' },
     // Sandbox's settings, during the run
     kind === 'sandbox' && { label: 'Tweaks', action: 'tweaks' },
     // Quitting Practice or Time Trial goes back to its list of stages, and Sandbox to its settings
@@ -151,7 +186,7 @@ function gameOverButtons(column, grid) {
   const gridded = (g) => practice(g) || trial(g), other = (g) => !gridded(g);
   return [
     { label: 'Play Again', action: 'again', rect: column(0), show: other },
-    { label: (g) => (g.mode === 'sandbox' ? 'Sandbox Menu' : 'Menu'), action: 'menu', rect: column(1), show: other },
+    { label: (g) => (g.mode === 'sandbox' ? 'Sandbox Menu' : g.mode === 'custom' ? 'Stages' : 'Menu'), action: 'menu', rect: column(1), show: other },
     { label: (g) => (trial(g) ? 'Retry' : 'Again'), action: 'again', rect: grid(0), show: gridded },
     { label: 'Next', action: 'nextStage', rect: grid(1), show: (g) => (practice(g) && g.hasNextPractice) || (g.mode === 'trial' && g.hasNextTrial) },
     // back to the list of stages, across the width of both columns
@@ -247,6 +282,8 @@ export const BUTTONS = {
     option(120, (g) => `Ghost: ${onOff(g.ghostOn)}`, 'ghostOn'),
   ],
   sandbox: sandboxButtons(false, false),
+  stageEditor: stageEditorButtons(false),
+  stageLoad: stageLoadButtons(false),
   sandboxTweaks: sandboxButtons(false, true),
   gameOver: gameOverButtons((i) => r(229, 250 + 31 * i, 120, 25), (i) => r(165 + 126 * (i % 2), 250 + 31 * Math.floor(i / 2), 120, 25)),
   paused: pauseButtons((i) => r(213, 250 + 31 * i, 150, 25)),
@@ -254,7 +291,7 @@ export const BUTTONS = {
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 680, modes: 680, stats: 760, options: 620, pauseOptions: 620, help: 560, garage: 580, practiceSelect: 540, trialSelect: 540, sandbox: 680, sandboxTweaks: 640, paused: 460, gameOver: 330 };
+export const TALL_H = { title: 680, modes: 680, stats: 760, options: 620, pauseOptions: 620, help: 560, garage: 580, practiceSelect: 540, trialSelect: 540, sandbox: 680, sandboxTweaks: 640, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
@@ -295,6 +332,8 @@ export const TALL_BUTTONS = {
     { rect: r(80, 476, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
   ],
   sandbox: sandboxButtons(true, false),
+  stageEditor: stageEditorButtons(true),
+  stageLoad: stageLoadButtons(true),
   sandboxTweaks: sandboxButtons(true, true),
   gameOver: gameOverButtons((i) => ({ ...r(60, 200 + 50 * i, 240, 40), ...T_BIG }),
     (i) => ({ ...r(60 + 125 * (i % 2), 200 + 50 * Math.floor(i / 2), 115, 40), ...T_BIG })),
@@ -315,6 +354,10 @@ export function runName(game) {
   if (game.mode === 'endless') return `Endless  ·  ${game.metres} m`;
   if (game.mode === 'sandbox') return `Sandbox  ·  ${game.onCourse ? `Endless  ·  ${game.metres} m` : game.stageName(game.level)}`;
   if (game.mode === 'trial') return `Time Trial  ·  ${trialName(game, game.track)}`;
+  if (game.mode === 'custom') {
+    const rules = [game.rules.classic && 'Classic rules', !game.rules.damage && 'no damage'].filter(Boolean);
+    return `${game.customLevel.name}${rules.length ? `  (${rules.join(', ')})` : ''}`;
+  }
   const stage = game.stageName(game.level);
   if (game.mode === 'campaign') return `${game.rules.classic ? 'Classic' : 'Standard'}  ·  ${stage}`;
   const rules = [game.rules.classic && 'Classic rules', !game.rules.damage && 'no damage'].filter(Boolean);
@@ -327,6 +370,7 @@ export function runName(game) {
  */
 export function reachedLine(game) {
   if (game.mode === 'endless' || game.onCourse) return '';
+  if (game.mode === 'custom') return game.customLevel.name;
   const stage = game.stageName(game.level);
   const n = game.data.levels.length;
   const allNine = game.mode === 'campaign' || (game.mode === 'trial' && game.track === TRIAL_ALL);
@@ -778,6 +822,7 @@ export class Renderer {
       this.truck(v.G, rot, rot, game.look);
       ctx.restore();
     }
+    if (game.mode === 'custom') this.finishFlag(game.customLevel);
     if (game.battle) battleBack(this, game, v);
     if (game.wreck && v.W) this.wreck(game.wreck, v.W, game.look);
     else this.truck(v.T, v.rr, v.fr, game.look);
@@ -1245,6 +1290,59 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** A custom stage's finish line: a chequered flag on a pole, standing on the ground there. */
+  finishFlag(level) {
+    if (!Number.isFinite(level?.finish)) return;
+    const ctx = this.ctx, x = level.finish, y = groundTop(level, x, this.a.levels.collision) ?? level.height * TILE, h = 150;
+    ctx.save();
+    ctx.fillStyle = '#f2efe8'; ctx.fillRect(x - 2, y - h, 4, h);
+    const sq = 9;
+    for (let i = 0; i < 6; i++) for (let j = 0; j < 4; j++) {
+      ctx.fillStyle = (i + j) % 2 ? '#2f2c2a' : '#ffffff';
+      ctx.fillRect(x + 2 + i * sq, y - h + j * sq, sq, sq);
+    }
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 1;
+    ctx.strokeRect(x + 2, y - h, 6 * sq, 4 * sq);
+    ctx.restore();
+  }
+
+  /** The Stage Editor screen: load a stage to play, or open the editor (in a new tab). */
+  stageEditor(game) {
+    const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
+    const about = { weight: '600', color: 'rgba(255,255,255,0.85)' };
+    this.text('Stage Editor', cx, tall ? 40 : 40, { size: tall ? 28 : 26, weight: '900' });
+    this.wrapText('Build your own stages, then play them here.', cx, tall ? 96 : 84, tall ? 320 : 460, { ...about, size: tall ? 15 : 14 }, 19);
+    this.wrapText('The editor opens in a new tab. Use Save to Game there, then Load Stage here. You can also load and save stages as files.',
+      cx, tall ? 270 : 236, tall ? 320 : 440, { ...about, size: tall ? 14 : 12.5 }, tall ? 19 : 17);
+    this.buttons('stageEditor', game);
+  }
+
+  /** Load Stage: the stages saved from the editor (or brought in from files), the switches, and Play. */
+  stageLoad(game) {
+    const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
+    const note = { weight: '600', color: 'rgba(255,255,255,0.85)' };
+    this.text('Load Stage', cx, tall ? 18 : 14, { size: tall ? 24 : 20, weight: '900' });
+    if (!game.stages.length) {
+      this.wrapText('No stages yet. Make one in the editor and use Save to Game, or load one from a file.', cx, tall ? 140 : 120, tall ? 300 : 360, { ...note, size: tall ? 15 : 13 }, tall ? 20 : 18);
+    }
+    const pages = Math.ceil(game.stages.length / STAGES_PER_PAGE);
+    if (pages > 1) this.text(`${game.stagePage + 1} / ${pages}`, cx, tall ? 399 : 271, { ...note, size: tall ? 15 : 12 });
+    this.buttons('stageLoad', game);
+    // the stage picked: ringed in gold, and what it is
+    const pick = game.stages[game.stagePick];
+    const row = game.stagePick - game.stagePage * STAGES_PER_PAGE;
+    if (pick && row >= 0 && row < STAGES_PER_PAGE) {
+      const b = buttonsFor('stageLoad', tall).find((x) => x.action === `stage:${row}`).rect;
+      this.ctx.strokeStyle = MILESTONE_GOLD; this.ctx.lineWidth = 2;
+      this.ctx.strokeRect(b.x - 1, b.y - 1, b.w + 2, b.h + 2);
+    }
+    if (pick) {
+      const m = Math.round(pick.width * 2.5);
+      const info = `${pick.name}: ${m} m long, ${Number.isFinite(pick.finish) ? 'with a finish line' : 'no finish line (play as long as you like)'}`;
+      this.fitText(info, tall ? cx : 270, tall ? 520 : 352, tall ? 330 : 280, { ...note, size: tall ? 13 : 11.5, align: tall ? 'center' : 'center' });
+    }
+  }
+
   overlayDim(alpha) {
     this.ctx.fillStyle = `rgba(0,0,0,${alpha})`;
     this.ctx.save();
@@ -1259,6 +1357,7 @@ export class Renderer {
     if (game.mode === 'endless') title = 'Nice Run!';
     else if (game.mode === 'practice' && !game.wrecked) title = 'Practice Complete';
     else if (game.mode === 'sandbox' && !game.wrecked) title = 'Finished!';
+    else if (game.mode === 'custom' && !game.wrecked) title = 'Stage Complete';
     let lines = game.mode === 'endless'
       ? [`${game.metres} m  ·  ${game.lastScore}`, `Best: ${game.bestEndless} m`]
       : game.mode === 'sandbox' ? [`Time: ${formatTime(game.clock)}`, `Score: ${game.lastScore}`]
@@ -1348,6 +1447,8 @@ export class Renderer {
         case 'practiceSelect': this.practiceSelect(game); break;
         case 'trialSelect': this.trialSelect(game); break;
         case 'sandbox': this.sandboxScreen(game, 'sandbox'); break;
+        case 'stageEditor': this.stageEditor(game); break;
+        case 'stageLoad': this.stageLoad(game); break;
         case 'sandboxTweaks': this.overlayDim(0.55); this.sandboxScreen(game, 'sandboxTweaks'); break;
         case 'paused': this.paused(game); break;
         case 'pauseOptions': this.pauseOptions(game); break;

@@ -1,12 +1,13 @@
 // main.js — boots the game in the page: loading, the fixed-step loop, and all input
 // (keyboard, mouse/touch on menus, on-screen driving controls, gamepads).
 
-import { Game, STEP_HZ, emptyKeys } from './game.js';
+import { Game, STEP_HZ, STAGES_PER_PAGE, emptyKeys } from './game.js';
 import { loadAssets } from './assets.js';
 import { Renderer, hitButton, buttonsFor } from './render.js';
 import { Sound } from './audio.js';
 import { SoundWatcher } from './sound-events.js';
 import { lerpBattle } from './battle.js';
+import { validStage } from './stages.js';
 
 const DT = 1000 / STEP_HZ;
 
@@ -146,7 +147,7 @@ function doAction(a) {
     return;
   }
   sound.play('click');
-  if (['oneButton', 'practiceDamage', 'practiceClassic', 'dynamicCamera', 'crashCam', 'ghostOn', 'showFps'].includes(a)) { game.toggle(a); return; }
+  if (['oneButton', 'practiceDamage', 'practiceClassic', 'customDamage', 'customClassic', 'dynamicCamera', 'crashCam', 'ghostOn', 'showFps'].includes(a)) { game.toggle(a); return; }
   if (a === 'play') game.showMenu('modes');
   else if (a === 'back') game.showMenu('title');
   else if (a === 'stats') game.showMenu('stats');
@@ -160,6 +161,15 @@ function doAction(a) {
   else if (a === 'classic') game.startCampaign(true);
   else if (a === 'endless') game.startEndless();
   else if (a === 'sandbox') game.showMenu('sandbox');
+  else if (a === 'stageEditor') game.showMenu('stageEditor');
+  else if (a === 'stageLoad') game.openStageLoad();
+  else if (a === 'openEditor') window.open('editor/', 'funkytruck-editor');
+  else if (a === 'stageFile') stageFile.click();
+  else if (a.startsWith('stage:')) game.pickStage(game.stagePage * STAGES_PER_PAGE + Number(a.slice(6)));
+  else if (a.startsWith('stageDel:')) game.deleteStage(game.stagePage * STAGES_PER_PAGE + Number(a.slice(9)));
+  else if (a === 'stagePrev') game.turnStagePage(-1);
+  else if (a === 'stageNext') game.turnStagePage(1);
+  else if (a === 'stagePlay') game.startCustom();
   else if (a === 'sbGo') game.startSandbox();
   else if (a === 'sbReset') game.resetSandbox();
   else if (a.startsWith('sb:')) { const [, key, d] = a.split(':'); game.stepSandbox(key, Number(d)); }
@@ -270,6 +280,18 @@ for (const btn of touchUI.querySelectorAll('[data-press]')) {
     tap.addEventListener(ev, (e) => { pointers.delete(e.pointerId); update(); });
   }
 }
+
+// Load Stage's From File: a level saved from the Stage Editor (or anywhere), brought into the game.
+const stageFile = document.getElementById('stage-file');
+stageFile.addEventListener('change', async () => {
+  const f = stageFile.files[0];
+  stageFile.value = '';
+  if (!f) return;
+  let v = null;
+  try { v = JSON.parse(await f.text()); } catch { /* not JSON */ }
+  if (v && !v.name) v.name = f.name.replace(/\.json$/i, '');
+  if (!game.bringInStage(v)) window.alert("That file isn't a stage the game can play.");
+});
 
 document.getElementById('sound-button').addEventListener('click', (e) => {
   e.preventDefault();
@@ -476,27 +498,16 @@ function fit() {
  *            (trial: a Time Trial of `stage`, 9 for All Nine)
  *   stage  = stage index for play (0-8), frames = steps to simulate with the gas held
  *   seed   = for endless: a number, so the same course comes up every time
- *   test=custom plays the level being edited in tools/editor.html (damage=0 for no damage)
+ *   test=custom plays the level being edited in the Stage Editor, editor/ (damage=0 for no damage, classic=1)
  *   look   = body,tyre,hub[,paint] (e.g. 3,2,4,0), touch = 1 to show the touch controls
  * Nothing is saved to storage while this is active.
  */
-/** A level from the level editor, checked: { name, width, height, tiles, start }, or null. */
-function customLevel(v) {
-  if (!v || typeof v !== 'object') return null;
-  const { width: w, height: h, tiles, start } = v;
-  const ok = Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0 && w * h <= 4e6
-    && Array.isArray(tiles) && tiles.length === h
-    && tiles.every((row) => Array.isArray(row) && row.length === w && row.every((id) => Number.isInteger(id) && id >= 0 && id < game.data.collision.length))
-    && Array.isArray(start) && start.length === 2 && start.every(Number.isFinite);
-  return ok ? { name: typeof v.name === 'string' && v.name ? v.name.slice(0, 40) : 'Custom', width: w, height: h, tiles, start } : null;
-}
-
 function applyTestParams() {
   const q = new URLSearchParams(location.search);
   const test = q.get('test');
   if (!test) return;
-  // The level editor (tools/editor.html) leaves the level being edited here.
-  const custom = test === 'custom' ? customLevel(store.get('editorLevel')) : null;
+  // The Stage Editor (editor/) leaves the level being edited here.
+  const custom = test === 'custom' ? validStage(store.get('editorLevel'), game.data.collision.length) : null;
   game.store = { get: () => null, set: () => {} };
   if (q.get('touch') === '1') setTouchMode(true);
   if (q.get('look')) {
@@ -520,11 +531,11 @@ function applyTestParams() {
   } else if (test === 'trial') {
     game.startTrial(Number(q.get('stage')) || 0);
   } else if (test === 'custom') {
-    // Played like a stunt track in Practice: no finish line (Restart in the pause menu).
+    // The editor's Play: its finish line if it has one (Restart in the pause menu).
     if (!custom) { game.showMenu('title'); return; }
-    if (q.get('damage') === '0') game.practiceDamage = false;
-    game.data.stunts.push(custom);
-    game.startPractice(game.data.levels.length + game.data.stunts.length - 1);
+    game.customDamage = q.get('damage') !== '0';
+    game.customClassic = q.get('classic') === '1';
+    game.startCustom(-1, custom);
   } else {
     if (q.get('classic') === '1') game.practiceClassic = true;
     if (q.get('damage') === '0') game.practiceDamage = false;

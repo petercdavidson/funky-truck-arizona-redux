@@ -2,11 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Funky Truck level editor</title>
+  <title>Funky Truck Arizona Redux · Stage Editor</title>
   <!--
-    A level editor for trying tile combinations. Serve the repo (npm start) and open
-    /tools/editor.html. Not part of the game. The level being edited is kept in this browser
-    (localStorage, funkytruck.editorLevel), and Play opens it in the game (index.html?test=custom).
+    The Stage Editor. The game's Stage Editor screen opens it in a new tab (serve the repo with
+    npm start and open /editor/). See editor/CLAUDE.md. The stage being edited is kept in this
+    browser (localStorage, funkytruck.editorLevel); Play opens it in the game
+    (index.html?test=custom), and Save to Game adds it to the game's stages (funkytruck.stages,
+    the format in src/stages.js).
   -->
   <style>
     * { box-sizing: border-box; }
@@ -59,6 +61,8 @@
       <button id="modeSelect" title="S: drag a box, then Ctrl+C / Ctrl+X">Select</button>
       <button id="modePath" title="D: click to add points to a curve; the tiles follow it">Path</button>
       <button id="pathNew" title="Keep the tiles as they are and start a new path">New path</button>
+      <button id="modeFinish" title="F: click where the finish line goes (the stage is complete when the truck gets past it)">Finish line</button>
+      <button id="noFinish" title="No finish line: the stage goes on until you quit, like a stunt track">No finish</button>
       <button id="undo" title="Ctrl+Z">Undo</button>
       <button id="redo" title="Ctrl+Shift+Z">Redo</button>
     </span>
@@ -74,6 +78,7 @@
       <label>Name <input id="name" value="My Track" size="12"></label>
       <button id="play">Play ▶</button>
       <label><input id="nodamage" type="checkbox" checked> no damage</label>
+      <button id="toGame" title="Add this stage to the game's stages (Stage Editor, Load Stage), replacing one of the same name">Save to Game</button>
     </span>
     <span class="group" style="border:0">
       <button id="export">Save file</button>
@@ -90,6 +95,9 @@
       truck drops in. <b>Select</b> (<kbd>S</kbd>): drag a box, <kbd>Ctrl+C</kbd> copies,
       <kbd>Ctrl+V</kbd> then click to stamp it (<kbd>Esc</kbd> stops). <kbd>Del</kbd> clears the box.
       <b>Shift</b> moves the whole level (<kbd>Shift</kbd>+arrow keys: 1 tile).
+      <b>Finish line</b> (<kbd>F</kbd>): click where it goes; drag to move it. <b>No finish</b> takes it
+      away: then the stage goes on until you quit, like a stunt track. <b>Save to Game</b> puts the
+      stage in the game's list (Stage Editor, Load Stage).
       <b>Path</b> (<kbd>D</kbd>): click to add points to a curve, and the editor lays the tiles that
       follow it (with the fill below), joining the ground on either side. Drag a point or its handles
       to reshape it (<kbd>Alt</kbd>-drag a handle to bend at the point); right-click a point to remove
@@ -132,7 +140,7 @@
     const used = new Set(stages.flatMap((l) => l.tiles.flat()));
 
     // ---- the level being edited
-    let L = null;          // { name, width, height, tiles, start }
+    let L = null;          // { name, width, height, tiles, start, finish? (px) }
     const undo = [], redo = [];
     const snapshot = () => JSON.stringify(L);
     // An edit that isn't to the path makes the tiles as they are now the path's new starting point.
@@ -170,6 +178,7 @@
       const w = +$('w').value, h = +$('h').value;
       const tiles = Array.from({ length: h }, (_, y) => Array.from({ length: w }, (_, x) => (y < L.height && x < L.width ? L.tiles[y][x] : y < L.height ? SKY : L.tiles[L.height - 1][Math.min(x, L.width - 1)])));
       L = { ...L, width: w, height: h, tiles };
+      if (Number.isFinite(L.finish) && L.finish >= w * TILE) delete L.finish;
       sizeCanvas(); save();
     };
 
@@ -184,6 +193,7 @@
         Math.max(TILE / 2, Math.min(H * TILE - TILE / 2, L.start[1] + dy * TILE)),
       ];
       if (L.guide) for (const p of L.guide.pts) { p.x += dx * TILE; p.y += dy * TILE; }
+      if (Number.isFinite(L.finish)) L.finish = Math.max(TILE, Math.min(W * TILE - TILE, L.finish + dx * TILE));
       box = null;
       drawAll(); save();
       $('status').textContent = `Shifted the level ${Math.abs(dx || dy)} tile${Math.abs(dx || dy) === 1 ? '' : 's'} ${dx < 0 ? 'left' : dx > 0 ? 'right' : dy < 0 ? 'up' : 'down'}.`;
@@ -304,6 +314,16 @@
         }
       }
       if ($('nums').checked) drawNumbers();
+      // the finish line: a chequered stripe down the level
+      if (Number.isFinite(L.finish)) {
+        const fx = L.finish * Z, sq = Math.max(4, 12 * Z);
+        for (let y = 0, i = 0; y < oc.height; y += sq, i++) for (let k = 0; k < 2; k++) {
+          ox.fillStyle = (i + k) % 2 ? 'rgba(20,20,20,0.75)' : 'rgba(255,255,255,0.85)';
+          ox.fillRect(fx - sq + k * sq, y, sq, sq);
+        }
+        ox.fillStyle = '#fff'; ox.strokeStyle = '#000'; ox.lineWidth = 3; ox.font = 'bold 12px sans-serif';
+        ox.strokeText('finish', fx + sq + 4, 16); ox.fillText('finish', fx + sq + 4, 16);
+      }
       // where the truck drops in
       ox.fillStyle = '#ffd54a'; ox.strokeStyle = '#000'; ox.lineWidth = 1;
       ox.beginPath(); ox.arc(L.start[0] * Z, L.start[1] * Z, Math.max(5, 20 * Z), 0, Math.PI * 2); ox.fill(); ox.stroke();
@@ -361,6 +381,7 @@
       }
       if (mode === 'select') { box = { x0: c.x, y0: c.y, x1: c.x, y1: c.y }; dragging = 'box'; drawOver(); return; }
       if (mode === 'path') { pathDown(e, c); return; }
+      if (mode === 'finish') { remember(); setFinish(c.px); dragging = 'finish'; return; }
       remember();
       dragging = e.button === 2 ? SKY : sel;
       if (dragging === SKY) set(c.x, c.y, SKY); else paintAt(c.x, c.y, dragging);
@@ -371,6 +392,7 @@
       hover = c;
       if (dragging === 'box') { box.x1 = c.x; box.y1 = c.y; }
       else if (dragging?.path) pathDrag(e, c);
+      else if (dragging === 'finish') { L.finish = Math.max(2, Math.min(L.width - 2, Math.round(c.px / TILE))) * TILE; }
       else if (dragging !== null) { if (dragging === SKY) set(c.x, c.y, SKY); else paintAt(c.x, c.y, dragging); }
       const id = L.tiles[c.y]?.[c.x];
       $('status').textContent = `column ${c.x}, row ${c.y}  ·  ${(c.x * METRES_PER_TILE).toFixed(1)} m  ·  tile here: ${id ?? '-'}  ·  selected: ${sel}  ·  ${L.width}×${L.height} tiles  ·  mode: ${mode}`;
@@ -517,8 +539,20 @@
     });
     oc.addEventListener('mouseleave', () => { hover = null; drawOver(); });
 
+    /** Put the finish line at x (px), on a column edge, inside the level. */
+    function setFinish(x) {
+      L.finish = Math.max(2, Math.min(L.width - 2, Math.round(x / TILE))) * TILE;
+      drawOver(); save();
+      $('status').textContent = `Finish line ${Math.round(L.finish / TILE * 2.5)} m along. Drag to move it; No finish takes it away.`;
+    }
+    $('noFinish').onclick = () => {
+      if (!Number.isFinite(L.finish)) return;
+      remember(); delete L.finish; drawOver(); save();
+      $('status').textContent = 'No finish line: the stage goes on until you quit.';
+    };
     function setMode(m) {
       mode = m;
+      $('modeFinish').classList.toggle('on', m === 'finish');
       $('modePaint').classList.toggle('on', m === 'paint');
       $('modeSelect').classList.toggle('on', m === 'select' || m === 'paste');
       $('modePath').classList.toggle('on', m === 'path');
@@ -528,6 +562,7 @@
     $('modePaint').onclick = () => setMode('paint');
     $('modeSelect').onclick = () => setMode('select');
     $('modePath').onclick = () => setMode('path');
+    $('modeFinish').onclick = () => setMode('finish');
     const boxTiles = () => {
       const x0 = Math.min(box.x0, box.x1), x1 = Math.max(box.x0, box.x1), y0 = Math.min(box.y0, box.y1), y1 = Math.max(box.y0, box.y1);
       return { x0, x1, y0, y1, tiles: L.tiles.slice(y0, y1 + 1).map((r) => r.slice(x0, x1 + 1)) };
@@ -556,6 +591,7 @@
       if (e.key === 's' || e.key === 'S') setMode('select');
       if (e.key === 'p' || e.key === 'P') setMode('paint');
       if (e.key === 'd' || e.key === 'D') setMode('path');
+      if (e.key === 'f' || e.key === 'F') setMode('finish');
     });
 
     // ---- view options
@@ -573,8 +609,21 @@
       try { localStorage.setItem(KEY, JSON.stringify(L)); } catch { alert('Could not store the level in this browser'); return; }
       window.open(`../index.html?test=custom${$('nodamage').checked ? '&damage=0' : ''}`, 'funkytruck-play');
     };
-    const json = () => JSON.stringify({ name: L.name, width: L.width, height: L.height, start: L.start, tiles: L.tiles,
-      ...(L.guide?.pts.length ? { path: L.guide.pts } : {}) });
+    const stageOf = () => ({ name: L.name, width: L.width, height: L.height, start: L.start, tiles: L.tiles,
+      ...(Number.isFinite(L.finish) ? { finish: L.finish } : {}) });
+    const json = () => JSON.stringify({ ...stageOf(), ...(L.guide?.pts.length ? { path: L.guide.pts } : {}) });
+    // Save to Game: into the game's list of stages (src/stages.js: newest first, same name replaced).
+    $('toGame').onclick = () => {
+      L.name = $('name').value || 'My Track';
+      try {
+        let list = JSON.parse(localStorage.getItem('funkytruck.stages'));
+        if (!Array.isArray(list)) list = [];
+        const replaced = list.some((o) => o?.name === L.name);
+        list = [{ ...stageOf(), saved: Date.now() }, ...list.filter((o) => o?.name !== L.name)].slice(0, 40);
+        localStorage.setItem('funkytruck.stages', JSON.stringify(list));
+        $('status').textContent = `Saved "${L.name}" to the game (Stage Editor, Load Stage)${replaced ? ', replacing the one of the same name' : ''}.`;
+      } catch { alert('Could not save the stage in this browser (its storage may be full or blocked).'); }
+    };
     /** A saved path's points, checked, or null. */
     function readGuide(pts) {
       const num = (v) => Number.isFinite(v);
@@ -599,6 +648,7 @@
         if (!Array.isArray(v.tiles) || !v.tiles.length || !v.tiles.every((r) => Array.isArray(r) && r.length === v.tiles[0].length && r.every((id) => Number.isInteger(id) && id >= 0 && id < NT))) throw new Error('not a level');
         remember();
         L = { name: v.name || f.name.replace(/\.json$/, ''), width: v.tiles[0].length, height: v.tiles.length, tiles: v.tiles, start: Array.isArray(v.start) ? v.start : [3 * TILE, 3 * TILE], guide: readGuide(v.path) };
+        if (Number.isFinite(v.finish) && v.finish > 0 && v.finish < L.width * TILE) L.finish = v.finish;
         $('w').value = L.width; $('h').value = L.height; $('name').value = L.name;
         sizeCanvas(); save();
       } catch (err) { alert(`Couldn't open that file: ${err.message}`); }

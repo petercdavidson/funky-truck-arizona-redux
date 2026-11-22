@@ -52,10 +52,16 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   the JSON. They have no finish line; one with `loop` repeats for ever (`Game.updateLoop` shifts the
   world back a repeat). The physics has no air drag, so a long or steep downhill speeds up without
   limit: check designs with the simulated driver (`tools/tune-stunts.mjs`, the stunt tests).
-- `tools/editor.html`: a local level editor for the user to try tile combinations. Its level is
-  kept in localStorage (`funkytruck.editorLevel`), and `index.html?test=custom` plays it as a
-  Practice track with no finish. Levels the user sends from it are JSON: { name, width, height,
-  start, tiles }, plus `path` (the Path tool's curve points) when there is one; the game ignores it.
+- `editor/` (`editor/index.html`): the Stage Editor, its own page, opened in a new tab from the game's
+  Stage Editor screen. It has its own `editor/CLAUDE.md`, so work on the editor can start there
+  without reading the game. It shares only the stage format and storage keys (`src/stages.js`:
+  `funkytruck.editorLevel` for its Play button, `index.html?test=custom`; `funkytruck.stages` for
+  Save to Game) and reads tiles and levels through `src/assets.js`. Levels are JSON:
+  { name, width, height, start, tiles, finish? }, plus `path` (the Path tool's curve points) when
+  there is one; the game ignores it. The Pages deploy copies `editor/` (`.github/workflows/pages.yml`).
+- `src/stages.js` (no DOM): custom stages: `validStage`, the saved list (`game.stages`), and
+  `Game.startCustom` (`mode: 'custom'`) plays one; `finish` (px) is its finish line, and with none
+  it's played like a stunt track (`isStunt`).
 - `src/autotile.js` (no DOM): the editor's Path tool. Every tile with collision is a piece of
   floor running from one edge point to another; a sketched line becomes the chain of pieces that
   follows it best (a shortest-path search preferring joins the stages use), with the fill below
@@ -90,7 +96,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   for game state. `Renderer` scales the stage to fit the screen.
 - The physics is a faithful port of the original game. Treat changes to `Truck` / `CollisionWorld`
   as gameplay changes: say so explicitly and add or adjust tests.
-- Screens are `game.screen` strings: `title`, `modes` (the mode picker over the title), `stats`, `pauseOptions`, `options`, `help`, `garage`, `practiceSelect`, `trialSelect`, `sandbox`, `sandboxTweaks`, `playing`,
+- Screens are `game.screen` strings: `title`, `modes` (the mode picker over the title), `stats`, `pauseOptions`, `options`, `help`, `garage`, `practiceSelect`, `trialSelect`, `sandbox`, `stageEditor`, `stageLoad`, `sandboxTweaks`, `playing`,
   `paused`, `gameOver`. A new screen needs an entry in `BUTTONS`, a case in `Renderer.draw`, and
   `body[data-screen]` CSS if it affects touch controls.
 - Saved data goes through `game.store` (key prefix `funkytruck.` in localStorage). Validate
