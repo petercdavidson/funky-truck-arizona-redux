@@ -57,6 +57,7 @@
     <span class="group">
       <button id="modePaint" class="on" title="P">Paint</button>
       <button id="modeSelect" title="S: drag a box, then Ctrl+C / Ctrl+X">Select</button>
+      <button id="modePath" title="D: draw the ground's line left to right; the right tiles go in under it">Path</button>
       <button id="undo" title="Ctrl+Z">Undo</button>
       <button id="redo" title="Ctrl+Shift+Z">Redo</button>
     </span>
@@ -86,7 +87,9 @@
       truck drops in. <b>Select</b> (<kbd>S</kbd>): drag a box, <kbd>Ctrl+C</kbd> copies,
       <kbd>Ctrl+V</kbd> then click to stamp it (<kbd>Esc</kbd> stops). <kbd>Del</kbd> clears the box.
       <b>Shift</b> moves the whole level (<kbd>Shift</kbd>+arrow keys: 1 tile).
-      Tiles are 64 px; 1 tile is 2.5 m.
+      <b>Path</b> (<kbd>D</kbd>): draw the line of the ground, left to right, and the editor puts in the
+      tiles that follow it (with the fill below), joining the ground on either side. Draw over part of a
+      track to redo it. Tiles are 64 px; 1 tile is 2.5 m.
     </div>
     <h3>Tiles (as laid out in the tile sheet)</h3>
     <div id="palette"></div>
@@ -100,6 +103,7 @@
   <script type="module">
     import { loadAssets } from '../src/assets.js';
     import { TILE, STAGE_NAMES, METRES_PER_TILE } from '../src/game.js';
+    import { buildKit, drawPath } from '../src/autotile.js';
 
     const $ = (id) => document.getElementById(id);
     const a = await loadAssets('../assets/');
@@ -107,6 +111,7 @@
     const NT = collision.length;           // tile ids are 0 .. NT-1; 0 is sky, 1 solid dirt
     const SKY = 0, DIRT = 1;
     const KEY = 'funkytruck.editorLevel';
+    const kit = buildKit(collision, stages, TILE);   // the Path tool's pieces and fill
 
     // ---- which tiles sit next to which in the nine stages (to see how pieces fit together)
     const near = Array.from({ length: NT }, () => ({ right: new Map(), left: new Map(), above: new Map(), below: new Map() }));
@@ -242,7 +247,7 @@
       for (let y = 0; y < L.height; y++) for (let x = 0; x < L.width; x++) drawTile(x, y);
       drawOver();
     }
-    let hover = null, box = null, clip = null, mode = 'paint';
+    let hover = null, box = null, clip = null, mode = 'paint', stroke = null;
     function drawOver() {
       const s = TILE * Z;
       ox.clearRect(0, 0, oc.width, oc.height);
@@ -275,6 +280,10 @@
       ox.beginPath(); ox.arc(L.start[0] * Z, L.start[1] * Z, Math.max(5, 20 * Z), 0, Math.PI * 2); ox.fill(); ox.stroke();
       ox.fillStyle = '#000'; ox.font = 'bold 11px sans-serif'; ox.fillText('start', L.start[0] * Z + 8, L.start[1] * Z - 8);
       const rect = (x0, y0, x1, y1, color) => { ox.strokeStyle = color; ox.lineWidth = 2; ox.strokeRect(x0 * s + 1, y0 * s + 1, (x1 - x0 + 1) * s - 2, (y1 - y0 + 1) * s - 2); };
+      if (stroke && stroke.length > 1) {
+        ox.strokeStyle = '#ff3d8b'; ox.lineWidth = 3; ox.lineJoin = ox.lineCap = 'round';
+        ox.beginPath(); stroke.forEach(([x, y], i) => (i ? ox.lineTo(x * Z, y * Z) : ox.moveTo(x * Z, y * Z))); ox.stroke();
+      }
       if (box) rect(Math.min(box.x0, box.x1), Math.min(box.y0, box.y1), Math.max(box.x0, box.x1), Math.max(box.y0, box.y1), '#ffd54a');
       if (hover) {
         if (mode === 'paste' && clip) {
@@ -325,6 +334,7 @@
         drawOver(); save(); return;
       }
       if (mode === 'select') { box = { x0: c.x, y0: c.y, x1: c.x, y1: c.y }; dragging = 'box'; drawOver(); return; }
+      if (mode === 'path') { if (e.button === 0) { stroke = [[c.px, c.py]]; dragging = 'path'; drawOver(); } return; }
       remember();
       dragging = e.button === 2 ? SKY : sel;
       if (dragging === SKY) set(c.x, c.y, SKY); else paintAt(c.x, c.y, dragging);
@@ -334,23 +344,40 @@
       const c = cell(e);
       hover = c;
       if (dragging === 'box') { box.x1 = c.x; box.y1 = c.y; }
+      else if (dragging === 'path') stroke.push([c.px, c.py]);
       else if (dragging !== null) { if (dragging === SKY) set(c.x, c.y, SKY); else paintAt(c.x, c.y, dragging); }
       const id = L.tiles[c.y]?.[c.x];
       $('status').textContent = `column ${c.x}, row ${c.y}  ·  ${(c.x * METRES_PER_TILE).toFixed(1)} m  ·  tile here: ${id ?? '-'}  ·  selected: ${sel}  ·  ${L.width}×${L.height} tiles  ·  mode: ${mode}`;
       drawOver();
     });
-    window.addEventListener('mouseup', () => { if (dragging !== null && dragging !== 'box') save(); dragging = null; });
+    window.addEventListener('mouseup', () => {
+      if (dragging === 'path') finishPath();
+      else if (dragging !== null && dragging !== 'box') save();
+      dragging = null;
+    });
+    // ---- the Path tool: turn the drawn line into tiles
+    function finishPath() {
+      const line = stroke; stroke = null;
+      const r = line && line.length > 1 ? drawPath(L, line, kit) : null;
+      if (!r) { $('status').textContent = 'Draw the line left to right, at least one tile long.'; drawOver(); return; }
+      remember();
+      L.tiles = r.tiles;
+      drawAll(); save();
+      $('status').textContent = `Laid ${r.chain.length} ground pieces over columns ${r.x0} to ${r.x1 - 1}. Ctrl+Z undoes it.`;
+    }
     oc.addEventListener('mouseleave', () => { hover = null; drawOver(); });
 
     function setMode(m) {
       mode = m;
       $('modePaint').classList.toggle('on', m === 'paint');
       $('modeSelect').classList.toggle('on', m === 'select' || m === 'paste');
+      $('modePath').classList.toggle('on', m === 'path');
       if (m === 'paint') box = null;
       drawOver();
     }
     $('modePaint').onclick = () => setMode('paint');
     $('modeSelect').onclick = () => setMode('select');
+    $('modePath').onclick = () => setMode('path');
     const boxTiles = () => {
       const x0 = Math.min(box.x0, box.x1), x1 = Math.max(box.x0, box.x1), y0 = Math.min(box.y0, box.y1), y1 = Math.max(box.y0, box.y1);
       return { x0, x1, y0, y1, tiles: L.tiles.slice(y0, y1 + 1).map((r) => r.slice(x0, x1 + 1)) };
@@ -375,6 +402,7 @@
       if (e.key === 'Escape') { setMode(mode === 'paste' ? 'select' : 'paint'); box = null; drawOver(); return; }
       if (e.key === 's' || e.key === 'S') setMode('select');
       if (e.key === 'p' || e.key === 'P') setMode('paint');
+      if (e.key === 'd' || e.key === 'D') setMode('path');
     });
 
     // ---- view options
