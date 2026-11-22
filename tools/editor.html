@@ -67,6 +67,7 @@
       <label><input id="grid" type="checkbox" checked> grid</label>
       <label><input id="coll" type="checkbox"> collision</label>
       <label title="Show the Path tool's curve in every mode"><input id="showPath" type="checkbox" checked> path</label>
+      <label title="Each tile's number: yellow for ground pieces (with collision), cyan for fill, grey for plain dirt (1)"><input id="nums" type="checkbox"> numbers</label>
       <label title="Painting a tile fills the column below it with solid dirt"><input id="fill" type="checkbox" checked> dirt below</label>
     </span>
     <span class="group">
@@ -257,6 +258,24 @@
       drawOver();
     }
     let hover = null, box = null, clip = null, mode = 'paint';
+    // each tile's number, over the cells in view: yellow for ground pieces, cyan for fill, grey for dirt
+    function drawNumbers() {
+      const s = TILE * Z, sc = $('scroller');
+      if (s < 14) return;
+      const fs = Math.max(9, Math.min(16, Math.round(s / 3.2)));
+      const xa = Math.max(0, Math.floor(sc.scrollLeft / s)), xb = Math.min(L.width, Math.ceil((sc.scrollLeft + sc.clientWidth) / s));
+      const ya = Math.max(0, Math.floor(sc.scrollTop / s)), yb = Math.min(L.height, Math.ceil((sc.scrollTop + sc.clientHeight) / s));
+      ox.font = `bold ${fs}px system-ui, sans-serif`; ox.textAlign = 'center'; ox.textBaseline = 'middle';
+      ox.lineWidth = 3; ox.lineJoin = 'round'; ox.strokeStyle = 'rgba(0,0,0,0.85)';
+      for (let y = ya; y < yb; y++) for (let x = xa; x < xb; x++) {
+        const id = L.tiles[y][x];
+        if (id === SKY) continue;
+        const cx = (x + 0.5) * s, cy = (y + 0.5) * s;
+        ox.fillStyle = kit.isPiece.has(id) ? '#ffe14d' : id === DIRT ? 'rgba(200,200,200,0.6)' : '#5ee8ff';
+        ox.strokeText(id, cx, cy); ox.fillText(id, cx, cy);
+      }
+      ox.textAlign = 'start'; ox.textBaseline = 'alphabetic';
+    }
     function drawOver() {
       const s = TILE * Z;
       ox.clearRect(0, 0, oc.width, oc.height);
@@ -284,6 +303,7 @@
           }
         }
       }
+      if ($('nums').checked) drawNumbers();
       // where the truck drops in
       ox.fillStyle = '#ffd54a'; ox.strokeStyle = '#000'; ox.lineWidth = 1;
       ox.beginPath(); ox.arc(L.start[0] * Z, L.start[1] * Z, Math.max(5, 20 * Z), 0, Math.PI * 2); ox.fill(); ox.stroke();
@@ -489,6 +509,12 @@
       $('status').textContent = 'The tiles stay as they are. Click to start a new path.';
     };
     $('showPath').onchange = () => drawOver();
+    $('nums').onchange = () => drawOver();
+    let numsPending = false;
+    $('scroller').addEventListener('scroll', () => {
+      if (!$('nums').checked || numsPending) return;
+      numsPending = true; requestAnimationFrame(() => { numsPending = false; drawOver(); });
+    });
     oc.addEventListener('mouseleave', () => { hover = null; drawOver(); });
 
     function setMode(m) {
