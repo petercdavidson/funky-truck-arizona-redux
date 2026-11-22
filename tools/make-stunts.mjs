@@ -22,11 +22,6 @@ import { buildGrammar } from '../src/endless.js';
 const root = new URL('../', import.meta.url);
 export const data = JSON.parse(readFileSync(new URL('assets/levels.json', root)));
 const g = buildGrammar(data.levels);
-// The Halfpipe also uses the columns Endless leaves out because a stage has more than solid ground
-// under them (Stage Six's floating bottom edge): its smooth steep drop and climb are among them,
-// and the tracks fill below every column with solid ground anyway. (The other tracks keep the
-// plain grammar they were tuned with.)
-export const deepGrammar = buildGrammar(data.levels, { keepDeep: true });
 const DEPTH = 8, FILL = 1, SKY = 0;
 
 /** A target profile from a start height and [columns, height to reach] pieces, straight between. */
@@ -224,54 +219,13 @@ function curve(a, b, n, kind) {
   return out;
 }
 
-/** Halfpipe: a smooth U with a flat ledge along the top of each side. */
 /**
- * How far a bowl's ground (`tops`, a row per column) is from a smooth symmetric bowl: how far each
- * column is from its mirror image, plus a penalty wherever a wall's slope, from the lip down to
- * the floor, gets steeper again after it has started to ease off.
+ * Halfpipe: designed by hand in the level editor (tools/stunts/halfpipe.json, the editor's own
+ * JSON). It is used as it is, not generated.
  */
-function bowlScore(tops, ledge) {
-  const n = tops.length;
-  let asym = 0;
-  for (let i = 0; i < n; i++) asym += Math.abs(tops[i] - tops[n - 1 - i]);
-  const bottom = Math.max(...tops), a = tops.indexOf(bottom), b = tops.lastIndexOf(bottom);
-  const L = [], R = [];
-  for (let i = ledge; i <= a; i++) L.push(tops[i] - tops[i - 1]);
-  for (let i = n - ledge; i > b; i--) R.push(tops[i - 1] - tops[i]);
-  let bad = 0;
-  for (const S of [L, R]) {
-    const peak = S.indexOf(Math.max(...S));
-    for (let i = 1; i < S.length; i++) if (i <= peak ? S[i] < S[i - 1] : S[i] > S[i - 1]) bad += Math.abs(S[i] - S[i - 1]);
-  }
-  return asym + 8 * bad;
-}
-
-/**
- * Halfpipe: a bowl, the same both ways, with a flat ledge along each top. Each wall starts as
- * near vertical as the stages' tiles go (a cliff piece, then Stage Six's smooth 63° slope) and
- * eases out to a flat floor, like Stage Six's first drop. The tiles differ going down and coming
- * up, so the bowl is built, averaged with its own mirror image, and built again to that, a few
- * times over, keeping the smoothest and most symmetrical (bowlScore).
- */
-export const PIPE = { top: 10, ledge: 8, floor: 10, bend: 0.6, wall: [4, 3, 3, 2, 2, 2, 2, 2, 2, 1.5, 1.5, 1, 1, 1, 0.5, 0.5, 0.5, 0.5] };
-export function halfpipe(p = PIPE) {
-  const down = [];
-  let y = p.top;
-  for (const step of p.wall) { y += step; down.push(y); }
-  const G = deepGrammar, flatS = flatShape(G);
-  const ledge = { s: flatS, top: p.top, shape: G.shapes[flatS] };
-  let target = [...Array(p.ledge).fill(p.top), ...down, ...Array(p.floor).fill(y), ...down.slice(0, -1).reverse(), p.top];
-  let best = null;
-  for (let round = 0; round < 8; round++) {
-    const path = build(target, { end: ledge, grammar: G, bend: p.bend });
-    if (!path) break;
-    const full = [...path, ...Array.from({ length: p.ledge }, () => ({ ...ledge }))];
-    const tops = full.map((c) => c.top), n = tops.length;
-    const score = bowlScore(tops, p.ledge);
-    if (!best || score < best.score) best = { score, full, target: [...target, ...Array(p.ledge).fill(p.top)] };
-    target = tops.slice(0, n - p.ledge).map((t, i) => (t + tops[n - 1 - i]) / 2);
-  }
-  return makeLevel('Halfpipe', best.full, { startCol: 2, target: best.target });
+export function halfpipe() {
+  const { name, width, height, start, tiles } = JSON.parse(readFileSync(new URL('tools/stunts/halfpipe.json', root)));
+  return { name, width, height, start, tiles };
 }
 
 /** A level as stored: a column at a time (see unpackLevel in src/game.js). */

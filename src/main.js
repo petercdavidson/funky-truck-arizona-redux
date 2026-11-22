@@ -158,9 +158,6 @@ function doAction(a) {
   else if (a === 'standard') game.startCampaign();
   else if (a === 'classic') game.startCampaign(true);
   else if (a === 'endless') game.startEndless();
-  else if (a === 'battle') game.startBattle();
-  else if (a === 'rally') game.showMenu('rallySelect');
-  else if (/^rally\d$/.test(a)) game.startRally(Number(a.slice(5)));
   else if (a === 'sandbox') game.showMenu('sandbox');
   else if (a === 'sbGo') game.startSandbox();
   else if (a === 'sbReset') game.resetSandbox();
@@ -462,7 +459,7 @@ function fit() {
 /**
  * Test hook for automated screenshots, e.g. ?test=play&stage=5&frames=400&touch=1
  *   test   = title | modes | stats | options | garage | help | practice | trials | rallies | sandboxSetup | play | trial
- *            | endless | battle | rally | sandbox | paused | gameover
+ *            | endless | sandbox | paused | gameover
  *            (trial: a Time Trial of `stage`, 9 for All Nine)
  *   stage  = stage index for play (0-8), frames = steps to simulate with the gas held
  *   seed   = for endless: a number, so the same course comes up every time
@@ -494,7 +491,7 @@ function applyTestParams() {
     Object.assign(game.look, { body, tyre, hub, paint: Number.isInteger(paint) ? paint : body });
   }
   const frames = Number(q.get('frames')) || 0;
-  const screens = { garage: 'garage', help: 'help', practice: 'practiceSelect', trials: 'trialSelect', rallies: 'rallySelect', sandboxSetup: 'sandbox', title: 'title', modes: 'modes', stats: 'stats', options: 'options' };
+  const screens = { garage: 'garage', help: 'help', practice: 'practiceSelect', trials: 'trialSelect', sandboxSetup: 'sandbox', title: 'title', modes: 'modes', stats: 'stats', options: 'options' };
   if (screens[test]) {
     game.showMenu(screens[test]);
     for (let i = 0; i < 300; i++) game.step();
@@ -504,14 +501,6 @@ function applyTestParams() {
     let s = Number(q.get('seed')) || 1;
     game.random = () => (s = (s * 16807) % 2147483647) / 2147483647;
     game.startEndless();
-  } else if (test === 'battle') {
-    let s = Number(q.get('seed')) || 1;
-    game.random = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    game.startBattle();
-  } else if (test === 'rally') {
-    let s = Number(q.get('seed')) || 1;
-    game.random = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    game.startRally(Number(q.get('stage')) || 0);
   } else if (test === 'sandbox') {
     game.sandbox.track = Number(q.get('stage')) || 0;
     game.startSandbox();

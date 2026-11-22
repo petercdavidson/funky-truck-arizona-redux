@@ -83,7 +83,7 @@ export function battleFront(r, game, v) {
   if (game.mode === 'rally') for (const e of b.racers) {
     const T = enemyPose(v, e).T;
     const x = (T[0] + T[2] + T[4] + T[6] + T[8]) / 5, y = Math.min(T[7], T[9]) - 40;
-    r.text(e.name, x, y - 8, { size: 13, font: HUD_FONT, weight: '800', color: paintOf(e), shadow: 'rgba(38,38,38,0.75)' });
+    r.text(e.name, x, y - 8, { size: 13, font: HUD_FONT, weight: '800', color: paintOf(e) });
   }
   for (const e of b.enemies) {
     if (e.wreck || e.showHealth <= 0) continue;
@@ -300,14 +300,14 @@ export function battleHud(r, game, y) {
     ctx.globalAlpha = Math.min(1, c.timer / 20, age / 3 + 0.3);
     ctx.translate(r.viewW / 2, 200);
     ctx.scale(pop, pop);
-    r.text(c.text, 0, -10, { size: 19, font: HUD_FONT, weight: '900', color: c.gold ? GOLD : '#fff', shadow: 'rgba(38,38,38,0.65)' });
+    r.text(c.text, 0, -10, { size: 19, font: HUD_FONT, weight: '900', color: c.gold ? GOLD : '#fff' });
     ctx.restore();
   }
   // The keys, for the first few seconds (touch screens have labelled buttons).
   if (!r.touchMode && b.steps < 560) {
     ctx.save();
     ctx.globalAlpha = Math.min(1, (560 - b.steps) / 60);
-    r.text('Z jump  ·  X fire a missile  ·  C or Shift boost', r.viewW / 2, r.viewH - 34, { size: 13, weight: '700', color: 'rgba(255,255,255,0.85)', shadow: 'rgba(38,38,38,0.6)' });
+    r.text('Z jump  ·  X fire a missile  ·  C or Shift boost', r.viewW / 2, r.viewH - 34, { size: 13, weight: '700', color: 'rgba(255,255,255,0.85)' });
     ctx.restore();
   }
   if (b.hurt > 0) {
@@ -326,7 +326,7 @@ const paintOf = (e) => BODY_PAINTS[e.look.paint * 2];
 export function rallyHud(r, game) {
   const race = game.race, ctx = r.ctx, R = r.viewW - 10;
   if (!race || !game.battle) return;
-  const hud = { font: HUD_FONT, weight: '900', align: 'right', shadow: 'rgba(38,38,38,0.6)' };
+  const hud = { font: HUD_FONT, weight: '900', align: 'right' };
   const place = race.place, n = race.field;
   r.text('place', R + 0.5, 9, { size: 12.5, font: HUD_FONT, weight: '800', align: 'right' });
   ctx.font = `900 30px ${HUD_FONT}`;
@@ -336,7 +336,7 @@ export function rallyHud(r, game) {
   r.text(ordinal(place), R - ctx.measureText(' ').width - measure(ctx, of, 15), 20, { ...hud, size: 30, color: place === 1 ? '#ffe27a' : '#fff' });
   r.text(formatTime(race.clock), R, 56, { size: 14, font: HUD_FONT, weight: '800', align: 'right', color: 'rgba(255,255,255,0.9)' });
   if (race.championship) r.text(`${race.points.You} pts  ·  stage ${game.level + 1}/9`, R, 74, { size: 11.5, font: HUD_FONT, weight: '800', align: 'right', color: 'rgba(255,255,255,0.8)' });
-  if (game.tickerTimer > 0 && game.screen !== 'gameOver' && !race.holding) r.text(game.ticker, r.viewW / 2, 82, { size: game.ticker === 'GO!' ? 28 : 18, font: HUD_FONT, weight: '900', color: game.ticker === 'GO!' ? '#ffe27a' : '#fff', shadow: 'rgba(38,38,38,0.6)' });
+  if (game.tickerTimer > 0 && game.screen !== 'gameOver' && !race.holding) r.text(game.ticker, r.viewW / 2, 82, { size: game.ticker === 'GO!' ? 28 : 18, font: HUD_FONT, weight: '900', color: game.ticker === 'GO!' ? '#ffe27a' : '#fff' });
   progressStrip(r, game);
   if (game.screen !== 'playing') return;
   // The countdown: 3, 2, 1, big in the middle.
@@ -347,7 +347,7 @@ export function rallyHud(r, game) {
     ctx.translate(r.viewW / 2, r.viewH * 0.32);
     ctx.scale(k, k);
     ctx.globalAlpha = Math.min(1, (race.countdown % 70 || 70) / 15);
-    r.text(String(n3), 0, -30, { size: 64, font: HUD_FONT, weight: '900', color: '#ffe27a', shadow: 'rgba(38,38,38,0.7)' });
+    r.text(String(n3), 0, -30, { size: 64, font: HUD_FONT, weight: '900', color: '#ffe27a' });
     ctx.restore();
   }
   // Rivals off screen: a marker at the edge they're off, in their colour.
@@ -367,7 +367,7 @@ export function rallyHud(r, game) {
     ctx.fillStyle = paintOf(e); ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2; ctx.stroke();
     ctx.restore();
-    r.text(e.name, right ? x - 16 : x + 16, y - 6, { size: 11, font: HUD_FONT, weight: '800', align: right ? 'right' : 'left', shadow: 'rgba(38,38,38,0.7)' });
+    r.text(e.name, right ? x - 16 : x + 16, y - 6, { size: 11, font: HUD_FONT, weight: '800', align: right ? 'right' : 'left' });
   }
 }
 

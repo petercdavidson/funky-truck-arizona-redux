@@ -28,10 +28,8 @@ sight and falls back down.
 | **Classic** | The nine stages as the original game played: the original flip bonus, the ceiling, the original controls, and a wrecked truck stays in one piece. Only display fixes (live text, alignment) and the pause button are new. |
 | **Endless** | A course generated as you drive that never ends. No damage: it's free play. **End Run** in the pause menu finishes the run and saves your best distance. |
 | **Time Trial** | Any of the nine stages, or **All Nine** in a row, against the clock, by Standard's rules (a wreck doesn't finish). The clock runs from when the truck first lands on each stage to its finish line. Your best run on each track comes back as a see-through **ghost** to race, and the clock's readout shows how far ahead (green) or behind (pink) of it you are at the same point on the track. The stage list shows each best time; a **Ghost** switch there turns the ghost off. Finishing offers **Retry**, **Next** and **Stages**; quitting (from the pause menu or the finish box) goes back to the stage list. |
-| **Battle** | Endless's course, with damage, and enemy trucks charging at you from the right in waves. Get past them, or take them out with missiles, rams and stomps. Pick up more missiles, jumps, boost, repairs and shields along the way. The run ends when your truck is wrecked. See [Battle Mode](#battle-mode). |
-| **Rally** | Race five rival trucks to the finish line of any of the nine stages, or all nine as a **Championship**. Same truck-on-truck collisions as Battle, no weapons, no damage. See [Rally Mode](#rally-mode). |
 | **Sandbox** | Any stage or stunt track with no damage and no finish, and the physics as you like: drive power, gravity, boost, jumps, missiles, traffic, slow motion... See [Sandbox Mode](#sandbox-mode). |
-| **Practice** | One stage of your choice, played like Standard, or one of three **stunt tracks**, where tricks always score and there's no finish line: **Mega Ramp** (a 450 m accelerator at 45°, a launch ramp good for about 470 km/h and 13 s in the air, then a long run-out ending in a quarter pipe), **Kicker Run** (a bumpy downhill of small kickers that goes on for ever) and **Halfpipe** (a bowl: walls nearly vertical at the lips, easing to a flat floor, with a ledge along each top). Options on the stage screen switch **Damage** off and play by **Classic** rules. The pause menu can **Restart** the stage. Finishing offers **Again**, **Next** and **Stages**; quitting goes back to the stage list. |
+| **Practice** | One stage of your choice, played like Standard, or one of three **stunt tracks**, where tricks always score and there's no finish line: **Mega Ramp** (a 450 m accelerator at 45°, a launch ramp good for about 470 km/h and 13 s in the air, then a long run-out ending in a quarter pipe), **Kicker Run** (a bumpy downhill of small kickers that goes on for ever) and **Halfpipe** (a deep bowl with steep walls and a ledge along each top). Options on the stage screen switch **Damage** off and play by **Classic** rules. The pause menu can **Restart** the stage. Finishing offers **Again**, **Next** and **Stages**; quitting goes back to the stage list. |
 
 Outside Classic, the driving view fills the window, on a phone held either way up (the
 on-screen controls sit over the bottom of it). Close in, it never shows less of the world than
@@ -109,13 +107,11 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Flip upright (when offered) | R | Flip button | Y |
 | Play again (game over) | Space, Enter or Ctrl | Play Again button | A |
 | Back to menu | Esc | Menu button | |
-| Sound on / off | M | Sound switch (Options screen or pause menu) | |
+| Sound on / off | | Sound switch (Options screen or pause menu) | |
 | Full screen | F | | |
-| Battle: fire a missile | X | fire button (right) | X |
-| Battle: jump | Z | jump button (left) | LB |
-| Battle: boost (hold) | C or Shift | boost button (right) | RB |
-
-The Battle keys work in Sandbox too.
+| Sandbox: fire a missile | X | fire button (right) | X |
+| Sandbox: jump | Z | jump button (left) | LB |
+| Sandbox: boost (hold) | C or Shift | boost button (right) | RB |
 
 **Options** (on the title screen) has the switches for sound, the controls (Standard / Pedals or
 One Button), the dynamic camera, the dynamic crash cam, and **Show Frame Rate** (frames per second
@@ -132,66 +128,8 @@ button with the options that apply to the run (Classic has no controls or camera
 The best scores, the High Scores screen's stats, the options and the truck chosen in the garage (with each body's paint) are saved in the browser
 (`localStorage`).
 
-## Battle Mode
-
-Battle is played on an Endless course with damage on. Enemy trucks come at you from the right in
-waves, and your job is to get past them. Each wave is bigger than the last, and new kinds of enemy
-join in as the waves go on:
-
-| Enemy | From wave | What it's like |
-| --- | --- | --- |
-| **Basher** | 1 | An ordinary truck with a bull bar. |
-| **Speeder** | 2 | A spoiler, more power, a higher top speed, and less armour. |
-| **Heavy** | 3 | An armoured ram plate. More than twice your weight, so it shoves you about, and it takes a lot to wreck. |
-| **Gunner** | 4 | A rocket launcher on the roof. It fires slow missiles at you when you're in range. Jump them, or shoot them down. |
-
-Enemies are real trucks, with the same physics as yours (they're simulated in a mirror image of the
-course, so they face the other way). They drive at you and balance on climbs, and they back up for
-another go when they get stuck. Trucks crash into each other: the harder the hit, the more damage
-both take, though they take more than you. Boosting into one or landing on top of it (a **Stomp**)
-does far more. An enemy turned over scrapes its cab and soon wrecks itself, just as yours would.
-
-- **Missiles** (X): fly straight out of the front of the truck and home in on the nearest enemy
-  ahead. A direct hit wrecks a Basher. The blast flings everything near it, you included, but your
-  own missiles never hurt you. Rocket jumps are allowed. A missile fired with the nose in the
-  ground goes off there.
-- **Jump** (Z): a hop straight up, about three tiles high, from the ground or just after leaving it.
-  It's high enough to clear an enemy truck.
-- **Boost** (hold C or Shift): a rocket push along the truck, on the ground or in the air. The
-  meter refills slowly by itself.
-- **Pickups** float above the course: **+3 missiles**, **+2 jumps**, **boost**, **repair** (takes
-  away 350 damage) and a **shield** (8 s of no damage, and enemies bounce off it hard). A wrecked
-  enemy sometimes leaves one behind.
-
-Scoring: 10 points a column as in Endless, 500 for each **takedown** (2× for a double within three
-seconds, 3× for a triple...), 100 for each enemy you get past, a bonus for clearing each wave, and
-your tricks as usual. Off-screen enemies show as a pulsing marker at the right edge. Scraping your
-cab does less damage than in Standard, and the **Flip** button turns you back over when you're
-stuck. Battle keeps its own best score, and the High Scores screen counts your takedowns. The
-tuning is `BATTLE` and `ENEMY_KINDS` in `src/battle.js`.
-
-## Rally Mode
-
-Pick a stage (or the **Championship**, all nine in a row) from Rally's stage list. Five rivals line
-up on the grid ahead of you (the stages start near their left edge, so you start at the back), each
-in a different truck from yours and from each other's, with a name (places in Utah). Everyone is
-dropped in together, and nobody moves until the countdown's **3, 2, 1, GO!**
-
-The rivals are real trucks with your truck's physics. They drive flat out, lean to keep their noses
-down on climbs, back up for another go when they get stuck, hop a wall they keep failing at (with a
-burst of boost), and turn themselves back over if they land on their roofs. One that's hopelessly
-stuck is moved a few tiles on, where you can't see it (or, if it's still stuck, where you can, in a
-puff of smoke). They keep it close: a little faster when well behind you, a little slower when well
-ahead. Trucks crash into each other exactly as in Battle, but nobody takes damage, and your Flip
-button is there when you need it.
-
-The HUD shows your place (1st to 6th) and the race clock, a strip of everyone's progress along the
-stage (you in white, the rivals in their colours) and, at the screen's edge, markers for rivals out
-of view. You're placed behind everyone who crossed the line before you. If every rival has finished
-and you still haven't after 30 seconds, your race is over in last place. The Championship scores
-10, 8, 6, 5, 4 and 3 points a stage and adds them up. The stage list shows your best place on each
-stage and in the Championship, and the High Scores screen counts your wins. The settings are
-`RALLY` in `src/rally.js` and `RACER` in `src/battle.js`.
+Battle Mode and Rally Mode are out of the game for now; they are kept, playable, on the
+`feat/battle-rally` branch.
 
 ## Sandbox Mode
 

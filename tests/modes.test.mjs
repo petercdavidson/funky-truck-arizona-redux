@@ -662,7 +662,7 @@ test('Practice offers the stunt tracks after the nine stages; they have no finis
   assert.deepEqual(stunts.map((s) => s.name), ['Mega Ramp', 'Kicker Run', 'Halfpipe']);
   const withStunts = { ...data, stunts };
   for (const [i, s] of stunts.entries()) {
-    assert.ok(s.width > 40 && s.tiles.length === s.height && s.tiles.every((row) => row.length === s.width), `${s.name} is a well-formed track`);
+    assert.ok(s.width > 30 && s.tiles.length === s.height && s.tiles.every((row) => row.length === s.width), `${s.name} is a well-formed track`);
     for (let x = 0; x < s.width; x++) assert.equal(s.tiles[s.height - 1][x], 1, `${s.name}: column ${x} ends in solid dirt`);
     const store = memoryStore();
     const g = new Game(withStunts, { store });

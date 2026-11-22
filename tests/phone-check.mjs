@@ -222,37 +222,29 @@ try {
     await shot('phone-portrait-time-trial-driving');
   }
 
-  // Battle on a phone held sideways: picking it from the mode picker, and its fire, jump and
-  // boost buttons.
+  // Sandbox on a phone held sideways: its fire, jump and boost buttons.
   await phone(844, 390);
-  await load('?test=modes&touch=1');
-  const battleAt = await evaluate(`(() => { const { renderer, game } = window.__funkyTruck; const r = document.getElementById('game').getBoundingClientRect();
-    const p = renderer.buttonCentre('modes', 'battle', game); return p && [r.x + p[0], r.y + p[1]]; })()`);
-  check(!!battleAt, 'battle: the mode picker has Battle');
-  if (battleAt) {
-    await touch('touchStart', [battleAt]); await touch('touchEnd', []);
-    await sleep(2500); // dropped in, and landed
-    check(await evaluate('window.__funkyTruck.game.mode') === 'battle', 'battle: tapping Battle starts it');
-    for (const sel of ['[data-press="fire"]', '[data-press="jump"]', '[data-key="boost"]']) check(!!await center(sel), `battle: ${sel} is on screen`);
-    const before = await evaluate('window.__funkyTruck.game.battle.missilesLeft');
-    const fireAt = await center('[data-press="fire"]');
-    if (fireAt) { await touch('touchStart', [fireAt]); await touch('touchEnd', []); }
-    await sleep(200);
-    check(await evaluate('window.__funkyTruck.game.battle.missilesLeft') === before - 1, 'battle: tapping fire fires a missile');
-    check(await evaluate('document.getElementById("fire-count").textContent') === String(before - 1), 'battle: the fire button shows what is left');
-    const boostAt = await center('[data-key="boost"]');
-    if (boostAt) {
-      await touch('touchStart', [boostAt]);
-      await sleep(150);
-      check(await evaluate('window.__funkyTruck.game.keys.boost'), 'battle: holding boost boosts');
-      await touch('touchEnd', []);
-    }
-    await shot('phone-landscape-battle');
+  await load('?test=sandbox&touch=1');
+  await sleep(2500); // dropped in, and landed
+  for (const sel of ['[data-press="fire"]', '[data-press="jump"]', '[data-key="boost"]']) check(!!await center(sel), `sandbox: ${sel} is on screen`);
+  // (count the shots: a missile fired into the ground goes off at once)
+  await evaluate('(() => { const b = window.__funkyTruck.game.battle, f = b.fire.bind(b); b.shots = 0; b.fire = (t) => { b.shots++; f(t); }; })()');
+  const fireAt = await center('[data-press="fire"]');
+  if (fireAt) { await touch('touchStart', [fireAt]); await touch('touchEnd', []); }
+  await sleep(200);
+  check(await evaluate('window.__funkyTruck.game.battle.shots') > 0, 'sandbox: tapping fire fires a missile');
+  const boostAt = await center('[data-key="boost"]');
+  if (boostAt) {
+    await touch('touchStart', [boostAt]);
+    await sleep(150);
+    check(await evaluate('window.__funkyTruck.game.keys.boost'), 'sandbox: holding boost boosts');
+    await touch('touchEnd', []);
   }
+  await shot('phone-landscape-sandbox');
   await load('?test=play&touch=1');
-  check(!await center('[data-press="fire"]'), 'battle buttons only show in Battle');
+  check(!await center('[data-press="fire"]'), 'weapon buttons only show in Sandbox');
 
-  // Rally and Sandbox on a phone held upright: starting each from its own screen.
+  // Sandbox on a phone held upright: starting it from its own screen.
   await phone(390, 844);
   const tapButton = async (screen, action) => {
     const at = await evaluate(`(() => { const { renderer, game } = window.__funkyTruck; const r = document.getElementById('game').getBoundingClientRect();
@@ -260,14 +252,6 @@ try {
     if (at) { await touch('touchStart', [at]); await touch('touchEnd', []); await sleep(300); }
     return !!at;
   };
-  await load('?test=rallies&touch=1');
-  await shot('phone-portrait-rally-stages');
-  check(await tapButton('rallySelect', 'rally2'), 'rally: stage 3 has a button');
-  check(await evaluate('(() => { const g = window.__funkyTruck.game; return g.mode === "rally" && g.track === 2 && g.battle.racers.length === 5; })()'), 'rally: tapping a stage starts a race with five rivals');
-  await sleep(4000);
-  await shot('phone-portrait-rally');
-  check(await evaluate('window.__funkyTruck.game.race.holding') === false, 'rally: the countdown ends');
-  check(!await center('[data-press="fire"]'), 'rally: no weapon buttons');
   await load('?test=sandboxSetup&touch=1');
   await shot('phone-portrait-sandbox-settings');
   check(await tapButton('sandbox', 'sb:gravity:-1'), 'sandbox: gravity has a - button');

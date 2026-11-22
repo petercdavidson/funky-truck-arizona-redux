@@ -10,12 +10,12 @@ import { VERSION, BUILD } from './version.js';
 import { Wreck } from './wreck.js';
 import { TRIAL_ALL, formatTime, formatGap } from './trial.js';
 import { battleBack, battleFront, battleHud, rallyHud } from './render-battle.js';
-import { RALLY_ALL, ordinal } from './rally.js';
+import { ordinal } from './rally.js';
 import { SANDBOX_ROWS } from './sandbox.js';
 
 const DEG = Math.PI / 180;
 const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'sandboxTweaks', 'gameOver']);
-const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'help', 'garage', 'practiceSelect', 'trialSelect', 'rallySelect', 'sandbox']);
+const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'help', 'garage', 'practiceSelect', 'trialSelect', 'sandbox']);
 const AHEAD = '#8ff0a4', BEHIND = '#ffb0a0'; // Time Trial gaps: ahead of / behind your best
 const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
@@ -92,11 +92,11 @@ export const MODES = [
   ['Endless', 'endless', 'A course that goes on for ever: how far can you get?'],
   ['Time Trial', 'trial', 'Race the clock, and your best run\'s ghost'],
   ['Practice', 'practice', 'Any one stage, and the stunt tracks'],
-  ['Battle', 'battle', 'Enemy trucks charge at you: get past them!'],
-  ['Rally', 'rally', 'Race five rival trucks to the finish line'],
   ['Sandbox', 'sandbox', 'Turn the physics up (or down) and go wild'],
 ];
 const modeRow = (i, tall) => (tall ? r(40, 96 + 66 * i, 280, 38) : r(112, 100 + 30 * i, 120, 25));
+/** Where the mode picker's Back button goes, under the last mode (the box ends below it). */
+const modesBack = (tall) => (tall ? r(80, 96 + 66 * MODES.length + 20, 200, 36) : r(228, 100 + 30 * MODES.length + 14, 120, 24));
 const PRACTICE_OPTIONS = [
   [(g) => `Damage: ${onOff(g.practiceDamage)}`, 'practiceDamage'],
   [(g) => `Classic: ${onOff(g.practiceClassic)}`, 'practiceClassic'],
@@ -189,7 +189,7 @@ export const BUTTONS = {
   title: MENU.map(([label, action], i) => ({ rect: r(223, 248 + 29 * i, 130, 25), label, action })),
   modes: [
     ...MODES.map(([label, action], i) => ({ rect: modeRow(i, false), label, action })),
-    { rect: r(228, 352, 120, 24), label: 'Back', action: 'back' },
+    { rect: modesBack(false), label: 'Back', action: 'back' },
   ],
   stats: statsButtons(false),
   options: [
@@ -218,11 +218,6 @@ export const BUTTONS = {
     { rect: r(198, 336, 120, 25), label: 'Menu', action: 'menu' },
     option(120, (g) => `Ghost: ${onOff(g.ghostOn)}`, 'ghostOn'),
   ],
-  rallySelect: [
-    ...Array.from({ length: 9 }, (_, i) => ({ rect: r(trialCard(i).x, trialCard(i).y, 92, 58), action: `rally${i}` })),
-    { rect: r(112, 274, 292, 40), action: `rally${RALLY_ALL}` },
-    { rect: r(198, 336, 120, 25), label: 'Menu', action: 'menu' },
-  ],
   sandbox: sandboxButtons(false, false),
   sandboxTweaks: sandboxButtons(false, true),
   gameOver: gameOverButtons((i) => r(229, 250 + 31 * i, 120, 25), (i) => r(165 + 126 * (i % 2), 250 + 31 * Math.floor(i / 2), 120, 25)),
@@ -231,7 +226,7 @@ export const BUTTONS = {
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 680, modes: 680, stats: 760, options: 620, pauseOptions: 620, help: 560, garage: 580, practiceSelect: 540, trialSelect: 540, rallySelect: 540, sandbox: 680, sandboxTweaks: 640, paused: 460, gameOver: 330 };
+export const TALL_H = { title: 680, modes: 680, stats: 760, options: 620, pauseOptions: 620, help: 560, garage: 580, practiceSelect: 540, trialSelect: 540, sandbox: 680, sandboxTweaks: 640, paused: 460, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
@@ -241,7 +236,7 @@ export const TALL_BUTTONS = {
   title: MENU.map(([label, action], i) => ({ rect: r(60, 262 + 54 * i, 240, 42), label, action, ...T_BIG })),
   modes: [
     ...MODES.map(([label, action], i) => ({ rect: modeRow(i, true), label, action, ...T_BIG })),
-    { rect: r(80, 630, 200, 36), label: 'Back', action: 'back', ...T_BIG },
+    { rect: modesBack(true), label: 'Back', action: 'back', ...T_BIG },
   ],
   stats: statsButtons(true, T_BIG),
   options: [
@@ -269,11 +264,6 @@ export const TALL_BUTTONS = {
     { rect: r(20, 360, 320, 52), action: `trial${TRIAL_ALL}` },
     { rect: r(95, 428, 170, 28), label: (g) => `Ghost: ${onOff(g.ghostOn)}`, action: 'ghostOn', ...T_SMALL },
     { rect: r(80, 476, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
-  ],
-  rallySelect: [
-    ...Array.from({ length: 9 }, (_, i) => ({ rect: r(tallTrialCard(i).x, tallTrialCard(i).y, 100, 80), action: `rally${i}` })),
-    { rect: r(20, 360, 320, 52), action: `rally${RALLY_ALL}` },
-    { rect: r(80, 440, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
   ],
   sandbox: sandboxButtons(true, false),
   sandboxTweaks: sandboxButtons(true, true),
@@ -360,7 +350,6 @@ export function statsColumns(game) {
     ['Standard', or(game.bestPlay, n)],
     ['Classic', or(game.best, n)],
     ['Endless', or(game.bestEndless, (v) => `${n(v)} m`)],
-    ['Battle', or(game.bestBattle, n)],
     ['Time Trial (All Nine)', game.trialBests[TRIAL_ALL] ? formatTime(game.trialBests[TRIAL_ALL]) : none],
     ['Records'],
     ['Longest airtime', or(S.maxAir, secs)],
@@ -369,8 +358,6 @@ export function statsColumns(game) {
     ['Longest wheelie', or(S.longestWheelie, secs)],
     ['Best trick chain', or(S.bestChain, (v) => `${n(v)} pts`)],
     ['Longest trick chain', or(S.longestChain, (v) => `${n(v)} tricks`)],
-    ['Battle takedowns', n(S.takedowns)],
-    ['Rally wins', n(S.rallyWins)],
   ], [
     ['Totals'],
     ['Distance driven', dist(S.distance)],
@@ -796,7 +783,7 @@ export class Renderer {
     ctx.globalAlpha = Math.min(1, pop.timer / 15);
     ctx.translate(sx, sy);
     ctx.scale(k, k);
-    this.text(`+${pop.turns}`, 0, -12, { size: 24, font: HUD_FONT, weight: '900', shadow: 'rgba(38,38,38,0.6)' });
+    this.text(`+${pop.turns}`, 0, -12, { size: 24, font: HUD_FONT, weight: '900' });
     ctx.restore();
   }
 
@@ -836,7 +823,7 @@ export class Renderer {
     ctx.globalAlpha = Math.min(1, m.timer / 25, age / 4 + 0.2);
     ctx.translate(this.viewW / 2, 160);
     ctx.scale(k, k);
-    this.text(m.text, 0, -16, { size: 30, font: HUD_FONT, weight: '900', color: MILESTONE_GOLD, shadow: 'rgba(38,38,38,0.7)' });
+    this.text(m.text, 0, -16, { size: 30, font: HUD_FONT, weight: '900', color: MILESTONE_GOLD });
     ctx.restore();
   }
 
@@ -895,7 +882,7 @@ export class Renderer {
     this.text('time', R + 0.5, 9, { ...hud, size: 12.5 });
     this.text(formatTime(game.clock), R, 22, { ...hud, size: 20 });
     if (game.split !== null && game.ghost && game.screen === 'playing') {
-      this.text(formatGap(game.split), R, 45, { ...hud, size: 14, color: game.split <= 0 ? AHEAD : BEHIND, shadow: 'rgba(38,38,38,0.7)' });
+      this.text(formatGap(game.split), R, 45, { ...hud, size: 14, color: game.split <= 0 ? AHEAD : BEHIND });
     }
     const best = game.trialBests[game.track];
     if (best) this.text(`best ${formatTime(best)}`, R, 62, { ...hud, size: 11, color: 'rgba(255,255,255,0.85)' });
@@ -913,7 +900,7 @@ export class Renderer {
       const age = TRICK.showFor - bail.timer;
       ctx.save();
       ctx.globalAlpha = 0.75 * Math.min(1, bail.timer / 20, age / 6);
-      this.text('bail', this.viewW / 2, 126, { size: 14, font: HUD_FONT, weight: 'italic 700', color: '#e4e4e4', shadow: 'rgba(38,38,38,0.6)' });
+      this.text('bail', this.viewW / 2, 126, { size: 14, font: HUD_FONT, weight: 'italic 700', color: '#e4e4e4' });
       ctx.restore();
     }
     if (!show) return;
@@ -923,7 +910,7 @@ export class Renderer {
     ctx.globalAlpha = Math.min(1, show.timer / 20, age / 3 + 0.3);
     ctx.translate(this.viewW / 2, 112);
     ctx.scale(pop, pop);
-    this.text(show.names.join('  +  '), 0, -9, { size: 17, font: HUD_FONT, weight: '800', shadow: 'rgba(38,38,38,0.55)' });
+    this.text(show.names.join('  +  '), 0, -9, { size: 17, font: HUD_FONT, weight: '800' });
     ctx.restore();
   }
 
@@ -933,12 +920,6 @@ export class Renderer {
   // a page TALL_W across. `this.tall` says which. The menu screens were bitmaps with their text
   // baked in; they are now drawn from the plain backdrop plus the original art's keycaps and
   // boxes, with the words as live text.
-
-  /** The hint about the controls, for the title screen. */
-  controlsHint(game) {
-    if (game.oneButton) return this.touchMode ? 'Hold anywhere on the screen to drive, and to tilt back in the air' : 'Hold Space to drive, and to tilt back in the air  ·  P pauses  ·  Esc returns to the menu';
-    return this.touchMode ? 'Use the on-screen pedals and tilt buttons to drive' : 'Arrow keys drive and tilt  ·  P pauses  ·  M sound  ·  Esc returns to the menu';
-  }
 
   /** The garage truck, with its resting point (288, 170) moved to (x, y) and scaled by k. */
   showTruck(game, v, x, y, k = 1) {
@@ -956,20 +937,17 @@ export class Renderer {
     const shadow = 'rgba(38,38,38,0.85)';
     const version = `v${VERSION}${BUILD === 'dev' ? '' : `  ·  ${BUILD}`}`;
     const small = { size: 12, weight: '700', color: 'rgba(255,255,255,0.8)', align: 'right', shadow: 'rgba(38,38,38,0.5)' };
-    const hintStyle = { weight: '600', color: 'rgba(255,255,255,0.78)' };
     const P = this.tall ? TITLE_TRUCK.tall : TITLE_TRUCK.wide;
     if (this.tall) {
       const cx = TALL_W / 2;
       this.fitText('funky truck', cx, 22, 340, { size: 54, weight: '900', color: '#f5f5f5', shadow });
       this.text('UTAH', 334, 84, { size: 26, weight: '900', color: '#f5f5f5', shadow, align: 'right' });
       this.buttons('title', game);
-      this.wrapText(this.controlsHint(game), cx, 552, 330, { size: 12, ...hintStyle }, 15);
       this.text(version, TALL_W - 8, 656, { ...small, size: 14 });
     } else {
       this.text('funky truck', STAGE_W / 2, 18, { size: 62, weight: '900', color: '#f5f5f5', shadow });
       this.text('UTAH', 470, 94, { size: 28, weight: '900', color: '#f5f5f5', shadow, align: 'right' });
       this.buttons('title', game);
-      this.text(this.controlsHint(game), STAGE_W / 2, 409, { size: 11, ...hintStyle });
       this.text(version, STAGE_W - 8, 430, small);
     }
     this.showTruck(game, v, P.x, P.y, P.k);
@@ -982,10 +960,12 @@ export class Renderer {
     const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
     const about = { weight: '600', color: 'rgba(255,255,255,0.85)' };
     if (tall) {
-      this.roundRect(16, 36, TALL_W - 32, 642, 12, BOX_FILL, BOX_EDGE);
+      const b = modesBack(true);
+      this.roundRect(16, 36, TALL_W - 32, b.y + b.h + 16 - 36, 12, BOX_FILL, BOX_EDGE);
       this.text('Choose a Mode', cx, 50, { size: 26, weight: '900' });
     } else {
-      this.roundRect(96, 60, 384, 328, 10, BOX_FILL, BOX_EDGE);
+      const b = modesBack(false);
+      this.roundRect(96, 60, 384, b.y + b.h + 12 - 60, 10, BOX_FILL, BOX_EDGE);
       this.text('Choose a Mode', cx, 70, { size: 20, weight: '900' });
     }
     MODES.forEach(([, , text], i) => {
@@ -1038,12 +1018,23 @@ export class Renderer {
     this.buttons('stats', game);
   }
 
+  /** How to Play: only the control scheme that's chosen (the arrow keys, or One Button). */
   help(game) {
+    const tricks = 'Chain tricks together for a multiplier.';
+    if (game.oneButton) {
+      const hold = this.touchMode ? 'Hold anywhere on the screen' : 'Hold Space or the up arrow';
+      const lines = [`${hold} to drive, and to tilt back in the air.`, 'Your truck is four-wheel drive.', tricks];
+      const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2, w = tall ? 320 : 480;
+      this.text('One Button', cx, tall ? 40 : 40, { size: tall ? 28 : 24, weight: '900' });
+      let y = this.wrapText('Press P to Pause', cx, tall ? 100 : 92, w, { size: 16, weight: '600' }) + 22;
+      for (const line of lines) y = this.wrapText(line, cx, y, w, { size: tall ? 16 : 15, weight: '600' }, tall ? 21 : 19) + 14;
+      this.buttons('help', game);
+      return;
+    }
     const keys = ['Forwards', 'Reverse', 'Tilt Back', 'Tilt Forwards'];
     const lines = ['Your truck is four-wheel drive.',
       'To climb steep hills, tilt forwards so that your front wheel stays on the ground.',
-      'One Button (an option): hold Space or the up arrow (on a touch screen, hold anywhere) to drive, and to tilt back in the air. Tipped steeply with both wheels down, it also leans you back towards level.',
-      'Tricks: flips, Big Air, wheelies and clean landings. Chain them together for a multiplier.'];
+      tricks];
     if (this.tall) {
       const k = 1.25, x0 = 72, y0 = 36;
       this.piece('screen_help.png', 205, 45, 62, 145, x0, y0, 62 * k, 145 * k); // the four arrow keycaps
@@ -1156,30 +1147,6 @@ export class Renderer {
       card(112, 274, 292, 40, 'All Nine', best(TRIAL_ALL), 14, 11);
     }
     this.buttons('trialSelect', game);
-  }
-
-  /** Rally's stage list: a card per stage with your best place, then the championship. */
-  rallySelect(game) {
-    const tall = this.tall, cx = tall ? TALL_W / 2 : 258;
-    const best = (t) => (game.rallyBests[t] ? ordinal(game.rallyBests[t]) : '—');
-    const card = (x, y, w, h, big, small, bigSize, smallSize) => {
-      this.roundRect(x, y, w, h, tall ? 8 : 6, BUTTON_FILL);
-      this.text(big, x + w / 2, y + h * 0.16, { size: bigSize, weight: '800' });
-      this.text(small, x + w / 2, y + h * 0.62, { size: smallSize, weight: '700', color: small === '—' ? 'rgba(255,255,255,0.6)' : small === '1st' ? MILESTONE_GOLD : '#fff' });
-    };
-    const about = 'Five rival trucks, one finish line. Bump your way to the front!';
-    if (tall) {
-      this.text('Rally', cx, 18, { size: 22, weight: '800' });
-      this.fitText(about, cx, 48, 330, { size: 13, weight: '600', color: 'rgba(255,255,255,0.8)' });
-      for (let i = 0; i < 9; i++) { const { x, y } = tallTrialCard(i); card(x, y, 100, 80, String(i + 1), best(i), 26, 14); }
-      card(20, 360, 320, 52, 'Championship  ·  All Nine', best(RALLY_ALL), 17, 14);
-    } else {
-      this.text('Rally', cx, 16, { size: 20, weight: '800' });
-      this.text(about, cx, 42, { size: 12, weight: '600', color: 'rgba(255,255,255,0.8)' });
-      for (let i = 0; i < 9; i++) { const { x, y } = trialCard(i); card(x, y, 92, 58, String(i + 1), best(i), 19, 12); }
-      card(112, 274, 292, 40, 'Championship  ·  All Nine', best(RALLY_ALL), 14, 11);
-    }
-    this.buttons('rallySelect', game);
   }
 
   /** Sandbox's settings: before a run (with the track and Go!), or during one (Tweaks). */
@@ -1306,7 +1273,6 @@ export class Renderer {
         case 'garage': this.garage(game, v); break;
         case 'practiceSelect': this.practiceSelect(game); break;
         case 'trialSelect': this.trialSelect(game); break;
-        case 'rallySelect': this.rallySelect(game); break;
         case 'sandbox': this.sandboxScreen(game, 'sandbox'); break;
         case 'sandboxTweaks': this.overlayDim(0.55); this.sandboxScreen(game, 'sandboxTweaks'); break;
         case 'paused': this.paused(game); break;
