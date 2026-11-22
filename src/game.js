@@ -7,6 +7,7 @@
 import { buildGrammar, EndlessCourse, ENDLESS_WIDTH, ENDLESS_SHIFT } from './endless.js';
 import { TrickTracker } from './tricks.js';
 import { Wreck } from './wreck.js';
+import { TRIAL_ALL, GHOST_EVERY, validBests, loadGhost, saveGhost, ghostPose } from './trial.js';
 
 export const TILE = 64;          // s4c2
 export const STAGE_W = 576;      // Z7552
@@ -496,8 +497,9 @@ const RIGHTING_STEPS = 80;
 const ONE_BUTTON_AIR = 4;        // steps off the ground before one-button and touch-zone controls count as in the air
 
 /**
- * Screens: 'title' | 'help' | 'garage' | 'practiceSelect' | 'playing' | 'paused' | 'gameOver'
- * Modes: 'campaign' (all nine stages), 'practice' (one stage), 'endless' (a generated course).
+ * Screens: 'title' | 'help' | 'garage' | 'practiceSelect' | 'trialSelect' | 'playing' | 'paused' | 'gameOver'
+ * Modes: 'campaign' (all nine stages), 'practice' (one stage), 'endless' (a generated course),
+ * 'trial' (Time Trial: a stage or all nine against the clock, see trial.js).
  * The title screen's Play and Classic both start a campaign, under different rules.
  */
 export class Game {
@@ -540,6 +542,16 @@ export class Game {
     this.practiceDamage = flag('practiceDamage', true);
     this.practiceClassic = flag('practiceClassic', false);
     this.dynamicCamera = flag('dynamicCamera', true);
+    this.ghostOn = flag('ghost', true);
+    // Time Trial: the best time on each track (see trial.js), and the run under way.
+    this.trialBests = validBests(this.store.get('trialBests'));
+    this.track = 0;                   // which track (0-8 a stage, TRIAL_ALL all nine)
+    this.clock = 0;                   // the race clock, in steps
+    this.runStep = 0;                 // steps since the run began (the ghost's timeline)
+    this.ghost = null;                // the best run's ghost, if there is one and ghosts are on
+    this.ghostT = null;               // where the ghost truck is this step (null: not on screen)
+    this.split = null;                // clock now minus the ghost's at this point of the track
+    this.trialResult = null;          // { time, best, record } at the end of a finished run
     this.wreck = null;                // the pieces of a wrecked truck (outside Classic)
     this.scraping = false;            // the cab is scraping the ground this step
     this.speedKmh = 0;                // the speedometer (outside Classic), smoothed a little
@@ -621,9 +633,9 @@ export class Game {
     this.saveLook();
   }
 
-  /** Flip an on/off option and save it: 'soundOn', 'oneButton', 'practiceDamage', 'practiceClassic', 'dynamicCamera'. */
+  /** Flip an on/off option and save it: 'soundOn', 'oneButton', 'practiceDamage', 'practiceClassic', 'dynamicCamera', 'ghostOn'. */
   toggle(option) {
-    const key = { soundOn: 'sound', oneButton: 'oneButton', practiceDamage: 'practiceDamage', practiceClassic: 'practiceClassic', dynamicCamera: 'dynamicCamera' }[option];
+    const key = { soundOn: 'sound', oneButton: 'oneButton', practiceDamage: 'practiceDamage', practiceClassic: 'practiceClassic', dynamicCamera: 'dynamicCamera', ghostOn: 'ghost' }[option];
     if (!key) return;
     this[option] = !this[option];
     this.store.set(key, this[option]);
@@ -657,8 +669,56 @@ export class Game {
     this.beginRun(0);
   }
 
+  /**
+   * Time Trial: a stage (0-8), or all nine in a row (TRIAL_ALL), against the clock, by Play's rules.
+   * The clock runs from when the truck first lands on each stage to its finish line.
+   */
+  startTrial(track) {
+    this.mode = 'trial';
+    this.rules = RULES.play;
+    this.track = track;
+    this.clock = 0; this.runStep = 0; this.split = null; this.trialResult = null;
+    this.poses = []; this.marks = {};
+    this.ghost = this.ghostOn ? loadGhost(this.store.get(`ghost${track}`), track) : null;
+    this.ghostT = null;
+    this.beginRun(track === TRIAL_ALL ? 0 : track);
+  }
+
+  /** Time Trial: whether there's a stage after this one to go on to. */
+  get hasNextTrial() { return this.mode === 'trial' && this.track < this.data.levels.length - 1; }
+  nextTrial() { if (this.hasNextTrial) this.startTrial(this.track + 1); }
+
+  /** Time Trial, each step: the clock, the ghost being recorded and the one being raced. */
+  updateTrial() {
+    const t = this.truck;
+    if (this.landed && this.endTimer === 0 && !this.wreck) this.clock++;
+    if (this.runStep % GHOST_EVERY === 0) this.poses.push(this.level, ...t.T.map(Math.round));
+    // The clock when the truck first reached each tile column, for the split against a ghost.
+    const col = Math.floor(t.T[0] / TILE), m = (this.marks[this.level] ||= []);
+    if (this.landed) for (let c = m.length; c <= col; c++) m[c] = this.clock;
+    if (this.ghost) {
+      this.ghostT = ghostPose(this.ghost, this.runStep, this.level);
+      const g = this.ghost.marks[this.level];
+      if (this.landed && g && g[col] != null && m[col] != null) this.split = m[col] - g[col];
+    }
+    this.runStep++;
+  }
+
+  /** Time Trial: the run is over (finished, not wrecked); keep the time if it's the best. */
+  finishTrial() {
+    const time = this.clock, best = this.trialBests[this.track] ?? null;
+    const record = best === null || time < best;
+    this.trialResult = { time, best, record };
+    if (record) {
+      this.trialBests[this.track] = time;
+      this.store.set('trialBests', this.trialBests);
+      this.store.set(`ghost${this.track}`, saveGhost(this.track, time, this.poses, this.marks));
+    }
+  }
+
   beginRun(firstLevel) { // H5D52
-    if (this.mode === 'campaign') { this.lastLevel = this.data.levels.length - 1; this.level = 0; }
+    if (this.mode !== 'trial') { this.ghost = null; this.ghostT = null; this.split = null; }
+    if (this.mode === 'campaign' || (this.mode === 'trial' && this.track === TRIAL_ALL)) { this.lastLevel = this.data.levels.length - 1; this.level = 0; }
     else { this.level = firstLevel; this.lastLevel = firstLevel; }
     this.score = 0; this.bonus = 0; this.damage = 0;
     this.wrecked = false; this.finished = false;
@@ -691,6 +751,7 @@ export class Game {
     this.bonus = (this.level + 1) * 10000;
     if (this.mode === 'endless') { this.ticker = 'Endless'; this.bonus = 0; }
     if (this.isStunt) this.bonus = 0; // stunt tracks are all about the tricks: no time bonus
+    if (this.mode === 'trial') this.bonus = 0; // the clock is what counts
     this.flipBonusTimer = 0;
     this.tricks.reset();
     for (const d of this.dirt) d.life = 0;
@@ -709,6 +770,7 @@ export class Game {
   restart() {
     if (this.mode === 'campaign') this.startCampaign(this.rules.classic);
     else if (this.mode === 'endless') this.startEndless();
+    else if (this.mode === 'trial') this.startTrial(this.track);
     else this.startPractice(this.lastLevel);
   }
 
@@ -1018,6 +1080,7 @@ export class Game {
       this.finished = !isWrecked;
       this.lastScore = this.score;
       if (this.mode === 'endless') this.saveEndlessBest();
+      else if (this.mode === 'trial') { if (!isWrecked) this.finishTrial(); }
       else if (this.rules.damage && !this.isStunt) this.saveBest(this.score);
       this.restartLatch = true;
       this.screen = 'gameOver';
@@ -1059,6 +1122,7 @@ export class Game {
         else this.updateLoop();
         this.updateCamera();
         this.updateDirt();
+        if (this.mode === 'trial') this.updateTrial();
         this.checkStageEnd();
         if (this.tickerTimer > 0) this.tickerTimer--;                 // o4a13
         this.bonus = Math.max(0, this.bonus - 1);                     // D9923

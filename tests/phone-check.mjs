@@ -191,6 +191,21 @@ try {
     check(await evaluate('window.__funkyTruck.game.screen') === 'title', 'game over: tapping Menu goes to the title screen');
   }
 
+  // Time Trial on a phone held upright: the stage list, and starting a stage from it.
+  await phone(390, 844);
+  await load('?test=trials&touch=1');
+  await shot('phone-portrait-time-trial');
+  const stageAt = await evaluate(`(() => { const { renderer, game } = window.__funkyTruck; const r = document.getElementById('game').getBoundingClientRect();
+    const p = renderer.buttonCentre('trialSelect', 'trial2', game); return p && [r.x + p[0], r.y + p[1]]; })()`);
+  check(!!stageAt, 'time trial: stage 3 has a button');
+  if (stageAt) {
+    await touch('touchStart', [stageAt]); await touch('touchEnd', []);
+    await sleep(300);
+    check(await evaluate('(() => { const g = window.__funkyTruck.game; return g.mode === "trial" && g.track === 2 && g.screen === "playing"; })()'), 'time trial: tapping a stage starts its trial');
+    await sleep(1500);
+    await shot('phone-portrait-time-trial-driving');
+  }
+
   ws.close();
 } catch (err) {
   console.error(err);

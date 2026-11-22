@@ -29,6 +29,9 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   with Web Audio (sound is on/off, off by default). `sounds.html` plays every sound. No
   sound files.
 - `src/wreck.js` (no DOM): the ragdoll wreck, a wrecked truck's loose pieces.
+- `src/trial.js` (no DOM): Time Trial's time formats, saved bests and ghosts. `Game.updateTrial` runs
+  the clock (from first landing to the finish line) and records the ghost; ghosts are poses, not
+  inputs, so they survive physics changes.
 - `src/version.js`: the version on the title screen (the Pages deploy stamps in the commit).
 - `assets/stunts.json`: Practice's stunt tracks (after the nine stages), built by
   `node tools/make-stunts.mjs` from the stages' own column shapes and joins, stored a column at a
@@ -44,7 +47,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 ## Modes and rules
 
 - "Classic" means the original gameplay, before the added features. A run's rules are
-  `game.rules = { classic, damage }`. Play, Endless and Practice share the new features; Classic
+  `game.rules = { classic, damage }`. Play, Endless, Time Trial and Practice share the new features; Classic
   has none of them (no tricks, ragdoll, one-button controls or flip-upright, and it keeps the
   ceiling and the original flip bonus). Display fixes and quality-of-life touches are fine in Classic.
 - New features go in every mode except Classic unless the user says otherwise, and new options go
@@ -59,7 +62,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   for game state. `Renderer` scales the stage to fit the screen.
 - The physics is a faithful port of the original game. Treat changes to `Truck` / `CollisionWorld`
   as gameplay changes: say so explicitly and add or adjust tests.
-- Screens are `game.screen` strings: `title`, `help`, `garage`, `practiceSelect`, `playing`,
+- Screens are `game.screen` strings: `title`, `help`, `garage`, `practiceSelect`, `trialSelect`, `playing`,
   `paused`, `gameOver`. A new screen needs an entry in `BUTTONS`, a case in `Renderer.draw`, and
   `body[data-screen]` CSS if it affects touch controls.
 - Saved data goes through `game.store` (key prefix `funkytruck.` in localStorage). Validate

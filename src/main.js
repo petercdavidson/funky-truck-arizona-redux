@@ -106,17 +106,19 @@ function doAction(a) {
     return;
   }
   sound.play('click');
-  if (a === 'oneButton' || a === 'practiceDamage' || a === 'practiceClassic' || a === 'dynamicCamera') { game.toggle(a); return; }
+  if (a === 'oneButton' || a === 'practiceDamage' || a === 'practiceClassic' || a === 'dynamicCamera' || a === 'ghostOn') { game.toggle(a); return; }
   if (a === 'play') game.startCampaign();
   else if (a === 'classic') game.startCampaign(true);
   else if (a === 'endless') game.startEndless();
   else if (a === 'endRun') game.endRun();
   else if (a === 'practice') game.showMenu('practiceSelect');
+  else if (a === 'trial') game.showMenu('trialSelect');
+  else if (/^trial\d$/.test(a)) game.startTrial(Number(a.slice(5)));
   else if (a === 'garage') game.showMenu('garage');
   else if (a === 'help') game.showMenu('help');
   else if (a === 'menu') goMenu();
   else if (a === 'again') game.restart();
-  else if (a === 'nextStage') game.nextPractice();
+  else if (a === 'nextStage') { if (game.mode === 'trial') game.nextTrial(); else game.nextPractice(); }
   else if (a === 'resume') game.togglePause();
   else if (a.startsWith('stage')) game.startPractice(Number(a.slice(5)));
   else {
@@ -265,6 +267,7 @@ function snapshot() {
   const t = game.truck, g = game.garageTruck;
   return {
     T: t.T.slice(), camX: game.camX, camY: game.camY, zoom: game.zoom, rr: t.rearWheelRot, fr: t.frontWheelRot,
+    G: game.ghostT && game.screen !== 'title' ? game.ghostT.slice() : null,
     gT: g.T.slice(), grr: g.rearWheelRot, gfr: g.frontWheelRot,
     W: game.wreck ? game.wreck.T.slice() : null,
   };
@@ -277,6 +280,7 @@ function lerpView(a, b, t) {
     rr: L(a.rr, b.rr), fr: L(a.fr, b.fr),
     gT: a.gT.map((x, i) => L(x, b.gT[i])), grr: L(a.grr, b.grr), gfr: L(a.gfr, b.gfr),
     W: a.W && b.W && a.W.length === b.W.length ? a.W.map((x, i) => L(x, b.W[i])) : b.W,
+    G: a.G && b.G ? a.G.map((x, i) => L(x, b.G[i])) : b.G,
   };
 }
 
@@ -346,7 +350,8 @@ function fit() {
 
 /**
  * Test hook for automated screenshots, e.g. ?test=play&stage=5&frames=400&touch=1
- *   test   = title | garage | help | practice | play | endless | paused | gameover
+ *   test   = title | garage | help | practice | trials | play | trial | endless | paused | gameover
+ *            (trial: a Time Trial of `stage`, 9 for All Nine)
  *   stage  = stage index for play (0-8), frames = steps to simulate with the gas held
  *   seed   = for endless: a number, so the same course comes up every time
  *   look   = body,tyre,hub[,paint] (e.g. 3,2,4,0), touch = 1 to show the touch controls
@@ -363,7 +368,7 @@ function applyTestParams() {
     Object.assign(game.look, { body, tyre, hub, paint: Number.isInteger(paint) ? paint : body });
   }
   const frames = Number(q.get('frames')) || 0;
-  const screens = { garage: 'garage', help: 'help', practice: 'practiceSelect', title: 'title' };
+  const screens = { garage: 'garage', help: 'help', practice: 'practiceSelect', trials: 'trialSelect', title: 'title' };
   if (screens[test]) {
     game.showMenu(screens[test]);
     for (let i = 0; i < 300; i++) game.step();
@@ -373,6 +378,8 @@ function applyTestParams() {
     let s = Number(q.get('seed')) || 1;
     game.random = () => (s = (s * 16807) % 2147483647) / 2147483647;
     game.startEndless();
+  } else if (test === 'trial') {
+    game.startTrial(Number(q.get('stage')) || 0);
   } else {
     if (q.get('classic') === '1') game.practiceClassic = true;
     if (q.get('damage') === '0') game.practiceDamage = false;

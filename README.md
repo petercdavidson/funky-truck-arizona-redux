@@ -11,7 +11,8 @@ site on GitHub Pages.
 | **Play** | The nine stages, with tricks, a ragdoll wreck, and no invisible ceiling. The camera follows the truck up and down anywhere, even above or below the stage. |
 | **Classic** | The nine stages as the original game played: the original flip bonus, the ceiling, the original controls, and a wrecked truck stays in one piece. Only display fixes (live text, alignment) and the pause button are new. |
 | **Endless** | A course generated as you drive that never ends. No damage: it's free play. **End Run** in the pause menu finishes the run and saves your best distance. |
-| **Practice** | One stage of your choice, played like Play, or one of three **stunt tracks**, where tricks always score and there's no finish line: **Mega Ramp** (a 450 m accelerator at 45°, a launch ramp good for about 470 km/h and 13 s in the air, then a long run-out ending in a quarter pipe), **Kicker Run** (a bumpy downhill of small kickers that goes on for ever) and **Halfpipe** (a 45° drop-in, a flat floor and a steep far wall, with a ledge along each top). Options on the stage screen switch **Damage** off and play by **Classic** rules. The pause menu can **Restart** the stage. Finishing offers **Again**, **Next**, **Stages** and **Menu**. |
+| **Time Trial** | Any of the nine stages, or **All Nine** in a row, against the clock, by Play's rules (a wreck doesn't finish). The clock runs from when the truck first lands on each stage to its finish line. Your best run on each track comes back as a see-through **ghost** to race, and the clock's readout shows how far ahead (green) or behind (pink) of it you are at the same point on the track. The stage list shows each best time; a **Ghost** switch there turns the ghost off. Finishing offers **Retry**, **Next**, **Stages** and **Menu**. |
+| **Practice** | One stage of your choice, played like Play, or one of three **stunt tracks**, where tricks always score and there's no finish line: **Mega Ramp** (a 450 m accelerator at 45°, a launch ramp good for about 470 km/h and 13 s in the air, then a long run-out ending in a quarter pipe), **Kicker Run** (a bumpy downhill of small kickers that goes on for ever) and **Halfpipe** (a symmetrical bowl: walls nearly vertical at the lips, easing to a flat floor, with a ledge along each top). Options on the stage screen switch **Damage** off and play by **Classic** rules. The pause menu can **Restart** the stage. Finishing offers **Again**, **Next**, **Stages** and **Menu**. |
 
 Outside Classic, the driving view fills the window, on a phone held either way up (the
 on-screen controls sit over the bottom of it). Close in, it never shows less of the world than
@@ -41,7 +42,8 @@ The game-over box says how far the run got: the stage reached (Play and Classic)
 colour; Paint then gives it any other body's colour. Only the look changes: every body and tyre
 drives exactly the same (the garage says so).
 
-Play, Classic and Endless each keep their own best (score, score, distance). A Practice run with
+Play, Classic and Endless each keep their own best (score, score, distance), and Time Trial a
+best time and ghost per track (a ghost is about 30 KB a minute of driving). A Practice run with
 damage saves to Play's or Classic's best; a damage-free one saves none.
 
 In damage-free runs outside Classic (Endless, and Practice with damage off), a **Flip** button
@@ -175,6 +177,7 @@ saved to storage while a test parameter is set.
 | `tools/tune-stunts.mjs` | Tries Mega Ramp designs in the game's physics with a simulated driver and ranks them by air time and speed. |
 | `src/audio.js`, `src/sound-events.js` | Synthesised sound, and the watcher that turns game events into sound cues. |
 | `sounds.html` | A page for hearing every sound. |
+| `src/trial.js` | Time Trial: time formats, saved best times, and ghosts (recorded as the truck's pose every other step, packed small). No DOM. |
 | `src/wreck.js` | The ragdoll wreck: a wrecked truck's loose pieces (outside Classic). |
 | `src/tricks.js` | Spots tricks (flips, airtime, wheelies, clean landings) and scores them in chains. |
 | `src/version.js` | The version shown on the title screen (keep it in step with `package.json`). |
