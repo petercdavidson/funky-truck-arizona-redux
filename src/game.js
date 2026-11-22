@@ -1250,7 +1250,14 @@ export class Game {
     // moves from the body to the middle of the pieces, and its zoom starts slowly.
     if (crash) this.crashSteps++; else this.crashSteps = 0;
     const ease = crash ? smoothstep(this.crashSteps / CRASH_CAM.easeIn) : 0;
-    const [bx, by] = this.focus;
+    // What the camera follows jumps from the truck's chassis to the wreck's body when it's
+    // wrecked: carry the difference over, and let it fade as the crash cam eases in.
+    if (crash && this.crashSteps === 1) {
+      const c = this.wreck.centre;
+      this.crashFrom = [this.truck.T[0] - c[0], this.truck.T[1] - c[1]];
+    }
+    let [bx, by] = this.focus;
+    if (crash && this.crashFrom) { bx += this.crashFrom[0] * (1 - ease); by += this.crashFrom[1] * (1 - ease); }
     const fx = crash ? bx + (crash.centre[0] - bx) * ease : bx;
     const fy = crash ? by + (crash.centre[1] - by) * ease : by;
     // (its zoom may change faster the further out it is, so a flying wheel stays in view)
@@ -1261,7 +1268,8 @@ export class Game {
       // whichever is further out, so the two never pull against each other.
       const cover = Math.min(CRASH_CAM.maxZoom, this.coverZoom(cx, cy));
       this.zoomTo(Math.max(crash.zoom, cover), CRASH_CAM.maxRate * this.zoom * ease);
-      this.zoom = Math.min(CRASH_CAM.maxZoom, Math.max(this.zoom, cover));
+      // (that keeping-in-view eases in too, or the first moment of a wreck could snap the zoom out)
+      this.zoom = Math.min(CRASH_CAM.maxZoom, Math.max(this.zoom, z0 + (cover - z0) * ease));
       // zoom about the view's middle
       this.camX -= this.viewW * (this.zoom - z0) / 2;
       this.camY -= this.viewH * (this.zoom - z0) / 2;

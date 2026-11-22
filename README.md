@@ -152,7 +152,7 @@ gold:
 | Rival Cars | 0 to 8 trucks going your way, to race (they can't be wrecked) |
 | Enemy Cars | 0 to 8 trucks coming at you, to dodge or take out with missiles, rams and stomps |
 | Slow Motion | Off, Half, Quarter |
-| Hitboxes | show what the physics sees: the ground's collision lines (orange where they scrape the cab), the wheels and the cab's roof probe (all that touches the ground: each collides as a circle 21.5 px across), the circles trucks bump each other with (when there are other cars), and a wreck's pieces |
+| Hitboxes | show what the physics sees: the ground's collision lines (orange where they scrape the cab), the wheels and the cab's roof probe (all that touches the ground), the circles trucks bump each other with (when there are other cars), and a wreck's pieces. The wheels and probe are really points (the dots) kept off the dashed line, the ground pushed out by 21.5 px; on smooth ground that's the same as a 21.5 px circle, but at a corner the original game joins the pushed-out lines short, so a wheel settles into a V and cuts into a peak a little |
 
 Boost, jumps and missiles never run out, and there's no damage. On a stage, the enemy cars are
 spread out along it, and the finish line still ends the run, with your time (the clock runs from

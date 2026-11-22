@@ -1243,8 +1243,9 @@ export class Renderer {
 
   /**
    * Sandbox's Hitboxes: what the physics sees. The ground's collision lines (green where the cab
-   * can touch them, orange where touching them scrapes it), each truck's wheels and roof probe (all
-   * that touches the ground), the circles trucks hit each other with, and a wreck's pieces.
+   * can touch them, orange where touching them scrapes it) and, dashed, the line the wheel centres
+   * and roof probe really collide with; each truck's wheels and roof probe (all that touches the
+   * ground), the circles trucks hit each other with, and a wreck's pieces.
    */
   hitboxes(game, v) {
     const ctx = this.ctx, L = game.levelData, table = game.data.collision, z = game.zoom;
@@ -1262,6 +1263,24 @@ export class Renderer {
         ctx.stroke();
       }
     }
+    // The line the wheel centres (and the roof probe) really collide with: the ground's lines pushed
+    // out by a wheel's radius, their ends joined as the original game joins them. On smooth
+    // ground that's the same as the wheels being circles, but at a corner it's cut short: in a V
+    // the join sits low, so a wheel settles in and overlaps both sides; over a peak it's a chord,
+    // so a wheel cuts into the peak a little. A centre dot on this line is what's really touching.
+    const W0 = game.world;
+    if (W0?.segs) {
+      const vx0 = v.camX - 40, vx1 = v.camX + this.viewW * z + 40, vy0 = v.camY - 40, vy1 = v.camY + this.viewH * z + 40;
+      ctx.lineWidth = 1.5 * z; ctx.setLineDash([6 * z, 5 * z]); ctx.strokeStyle = 'rgba(255, 240, 90, 0.85)';
+      ctx.beginPath();
+      for (const g of W0.segs) {
+        if (Math.max(g.x1, g.x2) < vx0 || Math.min(g.x1, g.x2) > vx1 || Math.max(g.y1, g.y2) < vy0 || Math.min(g.y1, g.y2) > vy1) continue;
+        ctx.moveTo(g.x1, g.y1); ctx.lineTo(g.x2, g.y2);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]); ctx.lineWidth = 2 * z;
+    }
+    const dot = (x, y, colour) => { ctx.fillStyle = colour; ctx.beginPath(); ctx.arc(x, y, 3.5 * z, 0, Math.PI * 2); ctx.fill(); };
     const ring = (x, y, rad, colour, dash = false) => {
       ctx.strokeStyle = colour; ctx.setLineDash(dash ? [5 * z, 4 * z] : []);
       ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.stroke();
@@ -1283,7 +1302,7 @@ export class Renderer {
     if (game.wreck && v.W) {
       // a wreck's pieces: the wheels, the body box and the bars
       const W = v.W, w = game.wreck;
-      for (const h of w.wheels) ring(W[h.p * 2], W[h.p * 2 + 1], R, 'rgba(255, 240, 90, 0.95)');
+      for (const h of w.wheels) { ring(W[h.p * 2], W[h.p * 2 + 1], R, 'rgba(255, 240, 90, 0.95)'); dot(W[h.p * 2], W[h.p * 2 + 1], 'rgba(255, 240, 90, 1)'); }
       ctx.setLineDash([]); ctx.strokeStyle = 'rgba(255, 90, 90, 0.95)';
       ctx.beginPath();
       w.body.forEach((i, n) => (n ? ctx.lineTo(W[i * 2], W[i * 2 + 1]) : ctx.moveTo(W[i * 2], W[i * 2 + 1])));
@@ -1292,7 +1311,7 @@ export class Renderer {
     }
     for (const c of (game.wreck ? cars.slice(1) : cars)) {
       const P = c.T, s = c.s;
-      ring(s * P[2], P[3], R, 'rgba(255, 240, 90, 0.95)'); ring(s * P[4], P[5], R, 'rgba(255, 240, 90, 0.95)');
+      for (const k of [2, 4]) { ring(s * P[k], P[k + 1], R, 'rgba(255, 240, 90, 0.95)'); dot(s * P[k], P[k + 1], 'rgba(255, 240, 90, 1)'); }
       // the roof probe: (10, -30) from the chassis, turned with the body (Truck.probeBody)
       const a = c.t.bodyRot * Math.PI / 180, px = 10 * Math.cos(a) + 30 * Math.sin(a) + P[0], py = 10 * Math.sin(a) - 30 * Math.cos(a) + P[1];
       ctx.setLineDash([]); ctx.strokeStyle = 'rgba(255, 90, 90, 0.8)'; ctx.fillStyle = 'rgba(255, 90, 90, 0.95)';

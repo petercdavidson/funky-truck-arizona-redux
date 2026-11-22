@@ -185,6 +185,26 @@ test('stats are counted as you play, saved, and checked when read back', () => {
   assert.deepEqual(validStats('junk'), validStats(null));
 });
 
+test('the crash cam takes over smoothly: no jolt in the camera at the moment of the wreck', () => {
+  for (const moving of [true, false]) {
+    const g = new Game(data, { random: () => 0.5 });
+    g.startCampaign();
+    for (let i = 0; i < 300; i++) { g.keys.up = moving; g.step(); }
+    g.keys.up = false;
+    g.step();
+    let pc = [g.camX, g.camY], last = null, jerk = 0;
+    g.damage = 1000;
+    for (let i = 0; i < 70; i++) {
+      g.step();
+      const m = [g.camX - pc[0], g.camY - pc[1]];
+      if (last) jerk = Math.max(jerk, Math.hypot(m[0] - last[0], m[1] - last[1]));
+      last = m; pc = [g.camX, g.camY];
+    }
+    // (before it eased in what it follows and its keeping-in-view, this was over 6)
+    assert.ok(jerk < 2.5, `${moving ? 'moving' : 'at rest'}: the camera's motion changed by ${jerk.toFixed(2)} px in a step`);
+  }
+});
+
 test('the crash cam pulls back to keep the wreck\'s pieces in view, and can be switched off', async () => {
   const { CRASH_CAM } = await import('../src/game.js');
   for (const on of [true, false]) {
