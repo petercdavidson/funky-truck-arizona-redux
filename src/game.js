@@ -16,6 +16,8 @@ export const STAGE_H = 448;      // B9752
 export const STEP_HZ = 70;       // the SWF frame rate
 
 const PI = Math.PI;
+/** 0 at 0, 1 at 1 (and beyond), easing in and out. */
+const smoothstep = (x) => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t); };
 
 /** Endless Mode: metres shown per tile column travelled, and points per column. */
 export const METRES_PER_TILE = 2.5;
@@ -552,10 +554,11 @@ export const CAMERA = {
 /**
  * The dynamic crash cam (outside Classic, when switched on): once the truck is wrecked, the camera
  * pulls back to keep every piece in view, centred on them, up to `maxZoom` times the usual view
- * (beyond that it follows the body). `margin` is room left round the pieces (stage units, at
- * zoom 1), and `maxRate` the most the zoom changes in a step.
+ * (beyond that it keeps the wheels in view first: see Game.crashFrame). `margin` is room
+ * left round the pieces (stage units, at zoom 1), `maxRate` the most the zoom changes in a step
+ * (times the zoom), and `easeIn` the steps it takes to take over from the driving camera.
  */
-export const CRASH_CAM = { maxZoom: 2.6, margin: 70, maxRate: 0.02 };
+export const CRASH_CAM = { maxZoom: 8, margin: 70, maxRate: 0.03, easeIn: 90 };
 /** Steps the High Scores reset waits before its Yes can be pressed (5 s). */
 export const RESET_WAIT = 350;
 
@@ -650,6 +653,7 @@ export class Game {
     this.wreck = null;                // the pieces of a wrecked truck (outside Classic)
     this.resetConfirm = null;         // High Scores: the reset being confirmed, { steps } since asked
     this.selfWrecked = false;         // the wreck was done on purpose (Esc), not by damage
+    this.crashSteps = 0;              // steps the crash cam has been on
     this.milestone = null;            // Endless: the celebration on screen { text, timer, n }
     this.milestones = [];             // ...and ones waiting their turn
     this.milestoneCount = 0;          // bumped for each one (for the sound and the confetti)
@@ -1051,8 +1055,23 @@ export class Game {
 
   updateCamera() { // T5933 + w6015
     const crash = this.crashCamActive ? this.crashFrame() : null;
-    const [fx, fy] = crash ? crash.centre : this.focus;
-    if (crash) this.zoomTo(crash.zoom, CRASH_CAM.maxRate);
+    // The crash cam eases in from the driving camera over CRASH_CAM.easeIn steps: what it frames
+    // moves from the body to the middle of the pieces, and its zoom starts slowly.
+    if (crash) this.crashSteps++; else this.crashSteps = 0;
+    const ease = crash ? smoothstep(this.crashSteps / CRASH_CAM.easeIn) : 0;
+    const [bx, by] = this.focus;
+    const fx = crash ? bx + (crash.centre[0] - bx) * ease : bx;
+    const fy = crash ? by + (crash.centre[1] - by) * ease : by;
+    // (its zoom may change faster the further out it is, so a flying wheel stays in view)
+    if (crash) {
+      const z0 = this.zoom, cx = this.camX + this.viewW * z0 / 2, cy = this.camY + this.viewH * z0 / 2;
+      this.zoomTo(crash.zoom, CRASH_CAM.maxRate * this.zoom * ease);
+      // Never zoomed in so far that a piece is out of the view as it is now (a wheel that shoots
+      // off pulls the camera out with it at once), and zoom about the view's middle.
+      this.zoom = Math.max(this.zoom, Math.min(CRASH_CAM.maxZoom, this.coverZoom(cx, cy, crash.pts)));
+      this.camX -= this.viewW * (this.zoom - z0) / 2;
+      this.camY -= this.viewH * (this.zoom - z0) / 2;
+    }
     else if (this.dynamicCameraActive) this.updateZoom();
     else { this.zoom = 1; this.back = 0; this.backV = 0; }
     // The original camera: it keeps the truck 150 from the left and halfway down, moving a fifth
@@ -1064,7 +1083,7 @@ export class Game {
     const t = this.truck;
     const lim = this.rules.classic ? TILE * z : Math.max(TILE * z, 1.5 * Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]));
     // (The crash cam keeps the pieces in the middle.)
-    const anchorX = crash ? this.viewW / 2 : this.camAnchorX;
+    const anchorX = this.camAnchorX + (this.viewW / 2 - this.camAnchorX) * ease;
     const dx = Math.max(Math.min((fx - anchorX * z - this.camX) * 0.2, lim), -lim);
     const dy = Math.max(Math.min((fy - this.viewH * z / 2 - this.camY) * 0.2, lim), -lim);
     this.camX = Math.min(Math.max(this.camX + dx, 0), this.maxCamX);
@@ -1076,24 +1095,46 @@ export class Game {
   }
 
   /**
-   * The crash cam's frame: the middle of all the wreck's pieces, and the zoom that shows them
-   * all with a margin. If they've spread too far for CRASH_CAM.maxZoom, it follows the body.
+   * The crash cam's frame: the middle of the wreck's pieces, the zoom that shows them with a
+   * margin, and which points it's keeping in view. If every piece won't fit in CRASH_CAM.maxZoom,
+   * the wheels come first: it frames the wheels and the body, or failing that the wheels alone
+   * (they can roll a long way apart on the stunt tracks), then the body and the nearer wheel,
+   * then the body.
    */
   crashFrame() {
-    const W = this.wreck.T;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (let i = 0; i < W.length; i += 2) {
-      x0 = Math.min(x0, W[i]); x1 = Math.max(x1, W[i]); y0 = Math.min(y0, W[i + 1]); y1 = Math.max(y1, W[i + 1]);
+    const wr = this.wreck, W = wr.T, wheels = wr.wheels.map((w) => w.p);
+    const all = Array.from({ length: W.length / 2 }, (_, i) => i);
+    const frame = (pts) => {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const p of pts) {
+        x0 = Math.min(x0, W[p * 2]); x1 = Math.max(x1, W[p * 2]); y0 = Math.min(y0, W[p * 2 + 1]); y1 = Math.max(y1, W[p * 2 + 1]);
+      }
+      const m = 2 * CRASH_CAM.margin;
+      const zoom = Math.max(1, (x1 - x0 + m) / this.viewW, (y1 - y0 + m) / this.viewH);
+      return { centre: [(x0 + x1) / 2, (y0 + y1) / 2], zoom, pts };
+    };
+    const [bx, by] = wr.centre;
+    const nearer = [...wheels].sort((a, b) => Math.hypot(W[a * 2] - bx, W[a * 2 + 1] - by) - Math.hypot(W[b * 2] - bx, W[b * 2 + 1] - by))[0];
+    for (const pts of [all, [...wheels, ...wr.body], wheels, [nearer, ...wr.body]]) {
+      const f = frame(pts);
+      if (f.zoom <= CRASH_CAM.maxZoom) return f;
     }
-    const m = 2 * CRASH_CAM.margin;
-    const fit = Math.max((x1 - x0 + m) / this.viewW, (y1 - y0 + m) / this.viewH);
-    if (fit > CRASH_CAM.maxZoom) return { centre: this.wreck.centre, zoom: CRASH_CAM.maxZoom };
-    return { centre: [(x0 + x1) / 2, (y0 + y1) / 2], zoom: Math.max(1, fit) };
+    return { centre: wr.centre, zoom: CRASH_CAM.maxZoom, pts: wr.body };
+  }
+
+  /** The zoom that shows the points `pts` of the wreck (with the margin) in a view centred on (cx, cy). */
+  coverZoom(cx, cy, pts) {
+    const W = this.wreck.T, m = CRASH_CAM.margin;
+    let z = 1;
+    for (const p of pts) {
+      z = Math.max(z, (Math.abs(W[p * 2] - cx) + m) / (this.viewW / 2), (Math.abs(W[p * 2 + 1] - cy) + m) / (this.viewH / 2));
+    }
+    return z;
   }
 
   /** Move the zoom towards `target` on its spring, at most `maxRate` a step. */
   zoomTo(target, maxRate) {
-    const w = CAMERA.zoomW;
+    const w = 0.06;
     let v = this.zoomV + w * w * (target - this.zoom) - 2 * w * this.zoomV;
     v = Math.max(-maxRate, Math.min(maxRate, v));
     this.zoom = Math.max(1, this.zoom + v); this.zoomV = v;

@@ -72,8 +72,11 @@ Outside Classic the body touching ground underneath it (the chassis bottoming ou
 or a ramp) isn't a scrape: no damage, bail or scrape sound. Hitting the cab's roof or sides is.
 
 **Dynamic crash cam** (outside Classic; on the Options screen): when the truck is wrecked, the
-camera pulls back (up to 2.6 times the usual view) to keep all its scattering pieces in frame, and
-follows the body if they spread further than that. `CRASH_CAM` in `src/game.js`.
+camera eases over from the driving camera (in about 1¼ s) and pulls back, up to 8 times the
+usual view, to keep all the scattering pieces in frame, centred on them. A wheel that shoots off
+pulls the camera out with it at once. If the pieces spread further than 8 times the view can show,
+the wheels come first: the wheels and the body, then the wheels alone, then the body and the
+nearer wheel. `CRASH_CAM` in `src/game.js`.
 
 **One Button** (the Controls option: Standard, Pedals on a touchscreen, or One Button): one button drives on the
 ground and tilts the truck back in the air. On a keyboard it's Space or the up arrow (the other
