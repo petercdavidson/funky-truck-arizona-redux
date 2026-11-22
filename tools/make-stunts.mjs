@@ -22,6 +22,11 @@ import { buildGrammar } from '../src/endless.js';
 const root = new URL('../', import.meta.url);
 export const data = JSON.parse(readFileSync(new URL('assets/levels.json', root)));
 const g = buildGrammar(data.levels);
+// The Halfpipe also uses the columns Endless leaves out because a stage has more than solid ground
+// under them (Stage Six's floating bottom edge): its smooth steep drop and climb are among them,
+// and the tracks fill below every column with solid ground anyway. (The other tracks keep the
+// plain grammar they were tuned with.)
+export const deepGrammar = buildGrammar(data.levels, { keepDeep: true });
 const DEPTH = 8, FILL = 1, SKY = 0;
 
 /** A target profile from a start height and [columns, height to reach] pieces, straight between. */
@@ -43,17 +48,17 @@ export function tidy(start, pieces) {
 }
 
 /** The stages' standard flat ground: the shape that most often carries on as itself, level. */
-export function flatShape() {
+export function flatShape(grammar = g) {
   let best = -1, most = 0;
-  for (const [key, opts] of g.joins[0]) {
+  for (const [key, opts] of grammar.joins[0]) {
     for (const j of opts) if (String(j.to) === key && j.step === 0 && j.count > most) { most = j.count; best = j.to; }
   }
   return best;
 }
 
-const joinsFrom = (s) => g.joins[0].get(String(s)) || [];
+const joinsFrom = (grammar, s) => grammar.joins[0].get(String(s)) || [];
 /** Whether shape `s` at row `top` can be followed by shape `to` at row `toTop`. */
-const joins = (s, top, to, toTop) => joinsFrom(s).some((j) => j.to === to && top + j.step === toTop);
+const joins = (grammar, s, top, to, toTop) => joinsFrom(grammar, s).some((j) => j.to === to && top + j.step === toTop);
 
 /**
  * Follow `target` as closely as the joins allow. Returns [{ s, top }] per column.
@@ -61,15 +66,17 @@ const joins = (s, top, to, toTop) => joinsFrom(s).some((j) => j.to === to && top
  *   end     a column the last one must be able to join on to ({ s, top }), for loops and pieces
  *   rows    how many rows the ground may use (by default, enough for the target)
  *   bend    cost of the ground's slope changing from one column to the next (smoothness)
+ *   grammar the shapes and joins to build from
+ * Each column also carries its `shape` (its top tiles).
  */
-export function build(target, { start, end, rows = Math.ceil(Math.max(...target)) + 40, bend = 0 } = {}) {
+export function build(target, { start, end, rows = Math.ceil(Math.max(...target)) + 40, bend = 0, grammar = g } = {}) {
   const n = target.length;
-  const S = g.shapes.length;
+  const S = grammar.shapes.length;
   const idx = (s, top) => s * rows + top;
   let cost = new Float64Array(S * rows).fill(Infinity);
   let slope = new Float64Array(S * rows);          // the step into each state on its best path
   const back = [];
-  const s0 = start ?? { s: flatShape(), top: Math.round(target[0]) };
+  const s0 = start ?? { s: flatShape(grammar), top: Math.round(target[0]) };
   cost[idx(s0.s, s0.top)] = 0;
   for (let c = 1; c < n; c++) {
     const next = new Float64Array(S * rows).fill(Infinity);
@@ -78,7 +85,7 @@ export function build(target, { start, end, rows = Math.ceil(Math.max(...target)
     // Only look near the target (the joins step at most 4 rows a column).
     const lo = Math.max(2, Math.floor(target[c]) - 30), hi = Math.min(rows - 1, Math.ceil(target[c]) + 30);
     for (let s = 0; s < S; s++) {
-      const opts = joinsFrom(s);
+      const opts = joinsFrom(grammar, s);
       if (!opts.length) continue;
       for (let top = Math.max(2, lo - 4); top <= Math.min(rows - 1, hi + 4); top++) {
         const k = cost[idx(s, top)];
@@ -99,13 +106,14 @@ export function build(target, { start, end, rows = Math.ceil(Math.max(...target)
   let best = -1;
   for (let i = 0; i < cost.length; i++) {
     if (cost[i] === Infinity) continue;
-    if (end && !joins(Math.floor(i / rows), i % rows, end.s, end.top)) continue;
+    if (end && !joins(grammar, Math.floor(i / rows), i % rows, end.s, end.top)) continue;
     if (best < 0 || cost[i] < cost[best]) best = i;
   }
   if (best < 0) return null;
   const path = [];
   for (let c = n - 1, i = best; c >= 0; c--) {
-    path.push({ s: Math.floor(i / rows), top: i % rows });
+    const sh = Math.floor(i / rows);
+    path.push({ s: sh, top: i % rows, shape: grammar.shapes[sh] });
     if (c > 0) i = back[c - 1][i];
   }
   path.reverse();
@@ -134,8 +142,8 @@ export function makeLevel(name, path, { startCol = 3, loop = null, target = null
   const width = path.length;
   const height = Math.max(...path.map((p) => p.top)) + DEPTH + 4;
   const tiles = Array.from({ length: height }, () => []);
-  for (const { s, top } of path) {
-    for (let r = 0; r < height; r++) tiles[r].push(r < top ? SKY : r - top < DEPTH ? g.shapes[s][r - top] : FILL);
+  for (const { top, shape } of path) {
+    for (let r = 0; r < height; r++) tiles[r].push(r < top ? SKY : r - top < DEPTH ? shape[r - top] : FILL);
   }
   if (target && process.argv[1] === fileURLToPath(import.meta.url)) {
     const off = path.map((p, c) => Math.abs(p.top - target[c]));
@@ -172,7 +180,7 @@ export function kickerRun(k = KICKER) {
   const A = loop[0];
   const lead = build(tidy(TOP, [flat(4), [LEAD - 4, A.top - 1]]), { end: A });
   const path = [...lead];
-  for (let c = 0; c < COPIES; c++) for (const p of loop) path.push({ s: p.s, top: p.top + c * k.drop });
+  for (let c = 0; c < COPIES; c++) for (const p of loop) path.push({ ...p, top: p.top + c * k.drop });
   return makeLevel('Kicker Run', path, { loop: { from: lead.length, period: k.repeat, drop: k.drop } });
 }
 
@@ -217,29 +225,53 @@ function curve(a, b, n, kind) {
 }
 
 /** Halfpipe: a smooth U with a flat ledge along the top of each side. */
-// Tuned for smoothness (no bumps, the slope never changing by more than a row a column). The
-// stages' tiles make no smooth drop steeper than 45°, so the left wall is a 45° straight; the
-// right wall can curve up to about 63°.
-export const PIPE = { top: 10, depth: 18, half: 18, floor: 8, ledge: 8 };
-export function halfpipe(p = PIPE) {
-  const target = tidy(p.top, [flat(p.ledge - 1), ...quarter(p, true), flat(p.floor), ...quarter(p, false)]);
-  // The far ledge is the stages' plain flat ground, level with the near one: the climb has to
-  // join on to it.
-  const ledge = { s: flatShape(), top: p.top };
-  const path = [...build(target, { bend: 10, end: ledge }), ...Array.from({ length: p.ledge }, () => ({ ...ledge }))];
-  for (let i = 0; i < p.ledge; i++) target.push(p.top);
-  return makeLevel('Halfpipe', path, { startCol: 2, target });
+/**
+ * How far a bowl's ground (`tops`, a row per column) is from a smooth symmetric bowl: how far each
+ * column is from its mirror image, plus a penalty wherever a wall's slope, from the lip down to
+ * the floor, gets steeper again after it has started to ease off.
+ */
+function bowlScore(tops, ledge) {
+  const n = tops.length;
+  let asym = 0;
+  for (let i = 0; i < n; i++) asym += Math.abs(tops[i] - tops[n - 1 - i]);
+  const bottom = Math.max(...tops), a = tops.indexOf(bottom), b = tops.lastIndexOf(bottom);
+  const L = [], R = [];
+  for (let i = ledge; i <= a; i++) L.push(tops[i] - tops[i - 1]);
+  for (let i = n - ledge; i > b; i--) R.push(tops[i - 1] - tops[i]);
+  let bad = 0;
+  for (const S of [L, R]) {
+    const peak = S.indexOf(Math.max(...S));
+    for (let i = 1; i < S.length; i++) if (i <= peak ? S[i] < S[i - 1] : S[i] > S[i - 1]) bad += Math.abs(S[i] - S[i - 1]);
+  }
+  return asym + 8 * bad;
 }
 
-/** One side of the halfpipe as pieces: a quarter circle, steep at the top and level at the bottom. */
-function quarter(p, down) {
-  const out = [];
-  for (let i = 1; i <= p.half; i++) {
-    const u = down ? i / p.half : 1 - i / p.half;  // 0 at the top edge, 1 at the floor
-    const y = Math.sqrt(Math.max(0, 1 - (1 - u) ** 2)); // circle: steep near u = 0
-    out.push([1, p.top + p.depth * y]);
+/**
+ * Halfpipe: a bowl, the same both ways, with a flat ledge along each top. Each wall starts as
+ * near vertical as the stages' tiles go (a cliff piece, then Stage Six's smooth 63° slope) and
+ * eases out to a flat floor, like Stage Six's first drop. The tiles differ going down and coming
+ * up, so the bowl is built, averaged with its own mirror image, and built again to that, a few
+ * times over, keeping the smoothest and most symmetrical (bowlScore).
+ */
+export const PIPE = { top: 10, ledge: 8, floor: 10, bend: 0.6, wall: [4, 3, 3, 2, 2, 2, 2, 2, 2, 1.5, 1.5, 1, 1, 1, 0.5, 0.5, 0.5, 0.5] };
+export function halfpipe(p = PIPE) {
+  const down = [];
+  let y = p.top;
+  for (const step of p.wall) { y += step; down.push(y); }
+  const G = deepGrammar, flatS = flatShape(G);
+  const ledge = { s: flatS, top: p.top, shape: G.shapes[flatS] };
+  let target = [...Array(p.ledge).fill(p.top), ...down, ...Array(p.floor).fill(y), ...down.slice(0, -1).reverse(), p.top];
+  let best = null;
+  for (let round = 0; round < 8; round++) {
+    const path = build(target, { end: ledge, grammar: G, bend: p.bend });
+    if (!path) break;
+    const full = [...path, ...Array.from({ length: p.ledge }, () => ({ ...ledge }))];
+    const tops = full.map((c) => c.top), n = tops.length;
+    const score = bowlScore(tops, p.ledge);
+    if (!best || score < best.score) best = { score, full, target: [...target, ...Array(p.ledge).fill(p.top)] };
+    target = tops.slice(0, n - p.ledge).map((t, i) => (t + tops[n - 1 - i]) / 2);
   }
-  return out;
+  return makeLevel('Halfpipe', best.full, { startCol: 2, target: best.target });
 }
 
 /** A level as stored: a column at a time (see unpackLevel in src/game.js). */

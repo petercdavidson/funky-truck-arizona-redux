@@ -42,7 +42,7 @@ const ORDER = 3;
  * joins[n - 1] maps a context (the last n columns: their shapes and steps between them) to the
  * columns that followed it somewhere in the stages.
  */
-export function buildGrammar(levels) {
+export function buildGrammar(levels, { keepDeep = false } = {}) {
   const shapes = [];            // index -> array of DEPTH tile ids
   const index = new Map();      // shape key -> index
   const joins = Array.from({ length: ORDER }, () => new Map());
@@ -59,9 +59,11 @@ export function buildGrammar(levels) {
       let top = 0;
       while (top < l.height && l.tiles[top][x] === SKY) top++;
       // Skip columns with more than solid ground below their shape (caves, the floating bottom
-      // edge of some stages): the course fills below every shape with solid ground.
+      // edge of some stages): the course fills below every shape with solid ground. With
+      // `keepDeep` (the stunt tracks' builder) keep them, filling below the shape all the same:
+      // Stage Six's smooth 63° drop and climb are among them.
       let deep = false;
-      for (let r = top + DEPTH; r < l.height && !deep; r++) deep = l.tiles[r][x] !== FILL;
+      for (let r = top + DEPTH; r < l.height && !deep && !keepDeep; r++) deep = l.tiles[r][x] !== FILL;
       if (top >= l.height - 1 || deep) { run.length = 0; continue; }
       const shape = [];
       for (let r = top; r < top + DEPTH; r++) shape.push(r < l.height ? l.tiles[r][x] : FILL);
