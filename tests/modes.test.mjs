@@ -247,26 +247,25 @@ test('a wreck that starts with its cab in the ground is lifted clear and never s
   }
 });
 
-test('each body keeps its own paint, starting in its own colour, and the choice is saved', () => {
+test('a body comes in its own colour; paint is chosen for the body in hand, and saved', () => {
   const store = memoryStore();
   const g = new Game(data, { store });
-  assert.deepEqual(g.look.paint, [0, 1, 2, 3, 4, 5], 'every body starts in its own colour');
-  g.cycleLook('body', 1);                 // body 1
-  g.cycleLook('paint', -1);               // body 1 now wears body 0's colour
-  g.cycleLook('paint', -1);               // ...and then body 5's (it wraps round)
-  assert.equal(g.look.paint[1], 5);
-  g.cycleLook('body', 1);                 // body 2 is still in its own colour
-  assert.equal(g.look.paint[g.look.body], 2);
+  assert.deepEqual(g.look, { body: 0, tyre: 0, hub: 0, paint: 0 }, 'a new player gets the standard yellow truck');
+  g.cycleLook('body', 1);
+  assert.equal(g.look.paint, 1, 'body 1 in its own colour');
+  g.cycleLook('paint', -1); g.cycleLook('paint', -1);
+  assert.equal(g.look.paint, 5, 'repainted (it wraps round)');
   const again = new Game(data, { store });
-  assert.deepEqual(again.look.paint, [0, 5, 2, 3, 4, 5]);
-  assert.equal(again.look.body, 2);
+  assert.deepEqual(again.look, { body: 1, tyre: 0, hub: 0, paint: 5 }, 'the loadout is remembered');
+  g.cycleLook('body', 1); g.cycleLook('body', -1);
+  assert.equal(g.look.paint, 1, 'leaving the body and coming back: its own colour again');
 
-  for (const bad of [{ paint: [0, 1, 2] }, { paint: [0, 1, 2, 3, 4, 9] }, { paint: 'red' }, { paint: [0, 1, 2, 3, 4, 1.5] }]) {
+  for (const bad of [[0, 1, 2, 3, 4, 5], 9, 'red', 1.5]) {
     const s = memoryStore();
-    s.set('truckLook', { body: 1, tyre: 2, hub: 3, ...bad });
+    s.set('truckLook', { body: 3, tyre: 2, hub: 1, paint: bad });
     const h = new Game(data, { store: s });
-    assert.deepEqual(h.look.paint, [0, 1, 2, 3, 4, 5], `ignored ${JSON.stringify(bad.paint)}`);
-    assert.equal(h.look.body, 1);
+    assert.equal(h.look.paint, 3, `ignored ${JSON.stringify(bad)}: the body's own colour`);
+    assert.equal(h.look.body, 3);
   }
 });
 

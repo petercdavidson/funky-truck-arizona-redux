@@ -39,6 +39,8 @@ const PRACTICE_OPTIONS = [
   [(g) => `Classic: ${onOff(g.practiceClassic)}`, 'practiceClassic'],
 ];
 const LOOK_PARTS = ['body', 'paint', 'tyre', 'hub'];
+/** The garage's note that the truck's look is only a look. */
+const COSMETIC = 'Looks only: every truck drives exactly the same';
 
 /**
  * The pause menu's buttons, placed by `place(i)`. Each kind of run gets its own column: Endless
@@ -111,7 +113,7 @@ export const TALL_BUTTONS = {
   ],
   help: [{ rect: r(80, 500, 200, 38), label: 'Menu', action: 'menu', ...T_BIG }],
   garage: [
-    { rect: r(80, 520, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
+    { rect: r(80, 532, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
     ...LOOK_PARTS.flatMap((part, i) => [
       { rect: r(30, 268 + 56 * i, 48, 48), action: `${part}-1` },
       { rect: r(282, 268 + 56 * i, 48, 48), action: `${part}+1` },
@@ -365,7 +367,7 @@ export class Renderer {
 
   /** The truck's body in its paint. */
   body(look) {
-    this.frame('body', look.body, this.a.paints[look.body][look.paint[look.body]]);
+    this.frame('body', look.body, this.a.paints[look.body][look.paint]);
   }
 
   /** A suspension bar from point (ax, ay) to (bx, by), drawn as in truck(). */
@@ -622,6 +624,7 @@ export class Renderer {
         this.piece('screen_garage.png', 344, 226, 32, 32, 282, y, 48, 48);
         this.text(name, TALL_W / 2, y + 14, { size: 19, weight: '700' });
       });
+      this.text(COSMETIC, TALL_W / 2, 498, { size: 13, weight: '600', color: 'rgba(255,255,255,0.78)' });
       this.buttons('garage');
       return;
     }
@@ -635,6 +638,7 @@ export class Renderer {
       this.piece('screen_garage.png', 344, 226, 32, 32, 344, y);
       this.text(name, STAGE_W / 2, y + 8, { size: 14, weight: '700' });
     });
+    this.text(COSMETIC, STAGE_W / 2, 378, { size: 12, weight: '600', color: 'rgba(255,255,255,0.78)' });
     this.buttons('garage');
   }
 

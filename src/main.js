@@ -342,8 +342,7 @@ function applyTestParams() {
   if (q.get('touch') === '1') setTouchMode(true);
   if (q.get('look')) {
     const [body, tyre, hub, paint] = q.get('look').split(',').map(Number);
-    Object.assign(game.look, { body, tyre, hub });
-    if (Number.isInteger(paint)) game.look.paint[body] = paint;
+    Object.assign(game.look, { body, tyre, hub, paint: Number.isInteger(paint) ? paint : body });
   }
   const frames = Number(q.get('frames')) || 0;
   const screens = { garage: 'garage', help: 'help', practice: 'practiceSelect', title: 'title' };
