@@ -46,6 +46,14 @@
       <button id="blank">New blank</button>
       <button id="resize" title="Keep what's there, change the size (adds or removes columns on the right and rows at the bottom)">Resize</button>
     </span>
+    <span class="group" title="Move the whole level, start point included. Tiles pushed past the edge are dropped; the gap left behind repeats the edge column or row. Shift+arrow keys move it 1 tile.">
+      Shift
+      <button id="shiftL">←</button>
+      <button id="shiftR">→</button>
+      <button id="shiftU">↑</button>
+      <button id="shiftD">↓</button>
+      <label>by <input id="shiftN" type="number" min="1" max="500" value="1"></label>
+    </span>
     <span class="group">
       <button id="modePaint" class="on" title="P">Paint</button>
       <button id="modeSelect" title="S: drag a box, then Ctrl+C / Ctrl+X">Select</button>
@@ -77,6 +85,7 @@
       <kbd>Alt</kbd>-click picks up the tile under the cursor. <kbd>Shift</kbd>-click sets where the
       truck drops in. <b>Select</b> (<kbd>S</kbd>): drag a box, <kbd>Ctrl+C</kbd> copies,
       <kbd>Ctrl+V</kbd> then click to stamp it (<kbd>Esc</kbd> stops). <kbd>Del</kbd> clears the box.
+      <b>Shift</b> moves the whole level (<kbd>Shift</kbd>+arrow keys: 1 tile).
       Tiles are 64 px; 1 tile is 2.5 m.
     </div>
     <h3>Tiles (as laid out in the tile sheet)</h3>
@@ -149,6 +158,26 @@
       L = { ...L, width: w, height: h, tiles };
       sizeCanvas(); save();
     };
+
+    // ---- shift the whole level by (dx, dy) tiles; the gap left behind repeats the edge it came from
+    function shift(dx, dy) {
+      if (!dx && !dy) return;
+      remember();
+      const W = L.width, H = L.height, clamp = (v, n) => Math.max(0, Math.min(n - 1, v));
+      L.tiles = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => L.tiles[clamp(y - dy, H)][clamp(x - dx, W)]));
+      L.start = [
+        Math.max(TILE / 2, Math.min(W * TILE - TILE / 2, L.start[0] + dx * TILE)),
+        Math.max(TILE / 2, Math.min(H * TILE - TILE / 2, L.start[1] + dy * TILE)),
+      ];
+      box = null;
+      drawAll(); save();
+      $('status').textContent = `Shifted the level ${Math.abs(dx || dy)} tile${Math.abs(dx || dy) === 1 ? '' : 's'} ${dx < 0 ? 'left' : dx > 0 ? 'right' : dy < 0 ? 'up' : 'down'}.`;
+    }
+    const shiftBy = () => Math.max(1, Math.floor(+$('shiftN').value) || 1);
+    $('shiftL').onclick = () => shift(-shiftBy(), 0);
+    $('shiftR').onclick = () => shift(shiftBy(), 0);
+    $('shiftU').onclick = () => shift(0, -shiftBy());
+    $('shiftD').onclick = () => shift(0, shiftBy());
 
     // ---- palette
     let sel = 2;
@@ -341,6 +370,8 @@
       }
       if (mod && e.key === 'v' && clip) { e.preventDefault(); setMode('paste'); return; }
       if ((e.key === 'Delete' || e.key === 'Backspace') && box) { remember(); const b = boxTiles(); for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) set(x, y, SKY); drawOver(); save(); return; }
+      const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+      if (e.shiftKey && !mod && arrows[e.key]) { e.preventDefault(); shift(...arrows[e.key]); return; }
       if (e.key === 'Escape') { setMode(mode === 'paste' ? 'select' : 'paint'); box = null; drawOver(); return; }
       if (e.key === 's' || e.key === 'S') setMode('select');
       if (e.key === 'p' || e.key === 'P') setMode('paint');
