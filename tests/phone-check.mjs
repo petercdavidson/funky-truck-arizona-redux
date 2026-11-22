@@ -134,9 +134,20 @@ try {
   await sleep(1500);
   check(await evaluate('getComputedStyle(document.querySelector(".pad-right")).visibility') === 'hidden', 'one-button: the pedals are hidden');
   const xa = await evaluate('window.__funkyTruck.game.truck.T[0]');
-  await touch('touchStart', [[600, 250]]);
+  const winW = await evaluate('window.innerWidth');
+  for (const [x, want, name] of [[winW * 0.9, 'up right', 'the right side climbs (gas and lean forwards)'], [winW * 0.1, 'down', 'the left side reverses']]) {
+    await touch('touchStart', [[x, 250]]);
+    await sleep(150);
+    const keys = await evaluate('JSON.stringify(window.__funkyTruck.game.keys)');
+    const k = JSON.parse(keys);
+    const pressed = ['up', 'down', 'left', 'right', 'one'].filter((n) => k[n]).join(' ');
+    check(pressed === want, `one-button: ${name} (pressed: ${pressed || 'nothing'})`);
+    await touch('touchEnd', []);
+    await sleep(100);
+  }
+  await touch('touchStart', [[winW / 2, 250]]);
   await sleep(1500);
-  check(await evaluate('window.__funkyTruck.game.keys.one'), 'one-button: holding the screen presses the button');
+  check(await evaluate('window.__funkyTruck.game.keys.one'), 'one-button: holding the middle presses the button');
   await shot('phone-landscape-one-button');
   await touch('touchEnd', []);
   const xb = await evaluate('window.__funkyTruck.game.truck.T[0]');

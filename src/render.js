@@ -545,7 +545,7 @@ export class Renderer {
 
   /** The hint about the controls, for the title screen. */
   controlsHint(game) {
-    if (game.oneButton) return this.touchMode ? 'Hold anywhere to drive, and to tilt back in the air' : 'Hold Space to drive, and to tilt back in the air  ·  P pauses  ·  Esc returns to the menu';
+    if (game.oneButton) return this.touchMode ? 'Hold the middle to drive (and tilt back in the air), the right to climb, the left to reverse' : 'Hold Space to drive, and to tilt back in the air  ·  P pauses  ·  Esc returns to the menu';
     return this.touchMode ? 'Use the on-screen pedals and tilt buttons to drive' : 'Arrow keys drive and tilt  ·  P pauses  ·  M sound  ·  Esc returns to the menu';
   }
 
@@ -598,7 +598,7 @@ export class Renderer {
     const keys = ['Forwards', 'Reverse', 'Tilt Back', 'Tilt Forwards'];
     const lines = ['Your truck is four-wheel drive.',
       'To climb steep hills, tilt forwards so that your front wheel stays on the ground.',
-      'One Button: hold Space (or the screen) to drive, and to tilt back in the air.'];
+      'One Button: hold Space (or the middle of the screen) to drive, and to tilt back in the air. On a touch screen, hold the right side to climb and the left side to reverse.'];
     if (this.tall) {
       const k = 1.25, x0 = 72, y0 = 36;
       this.piece('screen_help.png', 205, 45, 62, 145, x0, y0, 62 * k, 145 * k); // the four arrow keycaps
@@ -613,9 +613,8 @@ export class Renderer {
     keys.forEach((name, i) => this.text(name, 269, 65 + i * 29.7, { size: 14, weight: '600', align: 'left' }));
     const line = { size: 14, weight: '600' };
     this.text('Press P to Pause', STAGE_W / 2, 202, line);
-    this.text(lines[0], STAGE_W / 2, 262, line);
-    this.text(lines[1], STAGE_W / 2, 296, { ...line, size: 13.5 });
-    this.text(lines[2], STAGE_W / 2, 330, { ...line, size: 13.5 });
+    let y = 250;
+    for (const l of lines) y = this.wrapText(l, STAGE_W / 2, y, 540, { ...line, size: 13.5 }, 17) + 10;
     this.buttons('help');
   }
 

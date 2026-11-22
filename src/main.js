@@ -171,16 +171,26 @@ for (const btn of touchUI.querySelectorAll('[data-key]')) {
   }
 }
 
-// One-button controls on a touch screen: hold anywhere (apart from the buttons) to drive.
+// One-button controls on a touch screen: the screen (apart from the buttons) is in three parts.
+// The middle is the one button: it drives on the ground and tilts back in the air. The right
+// third drives while leaning forwards, for climbing, and the left third reverses. Each finger
+// keeps the part it first touched.
 {
   const tap = document.getElementById('tap');
-  const pointers = new Set();
-  const update = () => { touchKeys.one = pointers.size > 0; combineKeys(); };
+  const pointers = new Map(); // pointerId -> 'left' | 'middle' | 'right'
+  const update = () => {
+    const zones = new Set(pointers.values());
+    touchKeys.one = zones.has('middle');
+    touchKeys.up = touchKeys.right = zones.has('right');
+    touchKeys.down = zones.has('left');
+    combineKeys();
+  };
   tap.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     setTouchMode(true);
     tap.setPointerCapture?.(e.pointerId);
-    pointers.add(e.pointerId);
+    const x = e.clientX / window.innerWidth;
+    pointers.set(e.pointerId, x < 1 / 3 ? 'left' : x > 2 / 3 ? 'right' : 'middle');
     update();
   });
   for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) {
