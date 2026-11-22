@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Funky Truck level editor</title>
+  <!--
+    A level editor for trying tile combinations. Serve the repo (npm start) and open
+    /tools/editor.html. Not part of the game. The level being edited is kept in this browser
+    (localStorage, funkytruck.editorLevel), and Play opens it in the game (index.html?test=custom).
+  -->
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; height: 100vh; display: grid; grid-template-rows: auto 1fr auto; grid-template-columns: 430px 1fr;
+      font: 13px/1.4 system-ui, sans-serif; background: #232120; color: #eee; }
+    header { grid-column: 1 / 3; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 8px 10px; background: #33302e; border-bottom: 1px solid #000; }
+    header label { display: inline-flex; gap: 4px; align-items: center; }
+    header .group { display: inline-flex; gap: 4px; align-items: center; padding-right: 12px; border-right: 1px solid #555; }
+    button, select, input { font: inherit; }
+    button { background: #5a4a42; color: #fff; border: 1px solid #8a7466; border-radius: 4px; padding: 3px 9px; cursor: pointer; }
+    button:hover { background: #6b574d; }
+    button.on { background: #c9a14a; color: #222; border-color: #e6c36e; }
+    input[type=number] { width: 58px; }
+    aside { overflow: auto; padding: 8px; background: #2b2826; border-right: 1px solid #000; }
+    aside h3 { margin: 10px 0 4px; font-size: 13px; color: #d9c4a8; }
+    #palette { display: grid; grid-template-columns: repeat(10, 40px); gap: 1px; background: #8fae7a; width: max-content; }
+    #palette canvas { width: 40px; height: 40px; cursor: pointer; display: block; }
+    #palette canvas.sel { outline: 3px solid #ffd54a; outline-offset: -3px; }
+    .near { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 4px; }
+    .near figure { margin: 0; text-align: center; font-size: 10px; color: #bbb; cursor: pointer; }
+    .near canvas { width: 36px; height: 36px; display: block; background: #8fae7a; }
+    main { overflow: auto; position: relative; background: #1b1a19; }
+    #stack { position: relative; }
+    #stack canvas { position: absolute; left: 0; top: 0; }
+    footer { grid-column: 1 / 3; padding: 4px 10px; background: #33302e; border-top: 1px solid #000; color: #ccc; }
+    .hint { color: #aaa; font-size: 12px; }
+    kbd { background: #444; border-radius: 3px; padding: 0 4px; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="group">
+      <select id="source"></select>
+      <button id="load">Load</button>
+      <label>W <input id="w" type="number" min="10" max="2000" value="60"></label>
+      <label>H <input id="h" type="number" min="8" max="400" value="24"></label>
+      <button id="blank">New blank</button>
+      <button id="resize" title="Keep what's there, change the size (adds or removes columns on the right and rows at the bottom)">Resize</button>
+    </span>
+    <span class="group">
+      <button id="modePaint" class="on" title="P">Paint</button>
+      <button id="modeSelect" title="S: drag a box, then Ctrl+C / Ctrl+X">Select</button>
+      <button id="undo" title="Ctrl+Z">Undo</button>
+      <button id="redo" title="Ctrl+Shift+Z">Redo</button>
+    </span>
+    <span class="group">
+      <label>Zoom <input id="zoom" type="range" min="0.15" max="1.5" step="0.05" value="0.6"></label>
+      <label><input id="grid" type="checkbox" checked> grid</label>
+      <label><input id="coll" type="checkbox"> collision</label>
+      <label title="Painting a tile fills the column below it with solid dirt"><input id="fill" type="checkbox" checked> dirt below</label>
+    </span>
+    <span class="group">
+      <label>Name <input id="name" value="My Track" size="12"></label>
+      <button id="play">Play ▶</button>
+      <label><input id="nodamage" type="checkbox" checked> no damage</label>
+    </span>
+    <span class="group" style="border:0">
+      <button id="export">Save file</button>
+      <button id="copy">Copy JSON</button>
+      <button id="import">Open file</button>
+      <input id="file" type="file" accept=".json,application/json" hidden>
+    </span>
+  </header>
+
+  <aside>
+    <div class="hint">
+      <b>Paint</b>: left drag paints the selected tile, right drag erases to sky.
+      <kbd>Alt</kbd>-click picks up the tile under the cursor. <kbd>Shift</kbd>-click sets where the
+      truck drops in. <b>Select</b> (<kbd>S</kbd>): drag a box, <kbd>Ctrl+C</kbd> copies,
+      <kbd>Ctrl+V</kbd> then click to stamp it (<kbd>Esc</kbd> stops). <kbd>Del</kbd> clears the box.
+      Tiles are 64 px; 1 tile is 2.5 m.
+    </div>
+    <h3>Tiles (as laid out in the tile sheet)</h3>
+    <div id="palette"></div>
+    <h3 id="nearTitle">Next to the selected tile in the nine stages</h3>
+    <div id="near"></div>
+  </aside>
+
+  <main id="scroller"><div id="stack"><canvas id="tiles"></canvas><canvas id="over"></canvas></div></main>
+  <footer id="status">Loading…</footer>
+
+  <script type="module">
+    import { loadAssets } from '../src/assets.js';
+    import { TILE, STAGE_NAMES, METRES_PER_TILE } from '../src/game.js';
+
+    const $ = (id) => document.getElementById(id);
+    const a = await loadAssets('../assets/');
+    const stages = a.levels.levels, stunts = a.levels.stunts, collision = a.levels.collision;
+    const NT = collision.length;           // tile ids are 0 .. NT-1; 0 is sky, 1 solid dirt
+    const SKY = 0, DIRT = 1;
+    const KEY = 'funkytruck.editorLevel';
+
+    // ---- which tiles sit next to which in the nine stages (to see how pieces fit together)
+    const near = Array.from({ length: NT }, () => ({ right: new Map(), left: new Map(), above: new Map(), below: new Map() }));
+    for (const l of stages) {
+      for (let y = 0; y < l.height; y++) for (let x = 0; x < l.width; x++) {
+        const id = l.tiles[y][x];
+        if (id === SKY) continue;
+        const add = (dir, other) => { if (other !== undefined && other !== SKY) near[id][dir].set(other, (near[id][dir].get(other) || 0) + 1); };
+        add('right', l.tiles[y][x + 1]); add('left', l.tiles[y][x - 1]);
+        add('above', l.tiles[y - 1]?.[x]); add('below', l.tiles[y + 1]?.[x]);
+      }
+    }
+    const used = new Set(stages.flatMap((l) => l.tiles.flat()));
+
+    // ---- the level being edited
+    let L = null;          // { name, width, height, tiles, start }
+    const undo = [], redo = [];
+    const snapshot = () => JSON.stringify(L);
+    function remember() { undo.push(snapshot()); if (undo.length > 200) undo.shift(); redo.length = 0; }
+    function restore(s) { L = JSON.parse(s); $('w').value = L.width; $('h').value = L.height; $('name').value = L.name; sizeCanvas(); }
+
+    function blank(w, h) {
+      const tiles = Array.from({ length: h }, (_, y) => Array(w).fill(y >= h - 6 ? DIRT : SKY));
+      // a strip of flat ground to start on
+      for (let x = 0; x < w; x++) tiles[h - 7][x] = 2;
+      return { name: $('name').value || 'My Track', width: w, height: h, tiles, start: [3 * TILE, (h - 10) * TILE] };
+    }
+    function fromLevel(l, name) {
+      return { name, width: l.width, height: l.height, tiles: l.tiles.map((r) => r.slice()), start: l.start.slice() };
+    }
+
+    // ---- source list
+    const sources = [['blank', 'Blank'], ...stages.map((_, i) => [`s${i}`, STAGE_NAMES[i]]), ...stunts.map((s, i) => [`t${i}`, `Stunt: ${s.name}`])];
+    for (const [v, label] of sources) $('source').append(new Option(label, v));
+    $('load').onclick = () => {
+      const v = $('source').value;
+      remember();
+      if (v === 'blank') L = blank(+$('w').value, +$('h').value);
+      else if (v[0] === 's') L = fromLevel(stages[+v.slice(1)], `${STAGE_NAMES[+v.slice(1)]} (edited)`);
+      else L = fromLevel(stunts[+v.slice(1)], `${stunts[+v.slice(1)].name} (edited)`);
+      $('w').value = L.width; $('h').value = L.height; $('name').value = L.name;
+      sizeCanvas(); save();
+    };
+    $('blank').onclick = () => { remember(); L = blank(+$('w').value, +$('h').value); sizeCanvas(); save(); };
+    $('resize').onclick = () => {
+      remember();
+      const w = +$('w').value, h = +$('h').value;
+      const tiles = Array.from({ length: h }, (_, y) => Array.from({ length: w }, (_, x) => (y < L.height && x < L.width ? L.tiles[y][x] : y < L.height ? SKY : L.tiles[L.height - 1][Math.min(x, L.width - 1)])));
+      L = { ...L, width: w, height: h, tiles };
+      sizeCanvas(); save();
+    };
+
+    // ---- palette
+    let sel = 2;
+    const thumb = (id, px) => {
+      const c = document.createElement('canvas');
+      c.width = c.height = px;
+      c.getContext('2d').drawImage(a.tiles[id], 0, 0, px, px);
+      c.title = `tile ${id}${used.has(id) ? '' : ' (not used in the stages)'}`;
+      return c;
+    };
+    const palCells = [];
+    for (let id = 0; id < NT; id++) {
+      const c = thumb(id, 40);
+      if (id === SKY) { const g = c.getContext('2d'); g.fillStyle = '#9cbad1'; g.fillRect(0, 0, 40, 40); g.fillStyle = '#234'; g.font = '11px sans-serif'; g.fillText('sky', 10, 24); }
+      if (!used.has(id) && id > DIRT) c.style.opacity = '0.45';
+      c.onclick = () => pick(id);
+      palCells.push(c);
+      $('palette').append(c);
+    }
+    function pick(id) {
+      sel = id;
+      palCells.forEach((c, i) => c.classList.toggle('sel', i === id));
+      $('nearTitle').textContent = `Next to tile ${id} in the nine stages`;
+      const box = $('near');
+      box.innerHTML = '';
+      for (const [dir, label] of [['right', 'To its right'], ['left', 'To its left'], ['above', 'Above it'], ['below', 'Below it']]) {
+        const list = [...near[id][dir]].sort((p, q) => q[1] - p[1]).slice(0, 14);
+        const h = document.createElement('div'); h.className = 'hint'; h.textContent = `${label}${list.length ? '' : ': never'}`;
+        box.append(h);
+        const row = document.createElement('div'); row.className = 'near';
+        for (const [other, n] of list) {
+          const f = document.createElement('figure');
+          f.append(thumb(other, 36));
+          const cap = document.createElement('figcaption'); cap.textContent = `${other} ×${n}`;
+          f.append(cap);
+          f.onclick = () => pick(other);
+          row.append(f);
+        }
+        box.append(row);
+      }
+    }
+    pick(2);
+
+    // ---- drawing
+    const tc = $('tiles'), oc = $('over'), tx = tc.getContext('2d'), ox = oc.getContext('2d');
+    let Z = +$('zoom').value;
+    function sizeCanvas() {
+      Z = +$('zoom').value;
+      const w = Math.ceil(L.width * TILE * Z), h = Math.ceil(L.height * TILE * Z);
+      for (const c of [tc, oc]) { c.width = w; c.height = h; }
+      $('stack').style.width = `${w}px`; $('stack').style.height = `${h}px`;
+      drawAll();
+    }
+    function drawTile(x, y) {
+      const s = TILE * Z, px = Math.floor(x * s), py = Math.floor(y * s), pw = Math.floor((x + 1) * s) - px, ph = Math.floor((y + 1) * s) - py;
+      tx.fillStyle = '#9cbad1';
+      tx.fillRect(px, py, pw, ph);
+      const id = L.tiles[y][x];
+      if (id !== SKY && a.tiles[id]) tx.drawImage(a.tiles[id], px, py, pw, ph);
+    }
+    function drawAll() {
+      for (let y = 0; y < L.height; y++) for (let x = 0; x < L.width; x++) drawTile(x, y);
+      drawOver();
+    }
+    let hover = null, box = null, clip = null, mode = 'paint';
+    function drawOver() {
+      const s = TILE * Z;
+      ox.clearRect(0, 0, oc.width, oc.height);
+      if ($('grid').checked && Z >= 0.25) {
+        ox.strokeStyle = 'rgba(0,0,0,0.12)'; ox.lineWidth = 1;
+        ox.beginPath();
+        for (let x = 0; x <= L.width; x++) { ox.moveTo(Math.floor(x * s) + 0.5, 0); ox.lineTo(Math.floor(x * s) + 0.5, oc.height); }
+        for (let y = 0; y <= L.height; y++) { ox.moveTo(0, Math.floor(y * s) + 0.5); ox.lineTo(oc.width, Math.floor(y * s) + 0.5); }
+        ox.stroke();
+        // every 10 columns, darker, with the distance
+        ox.fillStyle = 'rgba(0,0,0,0.55)'; ox.font = '11px sans-serif';
+        for (let x = 0; x < L.width; x += 10) { ox.fillRect(Math.floor(x * s), 0, 1, oc.height); ox.fillText(`${x} · ${x * METRES_PER_TILE} m`, x * s + 3, 12); }
+      }
+      if ($('coll').checked) {
+        // collision segments; the short tick points out of the ground (the side the truck rides on)
+        ox.strokeStyle = '#ff3355'; ox.lineWidth = 2;
+        for (let y = 0; y < L.height; y++) for (let x = 0; x < L.width; x++) {
+          const d = collision[L.tiles[y][x]] || [];
+          for (let i = 0; i < d.length; i += 5) {
+            const x1 = (x * TILE + d[i]) * Z, y1 = (y * TILE + d[i + 1]) * Z, x2 = (x * TILE + d[i + 2]) * Z, y2 = (y * TILE + d[i + 3]) * Z;
+            ox.beginPath(); ox.moveTo(x1, y1); ox.lineTo(x2, y2);
+            const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, len = Math.hypot(x2 - x1, y2 - y1) || 1;
+            ox.moveTo(mx, my); ox.lineTo(mx + (y2 - y1) / len * 6, my - (x2 - x1) / len * 6);
+            ox.stroke();
+          }
+        }
+      }
+      // where the truck drops in
+      ox.fillStyle = '#ffd54a'; ox.strokeStyle = '#000'; ox.lineWidth = 1;
+      ox.beginPath(); ox.arc(L.start[0] * Z, L.start[1] * Z, Math.max(5, 20 * Z), 0, Math.PI * 2); ox.fill(); ox.stroke();
+      ox.fillStyle = '#000'; ox.font = 'bold 11px sans-serif'; ox.fillText('start', L.start[0] * Z + 8, L.start[1] * Z - 8);
+      const rect = (x0, y0, x1, y1, color) => { ox.strokeStyle = color; ox.lineWidth = 2; ox.strokeRect(x0 * s + 1, y0 * s + 1, (x1 - x0 + 1) * s - 2, (y1 - y0 + 1) * s - 2); };
+      if (box) rect(Math.min(box.x0, box.x1), Math.min(box.y0, box.y1), Math.max(box.x0, box.x1), Math.max(box.y0, box.y1), '#ffd54a');
+      if (hover) {
+        if (mode === 'paste' && clip) {
+          ox.globalAlpha = 0.6;
+          clip.forEach((row, dy) => row.forEach((id, dx) => {
+            const X = hover.x + dx, Y = hover.y + dy;
+            if (X < L.width && Y < L.height && id !== SKY) ox.drawImage(a.tiles[id], X * s, Y * s, s, s);
+          }));
+          ox.globalAlpha = 1;
+          rect(hover.x, hover.y, hover.x + clip[0].length - 1, hover.y + clip.length - 1, '#fff');
+        } else if (mode === 'paint') {
+          ox.globalAlpha = 0.55;
+          if (sel !== SKY) ox.drawImage(a.tiles[sel], hover.x * s, hover.y * s, s, s);
+          ox.globalAlpha = 1;
+          rect(hover.x, hover.y, hover.x, hover.y, '#fff');
+        } else rect(hover.x, hover.y, hover.x, hover.y, '#fff');
+      }
+    }
+
+    // ---- editing
+    let saveTimer = 0;
+    function save() {
+      L.name = $('name').value || 'My Track';
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(L)); } catch { /* full */ } }, 150);
+    }
+    function set(x, y, id) {
+      if (x < 0 || y < 0 || x >= L.width || y >= L.height) return;
+      L.tiles[y][x] = id; drawTile(x, y);
+    }
+    function paintAt(x, y, id) {
+      set(x, y, id);
+      if (id !== SKY && $('fill').checked) for (let r = y + 1; r < L.height; r++) set(x, r, DIRT);
+    }
+    const cell = (e) => {
+      const r = oc.getBoundingClientRect(), s = TILE * Z;
+      return { x: Math.floor((e.clientX - r.left) / s), y: Math.floor((e.clientY - r.top) / s), px: (e.clientX - r.left) / Z, py: (e.clientY - r.top) / Z };
+    };
+    let dragging = null;
+    oc.addEventListener('contextmenu', (e) => e.preventDefault());
+    oc.addEventListener('mousedown', (e) => {
+      const c = cell(e);
+      if (e.shiftKey) { remember(); L.start = [Math.round(c.px), Math.round(c.py)]; drawOver(); save(); return; }
+      if (e.altKey) { pick(L.tiles[c.y]?.[c.x] ?? SKY); return; }
+      if (mode === 'paste' && clip) {
+        remember();
+        clip.forEach((row, dy) => row.forEach((id, dx) => set(c.x + dx, c.y + dy, id)));
+        drawOver(); save(); return;
+      }
+      if (mode === 'select') { box = { x0: c.x, y0: c.y, x1: c.x, y1: c.y }; dragging = 'box'; drawOver(); return; }
+      remember();
+      dragging = e.button === 2 ? SKY : sel;
+      if (dragging === SKY) set(c.x, c.y, SKY); else paintAt(c.x, c.y, dragging);
+      drawOver();
+    });
+    oc.addEventListener('mousemove', (e) => {
+      const c = cell(e);
+      hover = c;
+      if (dragging === 'box') { box.x1 = c.x; box.y1 = c.y; }
+      else if (dragging !== null) { if (dragging === SKY) set(c.x, c.y, SKY); else paintAt(c.x, c.y, dragging); }
+      const id = L.tiles[c.y]?.[c.x];
+      $('status').textContent = `column ${c.x}, row ${c.y}  ·  ${(c.x * METRES_PER_TILE).toFixed(1)} m  ·  tile here: ${id ?? '-'}  ·  selected: ${sel}  ·  ${L.width}×${L.height} tiles  ·  mode: ${mode}`;
+      drawOver();
+    });
+    window.addEventListener('mouseup', () => { if (dragging !== null && dragging !== 'box') save(); dragging = null; });
+    oc.addEventListener('mouseleave', () => { hover = null; drawOver(); });
+
+    function setMode(m) {
+      mode = m;
+      $('modePaint').classList.toggle('on', m === 'paint');
+      $('modeSelect').classList.toggle('on', m === 'select' || m === 'paste');
+      if (m === 'paint') box = null;
+      drawOver();
+    }
+    $('modePaint').onclick = () => setMode('paint');
+    $('modeSelect').onclick = () => setMode('select');
+    const boxTiles = () => {
+      const x0 = Math.min(box.x0, box.x1), x1 = Math.max(box.x0, box.x1), y0 = Math.min(box.y0, box.y1), y1 = Math.max(box.y0, box.y1);
+      return { x0, x1, y0, y1, tiles: L.tiles.slice(y0, y1 + 1).map((r) => r.slice(x0, x1 + 1)) };
+    };
+    const doUndo = () => { if (undo.length) { redo.push(snapshot()); restore(undo.pop()); save(); } };
+    const doRedo = () => { if (redo.length) { undo.push(snapshot()); restore(redo.pop()); save(); } };
+    $('undo').onclick = doUndo; $('redo').onclick = doRedo;
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) doRedo(); else doUndo(); return; }
+      if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); doRedo(); return; }
+      if (mod && (e.key === 'c' || e.key === 'x') && box) {
+        const b = boxTiles(); clip = b.tiles;
+        if (e.key === 'x') { remember(); for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) set(x, y, SKY); save(); }
+        e.preventDefault(); return;
+      }
+      if (mod && e.key === 'v' && clip) { e.preventDefault(); setMode('paste'); return; }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && box) { remember(); const b = boxTiles(); for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) set(x, y, SKY); drawOver(); save(); return; }
+      if (e.key === 'Escape') { setMode(mode === 'paste' ? 'select' : 'paint'); box = null; drawOver(); return; }
+      if (e.key === 's' || e.key === 'S') setMode('select');
+      if (e.key === 'p' || e.key === 'P') setMode('paint');
+    });
+
+    // ---- view options
+    $('zoom').oninput = () => {
+      const sc = $('scroller'), fx = (sc.scrollLeft + sc.clientWidth / 2) / (L.width * TILE * Z), fy = (sc.scrollTop + sc.clientHeight / 2) / (L.height * TILE * Z);
+      sizeCanvas();
+      sc.scrollLeft = fx * L.width * TILE * Z - sc.clientWidth / 2; sc.scrollTop = fy * L.height * TILE * Z - sc.clientHeight / 2;
+    };
+    $('grid').onchange = drawOver; $('coll').onchange = drawOver;
+    $('name').oninput = save;
+
+    // ---- play, save, open
+    $('play').onclick = () => {
+      L.name = $('name').value || 'My Track';
+      try { localStorage.setItem(KEY, JSON.stringify(L)); } catch { alert('Could not store the level in this browser'); return; }
+      window.open(`../index.html?test=custom${$('nodamage').checked ? '&damage=0' : ''}`, 'funkytruck-play');
+    };
+    const json = () => JSON.stringify({ name: L.name, width: L.width, height: L.height, start: L.start, tiles: L.tiles });
+    $('export').onclick = () => {
+      const url = URL.createObjectURL(new Blob([json()], { type: 'application/json' }));
+      const link = Object.assign(document.createElement('a'), { href: url, download: `${(L.name || 'track').replace(/[^\w-]+/g, '-')}.json` });
+      link.click(); URL.revokeObjectURL(url);
+    };
+    $('copy').onclick = async () => { try { await navigator.clipboard.writeText(json()); $('status').textContent = 'Copied the level as JSON.'; } catch { $('status').textContent = 'Could not copy (the browser refused).'; } };
+    $('import').onclick = () => $('file').click();
+    $('file').onchange = async () => {
+      const f = $('file').files[0];
+      if (!f) return;
+      try {
+        const v = JSON.parse(await f.text());
+        if (!Array.isArray(v.tiles) || !v.tiles.length || !v.tiles.every((r) => Array.isArray(r) && r.length === v.tiles[0].length && r.every((id) => Number.isInteger(id) && id >= 0 && id < NT))) throw new Error('not a level');
+        remember();
+        L = { name: v.name || f.name.replace(/\.json$/, ''), width: v.tiles[0].length, height: v.tiles.length, tiles: v.tiles, start: Array.isArray(v.start) ? v.start : [3 * TILE, 3 * TILE] };
+        $('w').value = L.width; $('h').value = L.height; $('name').value = L.name;
+        sizeCanvas(); save();
+      } catch (err) { alert(`Couldn't open that file: ${err.message}`); }
+      $('file').value = '';
+    };
+
+    // ---- start: the last level edited in this browser, or a blank one
+    try { const v = JSON.parse(localStorage.getItem(KEY)); if (v && Array.isArray(v.tiles)) L = v; } catch { /* none */ }
+    if (!L) L = blank(60, 24);
+    $('w').value = L.width; $('h').value = L.height; $('name').value = L.name || 'My Track';
+    sizeCanvas();
+    $('status').textContent = 'Ready. Pick a tile on the left and paint; Load starts from one of the stages.';
+  </script>
+</body>
+</html>

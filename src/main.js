@@ -374,13 +374,27 @@ function fit() {
  *            (trial: a Time Trial of `stage`, 9 for All Nine)
  *   stage  = stage index for play (0-8), frames = steps to simulate with the gas held
  *   seed   = for endless: a number, so the same course comes up every time
+ *   test=custom plays the level being edited in tools/editor.html (damage=0 for no damage)
  *   look   = body,tyre,hub[,paint] (e.g. 3,2,4,0), touch = 1 to show the touch controls
  * Nothing is saved to storage while this is active.
  */
+/** A level from the level editor, checked: { name, width, height, tiles, start }, or null. */
+function customLevel(v) {
+  if (!v || typeof v !== 'object') return null;
+  const { width: w, height: h, tiles, start } = v;
+  const ok = Number.isInteger(w) && Number.isInteger(h) && w > 0 && h > 0 && w * h <= 4e6
+    && Array.isArray(tiles) && tiles.length === h
+    && tiles.every((row) => Array.isArray(row) && row.length === w && row.every((id) => Number.isInteger(id) && id >= 0 && id < game.data.collision.length))
+    && Array.isArray(start) && start.length === 2 && start.every(Number.isFinite);
+  return ok ? { name: typeof v.name === 'string' && v.name ? v.name.slice(0, 40) : 'Custom', width: w, height: h, tiles, start } : null;
+}
+
 function applyTestParams() {
   const q = new URLSearchParams(location.search);
   const test = q.get('test');
   if (!test) return;
+  // The level editor (tools/editor.html) leaves the level being edited here.
+  const custom = test === 'custom' ? customLevel(store.get('editorLevel')) : null;
   game.store = { get: () => null, set: () => {} };
   if (q.get('touch') === '1') setTouchMode(true);
   if (q.get('look')) {
@@ -400,6 +414,12 @@ function applyTestParams() {
     game.startEndless();
   } else if (test === 'trial') {
     game.startTrial(Number(q.get('stage')) || 0);
+  } else if (test === 'custom') {
+    // Played like a stunt track in Practice: no finish line (Restart in the pause menu).
+    if (!custom) { game.showMenu('title'); return; }
+    if (q.get('damage') === '0') game.practiceDamage = false;
+    game.data.stunts.push(custom);
+    game.startPractice(game.data.levels.length + game.data.stunts.length - 1);
   } else {
     if (q.get('classic') === '1') game.practiceClassic = true;
     if (q.get('damage') === '0') game.practiceDamage = false;

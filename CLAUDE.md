@@ -39,6 +39,10 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   the JSON. They have no finish line; one with `loop` repeats for ever (`Game.updateLoop` shifts the
   world back a repeat). The physics has no air drag, so a long or steep downhill speeds up without
   limit: check designs with the simulated driver (`tools/tune-stunts.mjs`, the stunt tests).
+- `tools/editor.html`: a local level editor for the user to try tile combinations. Its level is
+  kept in localStorage (`funkytruck.editorLevel`), and `index.html?test=custom` plays it as a
+  Practice track with no finish. Levels the user sends from it are JSON: { name, width, height,
+  start, tiles }.
 - `tools/map.html`: draws whole tracks as maps (serve the repo, open `/tools/map.html?stages=9,10,11`).
 - `tests/bot.mjs`: a simulated driver (backs up for run-ups when it stalls) for checking that
   generated courses can be driven. Endless never climbs more than `MAX_RISE` tiles within
