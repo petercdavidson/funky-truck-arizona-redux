@@ -53,16 +53,25 @@ const controlsName = (g, r) => (r?.touchMode ? (g.oneButton ? 'Touch Zones' : 'P
 
 /**
  * The pause menu's buttons, placed by `place(i)`. Each kind of run gets its own column: Endless
- * can end the run, and Classic has no controls switch (it always uses the original controls).
+ * can end the run, Practice can restart the stage, and Classic rules have no controls switch (they
+ * always use the original controls).
  */
 function pauseButtons(place) {
-  return [['endless', (g) => g.mode === 'endless'], ['classic', (g) => g.mode !== 'endless' && g.rules.classic],
-    ['other', (g) => g.mode !== 'endless' && !g.rules.classic]].flatMap(([kind, when]) => [
+  const kinds = [
+    ['endless', (g) => g.mode === 'endless'],
+    ['classic', (g) => g.mode === 'campaign' && g.rules.classic],
+    ['play', (g) => g.mode === 'campaign' && !g.rules.classic],
+    ['practiceClassic', (g) => g.mode === 'practice' && g.rules.classic],
+    ['practice', (g) => g.mode === 'practice' && !g.rules.classic],
+  ];
+  return kinds.flatMap(([kind, when]) => [
     { label: 'Resume', action: 'resume' },
     kind === 'endless' && { label: 'End Run', action: 'endRun' },
+    // Practice can start the stage again (the stunt tracks have no end)
+    kind.startsWith('practice') && { label: 'Restart', action: 'again' },
     { label: 'Quit to Menu', action: 'menu' },
     { label: (g) => `Sound: ${onOff(g.soundOn)}`, action: 'sound' },
-    kind !== 'classic' && { label: (g, r) => `Controls: ${controlsName(g, r)}`, action: 'oneButton' },
+    !/classic/i.test(kind) && { label: (g, r) => `Controls: ${controlsName(g, r)}`, action: 'oneButton' },
   ].filter(Boolean).map((b, i) => ({ ...b, rect: place(i), show: when })));
 }
 
@@ -473,11 +482,36 @@ export class Renderer {
     this.stageTransform();
   }
 
+  /**
+   * The backdrop, scaled up evenly to cover a taller or wider view, and centred. Scaling the photo
+   * over the whole window with high-quality smoothing every frame was the heaviest thing the game
+   * drew (it halved the frame rate on a big Retina screen), so it is scaled once, into a canvas
+   * the size of the screen, and that is copied unscaled each frame.
+   */
+  backdrop() {
+    const c = this.canvas, key = `${c.width}x${c.height}:${this.scale}:${this.offX},${this.offY}:${this.viewW}x${this.viewH}`;
+    if (this.bgKey !== key) {
+      this.bgKey = key;
+      this.bgCache ||= document.createElement('canvas');
+      const b = this.bgCache;
+      b.width = c.width; b.height = c.height;
+      const bctx = b.getContext('2d');
+      bctx.imageSmoothingEnabled = true;
+      bctx.imageSmoothingQuality = 'high';
+      bctx.setTransform(this.scale, 0, 0, this.scale, this.offX, this.offY);
+      const bg = this.a.images['bg.jpg'], k = Math.max(1, this.viewH / STAGE_H, this.viewW / STAGE_W);
+      bctx.drawImage(bg, (this.viewW - STAGE_W * k) / 2, (this.viewH - STAGE_H * k) / 2, STAGE_W * k, STAGE_H * k);
+    }
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(this.bgCache, 0, 0);
+    ctx.restore();
+  }
+
   world(game, v) {
     const ctx = this.ctx;
-    // The backdrop is scaled up evenly to cover a taller or wider view, and centred.
-    const bg = this.a.images['bg.jpg'], k = Math.max(1, this.viewH / STAGE_H, this.viewW / STAGE_W);
-    ctx.drawImage(bg, (this.viewW - STAGE_W * k) / 2, (this.viewH - STAGE_H * k) / 2, STAGE_W * k, STAGE_H * k);
+    this.backdrop();
     const zoom = game.rules.classic ? 1 : v.zoom || 1;
     this.tiles(game.levelData, v.camX, v.camY, zoom);
     ctx.save();
@@ -572,7 +606,7 @@ export class Renderer {
 
   /** The hint about the controls, for the title screen. */
   controlsHint(game) {
-    if (game.oneButton) return this.touchMode ? 'Hold the middle to drive, the right to drive and tilt forwards, the left to reverse (or tilt back in the air)' : 'Hold Space to drive, and to tilt back in the air  ·  P pauses  ·  Esc returns to the menu';
+    if (game.oneButton) return this.touchMode ? 'Hold the middle to drive, the right to tilt forwards, the left to reverse (or tilt back in the air)' : 'Hold Space to drive, and to tilt back in the air  ·  P pauses  ·  Esc returns to the menu';
     return this.touchMode ? 'Use the on-screen pedals and tilt buttons to drive' : 'Arrow keys drive and tilt  ·  P pauses  ·  M sound  ·  Esc returns to the menu';
   }
 
@@ -626,7 +660,7 @@ export class Renderer {
     const lines = ['Your truck is four-wheel drive.',
       'To climb steep hills, tilt forwards so that your front wheel stays on the ground.',
       'One Button: hold Space to drive, and to tilt back in the air.',
-      'Touch Zones (on a touch screen): hold the middle to drive, the right to drive and tilt forwards, and the left to reverse, or to tilt back in the air.'];
+      'Touch Zones (on a touch screen): hold the middle to drive and the right to tilt forwards. The left reverses, or tilts back in the air or while you hold the middle too.'];
     if (this.tall) {
       const k = 1.25, x0 = 72, y0 = 36;
       this.piece('screen_help.png', 205, 45, 62, 145, x0, y0, 62 * k, 145 * k); // the four arrow keycaps

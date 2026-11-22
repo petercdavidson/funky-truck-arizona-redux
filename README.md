@@ -11,7 +11,7 @@ site on GitHub Pages.
 | **Play** | The nine stages, with tricks, a ragdoll wreck, and no invisible ceiling. The camera follows the truck up and down anywhere, even above or below the stage. |
 | **Classic** | The nine stages as the original game played: the original flip bonus, the ceiling, the original controls, and a wrecked truck stays in one piece. Only display fixes (live text, alignment) and the pause button are new. |
 | **Endless** | A course generated as you drive that never ends. No damage: it's free play. **End Run** in the pause menu finishes the run and saves your best distance. |
-| **Practice** | One stage of your choice, played like Play, or one of three **stunt tracks** (Mega Ramp, Kicker Run, Sky Launch): huge speed and airtime for flips, where tricks always score. Options on the stage screen switch **Damage** off and play by **Classic** rules. Finishing offers **Again**, **Next**, **Stages** and **Menu**. |
+| **Practice** | One stage of your choice, played like Play, or one of three **stunt tracks**, where tricks always score and there's no finish line: **Mega Ramp** (a 450 m accelerator at 45°, a launch ramp good for about 470 km/h and 13 s in the air, then a long run-out ending in a quarter pipe), **Kicker Run** (a bumpy downhill of small kickers that goes on for ever) and **Halfpipe** (a 45° drop-in, a flat floor and a steep far wall, with a ledge along each top). Options on the stage screen switch **Damage** off and play by **Classic** rules. The pause menu can **Restart** the stage. Finishing offers **Again**, **Next**, **Stages** and **Menu**. |
 
 Outside Classic, the driving view fills the window, on a phone held either way up (the
 on-screen controls sit over the bottom of it). Close in, it never shows less of the world than
@@ -55,9 +55,10 @@ or a ramp) isn't a scrape: no damage, bail or scrape sound. Hitting the cab's ro
 **One Button / Touch Zones** (one option, on the title screen or as Controls in the pause menu;
 it's called One Button on a keyboard and Touch Zones on a touchscreen). On a keyboard, Space is the
 one button: on the ground it drives, and in the air it tilts the truck back. On a touchscreen the
-pedals go and the screen is in three zones: the middle drives, the right drives and tilts forwards,
-and the left reverses on the ground and tilts back in the air. A finger that slides into another
-zone switches to it. Classic always uses the original controls.
+pedals go and the screen is in three zones: the middle drives, the right tilts forwards, and the
+left reverses on the ground and tilts back in the air. Held together, they combine: middle and right
+drive while tilting forwards, and middle and left drive while tilting back (on the ground too). A
+finger that slides into another zone switches to it. Classic always uses the original controls.
 
 It's plain JavaScript (ES modules) and a 2D canvas, with no build step and no npm dependencies.
 
@@ -74,7 +75,7 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | --- | --- | --- | --- |
 | Forwards / reverse | ↑ / ↓ (or W / S) | right-hand pedals | A or RT / B or LT |
 | Tilt back / forwards | ← / → (or A / D) | left-hand buttons | stick or d-pad |
-| One Button / Touch Zones | Space | middle: drive; right: drive + tilt forwards; left: reverse (tilt back in the air) | A |
+| One Button / Touch Zones | Space | middle: drive; right: tilt forwards; left: reverse (tilt back in the air, or with the middle) | A |
 | Pause | P | ⏸ button | Start |
 | Flip upright (when offered) | R | Flip button | Y |
 | Play again (game over) | Space, Enter or Ctrl | Play Again button | A |
@@ -169,8 +170,9 @@ saved to storage while a test parameter is set.
 | `src/game.js` | All game logic: truck physics, collisions, scoring, stages and the screen state machine. No DOM access, so tests run it under Node. |
 | `src/render.js` | Draws everything on the canvas, and defines the clickable menu areas. |
 | `src/endless.js` | Endless Mode's course generator. |
-| `tools/map.html` | Draws whole tracks as maps, to scale, with the start, finish and every 50 m: serve the repo and open `/tools/map.html` (the stunt tracks) or `/tools/map.html?stages=0,1,2`. |
-| `tools/make-stunts.mjs` | Builds Practice's stunt tracks into `assets/stunts.json` from the stages' column shapes: `node tools/make-stunts.mjs`. |
+| `tools/map.html` | Draws whole tracks as maps, to scale, with the start, the finish (or a looping track's repeats), distance marks and the path a simulated driver takes: serve the repo and open `/tools/map.html` (the stunt tracks) or `/tools/map.html?stages=0,1,2`. |
+| `tools/make-stunts.mjs` | Builds Practice's stunt tracks into `assets/stunts.json` (stored a column at a time) from the stages' column shapes: `node tools/make-stunts.mjs`. |
+| `tools/tune-stunts.mjs` | Tries Mega Ramp designs in the game's physics with a simulated driver and ranks them by air time and speed. |
 | `src/audio.js`, `src/sound-events.js` | Synthesised sound, and the watcher that turns game events into sound cues. |
 | `sounds.html` | A page for hearing every sound. |
 | `src/wreck.js` | The ragdoll wreck: a wrecked truck's loose pieces (outside Classic). |

@@ -172,16 +172,17 @@ for (const btn of touchUI.querySelectorAll('[data-key]')) {
 }
 
 // Touch zones (the one-button option on a touch screen): the screen (apart from the buttons) is in
-// three parts. The middle drives (on the ground or in the air), the right drives and tilts forwards
-// (clockwise), and the left tilts back (anticlockwise) in the air and reverses on the ground (the
-// game decides which: the `back` key). A finger that slides into another part switches to it.
+// three parts. The middle drives, the right tilts forwards (clockwise), and the left tilts back
+// (anticlockwise) in the air and reverses on the ground; held with the middle, the left tilts back
+// on the ground too (the game decides: the `back` key). Fingers in several parts combine. A finger
+// that slides into another part switches to it.
 {
   const tap = document.getElementById('tap');
   const pointers = new Map(); // pointerId -> 'left' | 'middle' | 'right'
   const zoneAt = (e) => { const x = e.clientX / window.innerWidth; return x < 1 / 3 ? 'left' : x > 2 / 3 ? 'right' : 'middle'; };
   const update = () => {
     const zones = new Set(pointers.values());
-    touchKeys.up = zones.has('middle') || zones.has('right');
+    touchKeys.up = zones.has('middle');
     touchKeys.right = zones.has('right');
     touchKeys.back = zones.has('left');
     combineKeys();
@@ -306,10 +307,11 @@ function frame(now) {
     prev = snapshot();
     game.step();
     if (game.shiftCount !== seenShift) {
-      // Endless Mode scrolled the world left; move the previous frame with it.
+      // Endless Mode scrolled the world left, or a looping track jumped back a repeat; move the
+      // previous frame with it.
       seenShift = game.shiftCount;
-      for (let i = 0; i < 10; i += 2) prev.T[i] -= game.lastShift;
-      prev.camX -= game.lastShift;
+      for (let i = 0; i < 10; i += 2) { prev.T[i] -= game.lastShift; prev.T[i + 1] -= game.lastShiftY; }
+      prev.camX -= game.lastShift; prev.camY -= game.lastShiftY;
       prev.W = null;
     }
     const heard = watcher.observe(game);

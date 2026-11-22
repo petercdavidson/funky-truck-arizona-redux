@@ -139,7 +139,7 @@ try {
     const k = JSON.parse(await evaluate('JSON.stringify(window.__funkyTruck.game.keys)'));
     return ['up', 'down', 'left', 'right', 'one', 'back'].filter((n) => k[n]).join(' ');
   };
-  for (const [x, want, name] of [[winW * 0.9, 'up right', 'the right drives and tilts forwards'], [winW * 0.1, 'back', 'the left reverses or tilts back'],
+  for (const [x, want, name] of [[winW * 0.9, 'right', 'the right tilts forwards'], [winW * 0.1, 'back', 'the left reverses or tilts back'],
     [winW * 0.5, 'up', 'the middle drives']]) {
     await touch('touchStart', [[x, 250]]);
     await sleep(150);
@@ -154,8 +154,15 @@ try {
   await touch('touchMove', [[winW * 0.9, 250]]);
   await sleep(100);
   const slid = await pressedNow();
-  check(slid === 'up right', `zones: sliding from the middle to the right switches zone (pressed: ${slid || 'nothing'})`);
-  await touch('touchMove', [[winW / 2, 250]]);
+  check(slid === 'right', `zones: sliding from the middle to the right switches zone (pressed: ${slid || 'nothing'})`);
+  await touch('touchMove', [[winW / 2, 250], [winW * 0.1, 250]]);
+  await sleep(100);
+  const two = await pressedNow();
+  check(two === 'up back', `zones: middle and left together (pressed: ${two || 'nothing'})`);
+  check(await evaluate('(() => { const k = window.__funkyTruck.game.driveKeys(); return k.up && k.left && !k.down; })()'), 'zones: middle and left drive and tilt back');
+  await touch('touchEnd', []);
+  await sleep(100);
+  await touch('touchStart', [[winW / 2, 250]]);
   await sleep(1400);
   check(await pressedNow() === 'up', 'zones: holding the middle drives');
   await shot('phone-landscape-zones');

@@ -31,8 +31,11 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `src/wreck.js` (no DOM): the ragdoll wreck, a wrecked truck's loose pieces.
 - `src/version.js`: the version on the title screen (the Pages deploy stamps in the commit).
 - `assets/stunts.json`: Practice's stunt tracks (after the nine stages), built by
-  `node tools/make-stunts.mjs` from the stages' own column shapes and joins. Edit the designs in
-  that script and rerun it; don't hand-edit the JSON.
+  `node tools/make-stunts.mjs` from the stages' own column shapes and joins, stored a column at a
+  time (`unpackLevel` in `game.js`). Edit the designs in that script and rerun it; don't hand-edit
+  the JSON. They have no finish line; one with `loop` repeats for ever (`Game.updateLoop` shifts the
+  world back a repeat). The physics has no air drag, so a long or steep downhill speeds up without
+  limit: check designs with the simulated driver (`tools/tune-stunts.mjs`, the stunt tests).
 - `tools/map.html`: draws whole tracks as maps (serve the repo, open `/tools/map.html?stages=9,10,11`).
 - `tests/bot.mjs`: a simulated driver (backs up for run-ups when it stalls) for checking that
   generated courses can be driven. Endless never climbs more than `MAX_RISE` tiles within

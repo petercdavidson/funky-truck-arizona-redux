@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Game, TILE, STUCK_STEPS, CAMERA, UPRIGHT_LINGER, TRICK_COOLDOWN, KMH_PER_PX_STEP } from '../src/game.js';
+import { Game, TILE, STUCK_STEPS, CAMERA, UPRIGHT_LINGER, TRICK_COOLDOWN, KMH_PER_PX_STEP, unpackLevel } from '../src/game.js';
 import { turnOver, memoryStore } from './helpers.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
@@ -603,36 +603,117 @@ test('the view never shows less than Classic, and a wide one centres the usual f
   assert.equal(c.viewW, 576); assert.equal(c.viewH, 448);
 });
 
-test('Practice offers the stunt tracks after the nine stages; they can be finished and score only tricks', () => {
-  const stunts = JSON.parse(readFileSync(new URL('../assets/stunts.json', import.meta.url)));
-  assert.equal(stunts.length, 3);
+test('Practice offers the stunt tracks after the nine stages; they have no finish and their scores are not bests', () => {
+  const packed = JSON.parse(readFileSync(new URL('../assets/stunts.json', import.meta.url)));
+  const stunts = packed.map(unpackLevel);
+  assert.deepEqual(stunts.map((s) => s.name), ['Mega Ramp', 'Kicker Run', 'Halfpipe']);
   const withStunts = { ...data, stunts };
   for (const [i, s] of stunts.entries()) {
-    assert.ok(s.name && s.width > 50 && s.tiles.length === s.height && s.tiles.every((row) => row.length === s.width), `${s.name} is a well-formed track`);
+    assert.ok(s.width > 40 && s.tiles.length === s.height && s.tiles.every((row) => row.length === s.width), `${s.name} is a well-formed track`);
     for (let x = 0; x < s.width; x++) assert.equal(s.tiles[s.height - 1][x], 1, `${s.name}: column ${x} ends in solid dirt`);
     const store = memoryStore();
     const g = new Game(withStunts, { store });
-    g.practiceDamage = false;
+    g.practiceDamage = false; // (this is about the tracks, not driving them well)
     g.startPractice(9 + i);
     assert.equal(g.stageName(9 + i), s.name);
     assert.equal(g.bonus, 0, 'no time bonus on a stunt track');
     g.keys.up = true;
-    let steps = 0;
-    for (; steps < 8000 && g.screen === 'playing'; steps++) {
+    for (let steps = 0; steps < 3000 && g.screen === 'playing'; steps++) {
       g.keys.right = g.truck.bodyRot < -20; g.keys.left = g.truck.bodyRot > 30;
       g.step();
-      if (g.canUpright) g.upright();
     }
-    assert.equal(g.screen, 'gameOver', `${s.name} can be finished (${steps} steps)`);
-    assert.ok(g.lastScore > 0, `${s.name}: tricks scored (${g.lastScore})`);
+    assert.ok(g.truck.T[0] > 0 && g.truck.T[0] < s.width * TILE && g.truck.T[1] < s.height * TILE, `${s.name}: the truck stays on the track`);
     assert.equal(store.get('bestPlay'), null, 'a stunt score is not a best');
     assert.equal(g.hasNextPractice, i < stunts.length - 1);
+    // Right at the end of the track (or a long way down Kicker Run) there's still no finish.
+    g.rules = { ...g.rules, damage: false };
+    g.truck.reset(s.width * TILE - 3 * TILE, 0); g.endTimer = 0;
+    for (let steps = 0; steps < 300; steps++) g.step();
+    assert.equal(g.screen, 'playing', `${s.name} has no finish`);
   }
   const g = new Game(withStunts);
   g.startPractice(8);
   assert.ok(g.hasNextPractice, 'Stage Nine leads on to the first stunt track');
   g.nextPractice();
   assert.equal(g.levelData, stunts[0]);
+});
+
+/** Drive a stunt track with full gas, nose down on the ground and level in the air. */
+function driveStunt(g, steps, each = () => {}) {
+  const t = g.truck;
+  g.keys.up = true;
+  for (let i = 0; i < steps && g.screen === 'playing'; i++) {
+    if (g.airSteps > 3) { g.keys.left = t.bodyRot > 8; g.keys.right = t.bodyRot < -8; } else { g.keys.right = t.bodyRot < -15; g.keys.left = t.bodyRot > 35; }
+    g.step();
+    each(i);
+  }
+}
+
+const stuntGame = (name, damage = false) => {
+  const stunts = JSON.parse(readFileSync(new URL('../assets/stunts.json', import.meta.url))).map(unpackLevel);
+  const g = new Game({ ...data, stunts });
+  g.practiceDamage = damage;
+  g.startPractice(9 + stunts.findIndex((s) => s.name === name));
+  return g;
+};
+
+test('Mega Ramp: a long accelerator and launch ramp for huge speed and air time', () => {
+  const g = stuntGame('Mega Ramp', true);
+  // The longest flight: how long, and how high above where it took off.
+  let top = 0, longest = 0, high = 0, takeoff = 0, peak = 0;
+  driveStunt(g, 15000, () => {
+    top = Math.max(top, g.speedKmh);
+    const y = g.truck.T[1];
+    if (g.airSteps === 1) { takeoff = y; peak = y; }
+    peak = Math.min(peak, y);
+    if (g.airSteps > longest) { longest = g.airSteps; high = takeoff - peak; }
+  });
+  assert.equal(g.screen, 'playing', 'the truck survives the jump');
+  assert.ok(top > 400, `top speed ${top.toFixed(0)} km/h`);
+  assert.ok(longest / 70 > 10, `${(longest / 70).toFixed(1)} s in the air`);
+  assert.ok(high / TILE > 100, `flies ${(high / TILE).toFixed(0)} rows above the lip`);
+  const W = g.levelData.width * TILE;
+  assert.ok(g.truck.T[0] > W / 2 && g.truck.T[0] < W && g.truck.T[1] > 0 && g.truck.T[1] < g.levelData.height * TILE,
+    'the quarter pipe at the far end keeps the truck in');
+});
+
+test('Kicker Run goes downhill for ever: the world jumps back a repeat and nothing on screen moves', () => {
+  const g = stuntGame('Kicker Run');
+  const L = g.levelData.loop;
+  assert.ok(L && L.period > 0 && L.drop > 0);
+  // the track really repeats: each column matches the one a repeat on, a repeat's drop lower
+  const T = g.levelData.tiles, H = g.levelData.height;
+  for (let x = L.from; x + L.period < g.levelData.width; x++) {
+    for (let r = 0; r + L.drop < H; r++) assert.equal(T[r + L.drop][x + L.period], T[r][x], `column ${x}, row ${r}`);
+  }
+  // On screen, the truck moves on at a jump back just as it did the step before.
+  let shifts = 0, worst = 0, travelled = 0;
+  let last = g.shiftCount, prev = [g.truck.T[0] - g.camX, g.truck.T[1] - g.camY], move = [0, 0], px = g.truck.T[0];
+  driveStunt(g, 9000, () => {
+    const now = [g.truck.T[0] - g.camX, g.truck.T[1] - g.camY], m = [now[0] - prev[0], now[1] - prev[1]];
+    if (g.shiftCount !== last) {
+      shifts++; last = g.shiftCount; travelled += L.period * TILE;
+      worst = Math.max(worst, Math.hypot(m[0] - move[0], m[1] - move[1]));
+    }
+    prev = now; move = m;
+  });
+  travelled += g.truck.T[0] - px;
+  assert.ok(shifts >= 3, `the world jumped back ${shifts} times`);
+  assert.ok(travelled > 4 * L.period * TILE, `went ${Math.round(travelled / TILE)} columns`);
+  assert.ok(worst < 8, `at a jump back the truck's motion on screen changed by up to ${worst.toFixed(1)}`);
+  assert.ok(g.truck.T[1] < g.levelData.height * TILE && g.truck.T[0] < g.levelData.width * TILE, 'still inside the track');
+});
+
+test('Halfpipe: drop in and ride it back and forth between its ledges', () => {
+  const g = stuntGame('Halfpipe');
+  const W = g.levelData.width * TILE;
+  let minX = Infinity, maxX = -Infinity;
+  driveStunt(g, 900, () => { minX = Math.min(minX, g.truck.T[0]); maxX = Math.max(maxX, g.truck.T[0]); });
+  g.keys.up = g.keys.left = g.keys.right = false;
+  for (let i = 0; i < 1500; i++) g.step(); // let it roll back and forth
+  assert.ok(maxX > W * 0.6, 'rode up the far side');
+  assert.ok(g.truck.T[0] > 0 && g.truck.T[0] < W, 'stays in the halfpipe');
+  assert.equal(g.screen, 'playing');
 });
 
 test('touch zones: the left zone reverses on the ground and tilts back in the air', () => {
@@ -677,4 +758,15 @@ test('every screen\'s buttons can be shown for every kind of run', async () => {
   }
   g.startCampaign(); g.level = 2; g.wrecked = true;
   assert.equal(reachedLine(g), 'Got to stage 3 of 9');
+});
+
+test('touch zones: the left zone held with the middle drives and tilts back, on the ground too', () => {
+  const g = new Game(data);
+  g.toggle('oneButton');
+  g.startCampaign();
+  settle(g);
+  g.keys.back = true;
+  assert.deepEqual((({ up, down, left }) => ({ up, down, left }))(g.driveKeys()), { up: false, down: true, left: false }, 'left alone reverses');
+  g.keys.up = true;
+  assert.deepEqual((({ up, down, left }) => ({ up, down, left }))(g.driveKeys()), { up: true, down: false, left: true }, 'with the middle: drive and tilt back');
 });

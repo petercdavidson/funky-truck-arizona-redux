@@ -1,6 +1,6 @@
 // assets.js — loads images and level data, and prepares tiles.
 
-import { TILE } from './game.js';
+import { TILE, unpackLevel } from './game.js';
 
 const IMAGE_FILES = [
   'bg.jpg', 'tiles_rgb.jpg', 'tiles_alpha.png',
@@ -164,7 +164,7 @@ export async function loadAssets(base = 'assets/', onProgress = () => {}) {
     // Practice's stunt tracks (built by tools/make-stunts.mjs); the game manages without them.
     fetch(base + 'stunts.json').then((r) => (r.ok ? r.json() : [])).catch(() => []),
   ]);
-  levels.stunts = Array.isArray(stunts) ? stunts : [];
+  levels.stunts = Array.isArray(stunts) ? stunts.map(unpackLevel) : [];
   const spriteFiles = new Set();
   for (const list of Object.values(frames)) for (const f of list) spriteFiles.add(f.file);
   const files = [...IMAGE_FILES, ...spriteFiles];

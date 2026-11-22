@@ -44,12 +44,9 @@ export class CollisionWorld {
     const W = level.width, H = level.height;
     this.cols = Math.ceil(W * TILE / this.cell);
     this.rows = Math.ceil(H * TILE / this.cell);
+    // grid[row] is a Map from column to the segments in that cell. Only cells with segments in
+    // them are stored, so a big track (mostly sky and solid ground) costs little memory.
     this.grid = [];
-    for (let r = 0; r < this.rows; r++) {
-      const row = [];
-      for (let c = 0; c < this.cols; c++) row.push([]);
-      this.grid.push(row);
-    }
     for (let ty = 0; ty < H; ty++) for (let tx = 0; tx < W; tx++) this.addTile(tx, ty, level, table);
     const B = this.offset;
     this.segs.push({ x1: B, y1: H * TILE, x2: B, y2: 0, nx: 1, ny: 0, type: 1 });
@@ -94,7 +91,11 @@ export class CollisionWorld {
       const y0 = Math.floor(Math.min(s.y1, s.y2) / this.cell), y1 = Math.floor(Math.max(s.y1, s.y2) / this.cell);
       for (let gy = Math.max(0, y0); gy <= Math.min(y1, this.rows - 1); gy++)
         for (let gx = Math.max(0, x0); gx <= Math.min(x1, this.cols - 1); gx++)
-          this.grid[gy][gx].push(idx);
+          {
+            const row = this.grid[gy] ||= new Map();
+            if (!row.has(gx)) row.set(gx, []);
+            row.get(gx).push(idx);
+          }
     });
   }
 
@@ -131,8 +132,11 @@ export class CollisionWorld {
       guard++;
       for (let gy = gy0; gy <= gy1; gy++) {
         const row = this.grid[gy];
+        if (!row) continue;
         for (let gx = gx0; gx <= gx1; gx++) {
-          for (const idx of row[gx]) {
+          const cell = row.get(gx);
+          if (!cell) continue;
+          for (const idx of cell) {
             const p = this.test(a00, b11, c22, d33, this.segs[idx]);
             if (p) { done = false; c22 = p[0]; d33 = p[1]; last = this.segs[idx]; }
           }
@@ -413,6 +417,22 @@ export class Truck {
 export const STAGE_NAMES = ['Stage One', 'Stage Two', 'Stage Three', 'Stage Four', 'Stage Five',
   'Stage Six', 'Stage Seven', 'Stage Eight', 'Stage Nine', 'Stage Ten'];
 
+/**
+ * The stunt tracks are stored a column at a time (assets/stunts.json, built by
+ * tools/make-stunts.mjs): each column is [top, ...tiles], its ground's top row and the tiles from
+ * there down; above is sky and below is solid ground. This turns one back into a level, shaped
+ * like an entry of levels.json. Anything else is passed through unchanged.
+ */
+export function unpackLevel(l) {
+  if (!l || !Array.isArray(l.columns)) return l;
+  const { columns, ...rest } = l;
+  const tiles = Array.from({ length: l.height }, () => new Array(columns.length));
+  columns.forEach(([top, ...shape], x) => {
+    for (let r = 0; r < l.height; r++) tiles[r][x] = r < top ? 0 : r - top < shape.length ? shape[r - top] : 1;
+  });
+  return { ...rest, width: columns.length, tiles };
+}
+
 /** A saved whole number of metres, or 0 if what was saved isn't one. */
 function validCount(v) {
   const n = Number(v);
@@ -534,6 +554,7 @@ export class Game {
     this.distance = 0;                // Endless Mode: furthest tile column reached
     this.shiftCount = 0;              // bumped when Endless Mode scrolls the world left...
     this.lastShift = 0;               // ...by this many pixels (so the renderer can follow)
+    this.lastShiftY = 0;              // ...and up by this many (a looping stunt track)
     this.lastScore = 0;
     this.wrecked = false;
     this.finished = false;
@@ -710,16 +731,33 @@ export class Game {
 
   /** Drop `n` columns off the left of the course and move everything left to match. */
   scrollWorld(n) {
-    const dx = n * TILE;
     this.course.scroll(n);
-    const t = this.truck;
-    for (let i = 0; i < 10; i += 2) { t.T[i] -= dx; t.P[i] -= dx; }
-    if (t.probePrev) t.probePrev[0] -= dx;
-    for (const d of this.dirt) d.x -= dx;
-    this.camX -= dx;
+    this.shiftWorld(n * TILE, 0);
     this.world = this.makeWorld();
+  }
+
+  /**
+   * A looping track (a stunt track with `loop`): past the second repeat, jump everything back one
+   * repeat, left and up. The track is the same there, so nothing on screen changes, and it goes
+   * on for ever.
+   */
+  updateLoop() {
+    const L = this.levelData.loop;
+    if (!L || this.truck.T[0] < (L.from + 2 * L.period) * TILE) return;
+    this.shiftWorld(L.period * TILE, L.drop * TILE);
+  }
+
+  /** Move everything (truck, wreck, dirt, camera) left by dx and up by dy. */
+  shiftWorld(dx, dy) {
+    const move = (A) => { for (let i = 0; i < A.length; i += 2) { A[i] -= dx; A[i + 1] -= dy; } };
+    const t = this.truck;
+    move(t.T); move(t.P);
+    if (t.probePrev) move(t.probePrev);
+    if (this.wreck) { move(this.wreck.T); move(this.wreck.P); }
+    for (const d of this.dirt) { d.x -= dx; d.y -= dy; }
+    this.camX -= dx; this.camY -= dy;
     this.shiftCount++;
-    this.lastShift = dx;
+    this.lastShift = dx; this.lastShiftY = dy;
   }
 
   showMenu(screen) {
@@ -746,8 +784,12 @@ export class Game {
     // of the way there each step, at most a tile. The dynamic camera is the same with the frame
     // pulled back: distances on the stage scale with the zoom, so on screen it behaves alike.
     const z = this.zoom;
-    const dx = Math.max(Math.min((fx - this.camAnchorX * z - this.camX) * 0.2, TILE * z), -TILE * z);
-    const dy = Math.max(Math.min((fy - this.viewH * z / 2 - this.camY) * 0.2, TILE * z), -TILE * z);
+    // The original camera moves at most a tile a step. Outside Classic the truck can go faster
+    // than that (the stunt tracks), so there the limit rises to keep up with it.
+    const t = this.truck;
+    const lim = this.rules.classic ? TILE * z : Math.max(TILE * z, 1.5 * Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]));
+    const dx = Math.max(Math.min((fx - this.camAnchorX * z - this.camX) * 0.2, lim), -lim);
+    const dy = Math.max(Math.min((fy - this.viewH * z / 2 - this.camY) * 0.2, lim), -lim);
     this.camX = Math.min(Math.max(this.camX + dx, 0), this.maxCamX);
     // Classic stays inside the level. Elsewhere the camera follows the truck up and down wherever
     // it goes: above the level there's sky, and below it the renderer keeps drawing dirt (every
@@ -830,13 +872,14 @@ export class Game {
   /**
    * The keys the truck sees. With one-button controls, the button drives on the ground and tilts
    * back in the air; the touch zones' left zone (`back`) reverses on the ground and tilts back in
-   * the air.
+   * the air, or tilts back on the ground too while driving forwards (the middle zone held as well).
    */
   driveKeys() {
     const k = this.keys;
     if (!this.oneButtonActive || !(k.one || k.back)) return k;
     const air = this.airSteps >= ONE_BUTTON_AIR;
-    return { ...k, up: k.up || (k.one && !air), down: k.down || (k.back && !air), left: k.left || ((k.one || k.back) && air) };
+    const backTilts = k.back && (air || k.up);
+    return { ...k, up: k.up || (k.one && !air), down: k.down || (k.back && !backTilts), left: k.left || (k.one && air) || backTilts };
   }
 
   stepTruck(w) { // V7B33
@@ -948,7 +991,8 @@ export class Game {
       if (this.endTimer === 0) this.finishStage();
       return;
     }
-    if (this.mode !== 'endless' && this.truck.T[0] >= (this.levelData.width - 9) * TILE) {
+    // The stunt tracks have no finish: they're for playing on.
+    if (this.mode !== 'endless' && !this.isStunt && this.truck.T[0] >= (this.levelData.width - 9) * TILE) {
       this.ticker = 'Stage Complete !'; this.tickerTimer = 140; this.endTimer = 210;
       this.bankTricks(); // a chain still going at the finish line is paid out
     }
@@ -1012,6 +1056,7 @@ export class Game {
         this.updateSpeedometer();
         if (this.keys.upright) this.upright();
         if (this.mode === 'endless') this.updateEndless();
+        else this.updateLoop();
         this.updateCamera();
         this.updateDirt();
         this.checkStageEnd();

@@ -6,7 +6,8 @@
   <!--
     Draws whole tracks as maps, true to scale: the stunt tracks by default, or ?stages=0,1,9 (an
     index as Practice counts them: 0-8 the stages, 9 on the stunt tracks). ?width=2400 sets the
-    picture's width in pixels. Serve the repo (npm start) and open /tools/map.html.
+    picture's width in pixels. A dotted line shows where a simulated driver (full gas, nose down on
+    the ground, level in the air) takes the truck in its first 90 seconds; ?path=0 leaves it out. Serve the repo (npm start) and open /tools/map.html.
   -->
   <style>
     body { margin: 0; background: #1d1a19; color: #f2ece8; font: 600 15px "Avenir Next", system-ui, sans-serif; }
@@ -17,7 +18,7 @@
   <canvas id="map"></canvas>
   <script type="module">
     import { loadAssets } from '../src/assets.js';
-    import { TILE, METRES_PER_TILE, STAGE_NAMES } from '../src/game.js';
+    import { TILE, METRES_PER_TILE, STAGE_NAMES, Game } from '../src/game.js';
 
     const q = new URLSearchParams(location.search);
     const a = await loadAssets('../assets/');
@@ -38,12 +39,14 @@
       return [Math.max(0, top - 2), Math.min(level.height, bottom + 3)];
     }
 
-    // One scale for every map, so they compare: the longest fills the width.
-    const k = (W - 2 * PAD) / Math.max(...picks.map((i) => all[i].width * TILE));
+    // Each map fills the width (or with ?same=1, one scale for all, so they compare), no taller than MAX_H.
+    const MAX_H = Number(q.get('maxh')) || 900;
+    const same = q.get('same') === '1' ? (W - 2 * PAD) / Math.max(...picks.map((i) => all[i].width * TILE)) : 0;
     const blocks = picks.map((i) => {
       const lv = all[i], [r0, r1] = rowsUsed(lv);
-      const sr = Math.min(r0, Math.floor(lv.start[1] / TILE) - 2); // keep the drop-in point in view
-      return { i, lv, r0: Math.max(0, sr), r1, h: (r1 - Math.max(0, sr)) * TILE * k };
+      const sr = Math.max(0, Math.min(r0, Math.floor(lv.start[1] / TILE) - 8)); // keep the drop-in point (and sky above it) in view
+      const k = same || Math.min((W - 2 * PAD) / (lv.width * TILE), MAX_H / ((r1 - sr) * TILE));
+      return { i, lv, k, r0: sr, r1, h: (r1 - sr) * TILE * k };
     });
     const H = blocks.reduce((s, b) => s + HEAD + b.h + GAP, PAD);
     const c = document.getElementById('map');
@@ -53,12 +56,14 @@
 
     let y = PAD;
     for (const b of blocks) {
-      const { lv, r0, r1 } = b, w = lv.width * TILE * k;
-      const metres = Math.round((lv.width - 9) * METRES_PER_TILE);
+      const { lv, r0, r1, k } = b, w = lv.width * TILE * k;
+      // The stages finish 9 columns before their end; the stunt tracks have no finish.
+      const finish = b.i < 9, metres = Math.round((finish ? lv.width - 9 : lv.width) * METRES_PER_TILE);
       ctx.fillStyle = '#f2ece8'; ctx.font = '800 22px "Avenir Next", system-ui, sans-serif'; ctx.textBaseline = 'top';
       ctx.fillText(`${names(b.i)}`, PAD, y);
       ctx.font = '600 15px "Avenir Next", system-ui, sans-serif'; ctx.fillStyle = 'rgba(242,236,232,0.7)';
-      ctx.fillText(`${metres} m to the finish  ·  ${(r1 - r0) * METRES_PER_TILE} m top to bottom shown`, PAD + ctx.measureText(names(b.i)).width * 1.5 + 24, y + 6);
+      const what = finish ? `${metres} m to the finish` : lv.loop ? `goes on for ever: ${lv.loop.period * METRES_PER_TILE} m repeats, each ${lv.loop.drop * METRES_PER_TILE} m lower` : `${metres} m long, no finish`;
+      ctx.fillText(`${what}  ·  ${(r1 - r0) * METRES_PER_TILE} m top to bottom shown`, PAD + ctx.measureText(names(b.i)).width * 1.5 + 24, y + 6);
       y += HEAD;
       const ox = PAD, oy = y - r0 * TILE * k;
       // sky
@@ -74,21 +79,48 @@
           if (id) ctx.drawImage(a.tiles[id], ox + x * TILE * k, oy + r * TILE * k, TILE * k + 0.5, TILE * k + 0.5);
         }
       }
-      // every 50 m
       ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1;
       ctx.font = '700 12px "Avenir Next", system-ui, sans-serif';
-      for (let m = 50; m < metres; m += 50) {
+      // distance marks, spaced so their labels fit
+      const every = [25, 50, 100, 250, 500].find((m) => (m / METRES_PER_TILE) * TILE * k >= 70) || 1000;
+      for (let m = every; m < metres; m += every) {
         const x = ox + (m / METRES_PER_TILE) * TILE * k;
         ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(x + 0.5, y); ctx.lineTo(x + 0.5, y + b.h); ctx.stroke(); ctx.setLineDash([]);
         ctx.fillText(`${m} m`, x + 4, y + 4);
+      }
+      // where a simulated driver goes
+      if (q.get('path') !== '0') {
+        const g = new Game(a.levels);
+        g.practiceDamage = false;
+        g.startPractice(b.i);
+        const t = g.truck, pts = [], shifts = g.shiftCount;
+        g.keys.up = true;
+        for (let n = 0; n < 6300 && g.screen === 'playing' && g.shiftCount === shifts; n++) {
+          if (g.airSteps > 3) { g.keys.left = t.bodyRot > 8; g.keys.right = t.bodyRot < -8; } else { g.keys.right = t.bodyRot < -15; g.keys.left = t.bodyRot > 35; }
+          g.step();
+          if (n % 3 === 0) pts.push([t.T[0], t.T[1]]);
+        }
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        for (const [x, yy] of pts) ctx.fillRect(ox + x * k - 1, oy + yy * k - 1, 2, 2);
       }
       // start (where the truck is dropped in) and finish line
       const sx = ox + lv.start[0] * k, sy = oy + lv.start[1] * k;
       ctx.fillStyle = '#ffd54a'; ctx.beginPath(); ctx.arc(sx, sy, 6, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.font = '800 13px "Avenir Next", system-ui, sans-serif'; ctx.fillText('START', sx + 10, Math.max(y + 22, sy - 7));
-      const fx = ox + (lv.width - 9) * TILE * k;
-      ctx.strokeStyle = '#ffd54a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(fx, y); ctx.lineTo(fx, y + b.h); ctx.stroke();
-      ctx.fillText('FINISH', fx + 6, y + 4);
+      if (finish) {
+        const fx = ox + (lv.width - 9) * TILE * k;
+        ctx.strokeStyle = '#ffd54a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(fx, y); ctx.lineTo(fx, y + b.h); ctx.stroke();
+        ctx.fillText('FINISH', fx + 6, y + 4);
+      }
+      if (lv.loop) {
+        // where each repeat starts (the game jumps back one repeat at the third)
+        ctx.strokeStyle = '#7fd8ff'; ctx.lineWidth = 2; ctx.fillStyle = '#7fd8ff';
+        for (let c = lv.loop.from; c < lv.width; c += lv.loop.period) {
+          const x = ox + c * TILE * k;
+          ctx.beginPath(); ctx.moveTo(x, y + 20); ctx.lineTo(x, y + b.h); ctx.stroke();
+          ctx.fillText('REPEAT', x + 5, y + 22);
+        }
+      }
       ctx.restore();
       y += b.h + GAP;
     }
