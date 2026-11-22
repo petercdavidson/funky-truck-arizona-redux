@@ -116,3 +116,43 @@ test('All Nine runs the stages in a row on one clock', () => {
   assert.equal(s.track, 4);
   assert.equal(s.level, 4);
 });
+
+test('over the finish line the split stays put, even if the truck rolls back', () => {
+  const store = memoryStore();
+  runStageOne(store); // sets a best, with its ghost
+  // Skew the ghost's timings so the split is different at every column (this run would otherwise
+  // match the ghost exactly, and the split would be 0 everywhere).
+  const saved = store.get('ghost0');
+  store.set('ghost0', { ...saved, marks: { 0: saved.marks[0].map((v, c) => (v === null ? null : v + 3 * c)) } });
+  const g = new Game(data, { store });
+  g.startTrial(0);
+  g.rules = { ...g.rules, damage: false };
+  const t = g.truck, realStep = g.step.bind(g);
+  let split = null, clock = null;
+  g.step = () => {
+    realStep();
+    if (split === null && g.endTimer > 0) {
+      // just over the finish line: roll back down the track while the stage-complete message shows
+      split = g.split; clock = g.clock;
+      t.reset(t.T[0] - 6 * TILE, t.T[1] - 60);
+    }
+  };
+  drive(g, { steps: 6000 });
+  for (let i = 0; i < 400 && g.screen === 'playing'; i++) g.step();
+  assert.ok(clock !== null && split !== null, 'crossed the finish line racing the ghost');
+  assert.equal(g.screen, 'gameOver');
+  assert.equal(g.split, split, 'the split is locked');
+  assert.equal(g.clock, clock, 'so is the clock');
+});
+
+test('quitting Practice or Time Trial goes back to its list of stages', () => {
+  const g = new Game(data);
+  g.startTrial(2);
+  assert.equal(g.quitScreen, 'trialSelect');
+  g.startPractice(4);
+  assert.equal(g.quitScreen, 'practiceSelect');
+  g.startCampaign();
+  assert.equal(g.quitScreen, 'title');
+  g.startEndless();
+  assert.equal(g.quitScreen, 'title');
+});

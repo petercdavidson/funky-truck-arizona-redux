@@ -6,7 +6,7 @@
   <!--
     Draws whole tracks as maps, true to scale: the stunt tracks by default, or ?stages=0,1,9 (an
     index as Practice counts them: 0-8 the stages, 9 on the stunt tracks). ?width=2400 sets the
-    picture's width in pixels. A dotted line shows where a simulated driver (full gas, nose down on
+    picture's width in pixels. ?cols=10,62 draws just those columns, close up. A dotted line shows where a simulated driver (full gas, nose down on
     the ground, level in the air) takes the truck in its first 90 seconds; ?path=0 leaves it out. Serve the repo (npm start) and open /tools/map.html.
   -->
   <style>
@@ -22,7 +22,15 @@
 
     const q = new URLSearchParams(location.search);
     const a = await loadAssets('../assets/');
-    const all = [...a.levels.levels, ...a.levels.stunts];
+    let all = [...a.levels.levels, ...a.levels.stunts];
+    // ?cols=10,62 draws only those columns (start included, end not) of each track, close up.
+    const cols = q.get('cols') ? q.get('cols').split(',').map(Number) : null;
+    if (cols) {
+      all = all.map((lv) => {
+        const [c0, c1] = [Math.max(0, cols[0]), Math.min(lv.width, cols[1])];
+        return { ...lv, width: c1 - c0, tiles: lv.tiles.map((row) => row.slice(c0, c1)), start: [lv.start[0] - c0 * TILE, lv.start[1]], cropped: c0 };
+      });
+    }
     const names = (i) => (i < 9 ? STAGE_NAMES[i] : all[i].name);
     const picks = (q.get('stages') || '9,10,11').split(',').map(Number).filter((i) => all[i]);
     const W = Number(q.get('width')) || 2400;
@@ -58,7 +66,7 @@
     for (const b of blocks) {
       const { lv, r0, r1, k } = b, w = lv.width * TILE * k;
       // The stages finish 9 columns before their end; the stunt tracks have no finish.
-      const finish = b.i < 9, metres = Math.round((finish ? lv.width - 9 : lv.width) * METRES_PER_TILE);
+      const finish = b.i < 9 && !cols, metres = Math.round((finish ? lv.width - 9 : lv.width) * METRES_PER_TILE);
       ctx.fillStyle = '#f2ece8'; ctx.font = '800 22px "Avenir Next", system-ui, sans-serif'; ctx.textBaseline = 'top';
       ctx.fillText(`${names(b.i)}`, PAD, y);
       ctx.font = '600 15px "Avenir Next", system-ui, sans-serif'; ctx.fillStyle = 'rgba(242,236,232,0.7)';
@@ -89,7 +97,7 @@
         ctx.fillText(`${m} m`, x + 4, y + 4);
       }
       // where a simulated driver goes
-      if (q.get('path') !== '0') {
+      if (q.get('path') !== '0' && !cols) {
         const g = new Game(a.levels);
         g.practiceDamage = false;
         g.startPractice(b.i);

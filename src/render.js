@@ -12,7 +12,7 @@ import { TRIAL_ALL, formatTime, formatGap } from './trial.js';
 
 const DEG = Math.PI / 180;
 const FILL_SCREENS = new Set(['playing', 'paused', 'gameOver']);
-const MENU_SCREENS = new Set(['title', 'help', 'garage', 'practiceSelect', 'trialSelect']);
+const MENU_SCREENS = new Set(['title', 'options', 'help', 'garage', 'practiceSelect', 'trialSelect']);
 const AHEAD = '#8ff0a4', BEHIND = '#ffb0a0'; // Time Trial gaps: ahead of / behind your best
 const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
@@ -31,11 +31,15 @@ const r = (x, y, w, h) => ({ x, y, w, h });
 const onOff = (v) => (v ? 'On' : 'Off');
 const option = (y, label, action) => ({ rect: r(428, y, 132, 20), label, action, small: true });
 
-const TITLE_OPTIONS = [
-  [(g) => `♪ Sound: ${onOff(g.soundOn)}`, 'sound'],
-  [(g, r) => `${r?.touchMode ? 'Touch Zones' : 'One Button'}: ${onOff(g.oneButton)}`, 'oneButton'],
-  [(g) => `Dynamic Camera: ${onOff(g.dynamicCamera)}`, 'dynamicCamera'],
+/** The Options screen: [label, action, what it does]. */
+const OPTIONS = [
+  [(g) => `♪ Sound: ${onOff(g.soundOn)}`, 'sound', () => 'Engine, landings, tricks and crashes (M on a keyboard)'],
+  [(g, r) => `${r?.touchMode ? 'Touch Zones' : 'One Button'}: ${onOff(g.oneButton)}`, 'oneButton',
+    (g, r) => (r?.touchMode ? 'Drive by holding parts of the screen instead of the pedals' : 'Space drives, and tilts back in the air')],
+  [(g) => `Dynamic Camera: ${onOff(g.dynamicCamera)}`, 'dynamicCamera', () => 'Pulls back to show more when you go fast or fly high'],
+  [(g) => `Show Frame Rate: ${onOff(g.showFps)}`, 'showFps', () => 'Frames per second, in the bottom left corner'],
 ];
+const optionRow = (i, tall) => (tall ? r(50, 92 + 96 * i, 260, 40) : r(178, 82 + 66 * i, 220, 26));
 const MODES = [['Play', 'play'], ['Classic', 'classic'], ['Endless', 'endless'], ['Time Trial', 'trial'], ['Practice', 'practice'], ['Change Truck', 'garage']];
 const PRACTICE_OPTIONS = [
   [(g) => `Damage: ${onOff(g.practiceDamage)}`, 'practiceDamage'],
@@ -75,16 +79,17 @@ function pauseButtons(place) {
     kind === 'endless' && { label: 'End Run', action: 'endRun' },
     // Practice and Time Trial can start the run again (the stunt tracks have no end)
     (kind.startsWith('practice') || kind === 'trial') && { label: 'Restart', action: 'again' },
-    { label: 'Quit to Menu', action: 'menu' },
+    // Quitting Practice or Time Trial goes back to its list of stages
+    { label: (g) => (g.quitScreen === 'title' ? 'Quit to Menu' : 'Quit to Stages'), action: 'menu' },
     { label: (g) => `Sound: ${onOff(g.soundOn)}`, action: 'sound' },
     !/classic/i.test(kind) && { label: (g, r) => `Controls: ${controlsName(g, r)}`, action: 'oneButton' },
   ].filter(Boolean).map((b, i) => ({ ...b, rect: place(i), show: when })));
 }
 
 /**
- * The game-over buttons. Practice gets four in a 2x2 grid (placed by `grid(i)`): the same stage
- * again, the next stage (if there is one), the stage list, and the main menu. Other runs get Play
- * Again and Menu in a column (placed by `column(i)`).
+ * The game-over buttons. Practice and Time Trial get a grid (placed by `grid(i)`): the same stage
+ * again and the next stage (if there is one), then their list of stages across both columns.
+ * Other runs get Play Again and Menu in a column (placed by `column(i)`).
  */
 function gameOverButtons(column, grid) {
   const practice = (g) => g.mode === 'practice', trial = (g) => g.mode === 'trial';
@@ -94,17 +99,20 @@ function gameOverButtons(column, grid) {
     { label: 'Menu', action: 'menu', rect: column(1), show: other },
     { label: (g) => (trial(g) ? 'Retry' : 'Again'), action: 'again', rect: grid(0), show: gridded },
     { label: 'Next', action: 'nextStage', rect: grid(1), show: (g) => (practice(g) && g.hasNextPractice) || (trial(g) && g.hasNextTrial) },
-    { label: 'Stages', action: 'practice', rect: grid(2), show: practice },
-    { label: 'Stages', action: 'trial', rect: grid(2), show: trial },
-    { label: 'Menu', action: 'menu', rect: grid(3), show: gridded },
+    // back to the list of stages, across the width of both columns
+    { label: 'Stages', action: 'menu', rect: { ...grid(2), w: grid(3).x + grid(3).w - grid(2).x }, show: gridded },
   ];
 }
 
 export const BUTTONS = {
   title: [
     ...MODES.map(([label, action], i) => ({ rect: r(229, 247 + 25 * i, 120, 22), label, action })),
-    { rect: r(238, 428, 100, 16), label: 'How to Play', action: 'help', small: true },
-    ...TITLE_OPTIONS.map(([label, action], i) => option(252 + 24 * i, label, action)),
+    { rect: r(176, 428, 100, 16), label: 'How to Play', action: 'help', small: true },
+    { rect: r(300, 428, 100, 16), label: 'Options', action: 'options', small: true },
+  ],
+  options: [
+    ...OPTIONS.map(([label, action], i) => ({ rect: optionRow(i, false), label, action })),
+    { rect: r(229, 400, 120, 25), label: 'Menu', action: 'menu' },
   ],
   help: [{ rect: r(229, 386, 120, 25), label: 'Menu', action: 'menu' }],
   garage: [
@@ -132,7 +140,7 @@ export const BUTTONS = {
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 736, help: 560, garage: 580, practiceSelect: 540, trialSelect: 540, paused: 410, gameOver: 330 };
+export const TALL_H = { title: 680, options: 560, help: 560, garage: 580, practiceSelect: 540, trialSelect: 540, paused: 410, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
@@ -141,9 +149,12 @@ const tallStage = (i) => ({ x: 64 + 80 * (i % 3), y: 80 + 80 * Math.floor(i / 3)
 export const TALL_BUTTONS = {
   title: [
     ...MODES.map(([label, action], i) => ({ rect: r(60, 246 + 43 * i, 240, 35), label, action, ...T_BIG })),
-    // The options are narrower than the game buttons, so they read as a different kind of thing.
-    ...TITLE_OPTIONS.map(([label, action], i) => ({ rect: r(95, 515 + 34 * i, 170, 28), label, action, ...T_SMALL })),
-    { rect: r(110, 684, 140, 26), label: 'How to Play', action: 'help', ...T_SMALL },
+    { rect: r(30, 606, 145, 30), label: 'How to Play', action: 'help', ...T_SMALL },
+    { rect: r(185, 606, 145, 30), label: 'Options', action: 'options', ...T_SMALL },
+  ],
+  options: [
+    ...OPTIONS.map(([label, action], i) => ({ rect: optionRow(i, true), label, action, ...T_BIG })),
+    { rect: r(80, 500, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
   ],
   help: [{ rect: r(80, 500, 200, 38), label: 'Menu', action: 'menu', ...T_BIG }],
   garage: [
@@ -689,9 +700,9 @@ export class Renderer {
       this.text('UTAH', 334, 84, { size: 26, weight: '900', color: '#f5f5f5', shadow, align: 'right' });
       this.showTruck(game, v, cx, 212, 1.15);
       this.buttons('title', game);
-      if (best) this.fitText(best, cx, 622, 340, { size: 13, weight: '600' });
-      this.wrapText(this.controlsHint(game), cx, 644, 330, { size: 12, ...hintStyle }, 15);
-      this.text(version, TALL_W - 8, 716, { ...small, size: 14 });
+      if (best) this.fitText(best, cx, 528, 340, { size: 13, weight: '600' });
+      this.wrapText(this.controlsHint(game), cx, 552, 330, { size: 12, ...hintStyle }, 15);
+      this.text(version, TALL_W - 8, 656, { ...small, size: 14 });
       return;
     }
     this.text('funky truck', STAGE_W / 2, 18, { size: 62, weight: '900', color: '#f5f5f5', shadow });
@@ -779,6 +790,17 @@ export class Renderer {
     }
     if (game.stunts.length) this.text('Stunt Tracks', 288, 272, { size: 13, weight: '700' });
     this.buttons('practiceSelect', game);
+  }
+
+  /** The Options screen: each option as a button, with a line on what it does. */
+  options(game) {
+    const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
+    this.text('Options', cx, tall ? 28 : 22, { size: tall ? 26 : 22, weight: '800' });
+    OPTIONS.forEach(([, , about], i) => {
+      const b = optionRow(i, tall);
+      this.fitText(about(game, this), cx, b.y + b.h + (tall ? 8 : 5), tall ? 330 : 400, { size: tall ? 13 : 11, weight: '600', color: 'rgba(255,255,255,0.8)' });
+    });
+    this.buttons('options', game);
   }
 
   /** Time Trial's stage list: a card per stage with its best time, then all nine in a row. */
@@ -898,6 +920,7 @@ export class Renderer {
       switch (game.screen) {
         case 'title': this.title(game, v); break;
         case 'help': this.help(game); break;
+        case 'options': this.options(game); break;
         case 'garage': this.garage(game, v); break;
         case 'practiceSelect': this.practiceSelect(game); break;
         case 'trialSelect': this.trialSelect(game); break;

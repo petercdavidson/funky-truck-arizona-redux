@@ -96,7 +96,11 @@ function toggleFullscreen() {
 
 // ---- menus (mouse and touch)
 
-function goMenu() { game.showMenu('title'); }
+/** Back a level: from a run, to its stage list (Practice, Time Trial) or the title; else the title. */
+function goMenu() {
+  const inRun = game.screen === 'playing' || game.screen === 'paused' || game.screen === 'gameOver';
+  game.showMenu(inRun ? game.quitScreen : 'title');
+}
 
 function doAction(a) {
   if (a === 'sound') {
@@ -106,13 +110,14 @@ function doAction(a) {
     return;
   }
   sound.play('click');
-  if (a === 'oneButton' || a === 'practiceDamage' || a === 'practiceClassic' || a === 'dynamicCamera' || a === 'ghostOn') { game.toggle(a); return; }
+  if (a === 'oneButton' || a === 'practiceDamage' || a === 'practiceClassic' || a === 'dynamicCamera' || a === 'ghostOn' || a === 'showFps') { game.toggle(a); return; }
   if (a === 'play') game.startCampaign();
   else if (a === 'classic') game.startCampaign(true);
   else if (a === 'endless') game.startEndless();
   else if (a === 'endRun') game.endRun();
   else if (a === 'practice') game.showMenu('practiceSelect');
   else if (a === 'trial') game.showMenu('trialSelect');
+  else if (a === 'options') game.showMenu('options');
   else if (/^trial\d$/.test(a)) game.startTrial(Number(a.slice(5)));
   else if (a === 'garage') game.showMenu('garage');
   else if (a === 'help') game.showMenu('help');
@@ -291,16 +296,31 @@ let viewKey = '';
 function placeView() {
   const rect = canvas.getBoundingClientRect(), k = renderer.cssPerDevice;
   const x = rect.left + renderer.offX * k, y = rect.top + renderer.offY * k, w = renderer.viewW * renderer.scale * k;
-  const key = `${x.toFixed(1)},${y.toFixed(1)},${w.toFixed(1)}`;
+  const key = `${x.toFixed(1)},${y.toFixed(1)},${w.toFixed(1)},${renderer.viewH.toFixed(1)}`;
   if (key === viewKey) return;
   viewKey = key;
   const st = document.documentElement.style;
   st.setProperty('--view-x', `${x}px`); st.setProperty('--view-y', `${y}px`); st.setProperty('--view-w', `${w}px`);
+  st.setProperty('--view-h', `${renderer.viewH * renderer.scale * k}px`);
+}
+
+// The frame rate (an option): frames drawn over the last half second, shown in the corner.
+const fpsBox = document.getElementById('fps');
+let fpsFrames = 0, fpsSince = 0;
+function countFrame(now) {
+  fpsBox.hidden = !game.showFps;
+  if (!game.showFps) { fpsFrames = 0; fpsSince = now; return; }
+  fpsFrames++;
+  if (now - fpsSince >= 500) {
+    fpsBox.textContent = `${Math.round(fpsFrames * 1000 / (now - fpsSince))} fps`;
+    fpsFrames = 0; fpsSince = now;
+  }
 }
 
 function frame(now) {
   requestAnimationFrame(frame);
   placeView();
+  countFrame(now);
   if (!last) last = now;
   acc += Math.min(now - last, 250);
   last = now;

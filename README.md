@@ -11,8 +11,8 @@ site on GitHub Pages.
 | **Play** | The nine stages, with tricks, a ragdoll wreck, and no invisible ceiling. The camera follows the truck up and down anywhere, even above or below the stage. |
 | **Classic** | The nine stages as the original game played: the original flip bonus, the ceiling, the original controls, and a wrecked truck stays in one piece. Only display fixes (live text, alignment) and the pause button are new. |
 | **Endless** | A course generated as you drive that never ends. No damage: it's free play. **End Run** in the pause menu finishes the run and saves your best distance. |
-| **Time Trial** | Any of the nine stages, or **All Nine** in a row, against the clock, by Play's rules (a wreck doesn't finish). The clock runs from when the truck first lands on each stage to its finish line. Your best run on each track comes back as a see-through **ghost** to race, and the clock's readout shows how far ahead (green) or behind (pink) of it you are at the same point on the track. The stage list shows each best time; a **Ghost** switch there turns the ghost off. Finishing offers **Retry**, **Next**, **Stages** and **Menu**. |
-| **Practice** | One stage of your choice, played like Play, or one of three **stunt tracks**, where tricks always score and there's no finish line: **Mega Ramp** (a 450 m accelerator at 45°, a launch ramp good for about 470 km/h and 13 s in the air, then a long run-out ending in a quarter pipe), **Kicker Run** (a bumpy downhill of small kickers that goes on for ever) and **Halfpipe** (a symmetrical bowl: walls nearly vertical at the lips, easing to a flat floor, with a ledge along each top). Options on the stage screen switch **Damage** off and play by **Classic** rules. The pause menu can **Restart** the stage. Finishing offers **Again**, **Next**, **Stages** and **Menu**. |
+| **Time Trial** | Any of the nine stages, or **All Nine** in a row, against the clock, by Play's rules (a wreck doesn't finish). The clock runs from when the truck first lands on each stage to its finish line. Your best run on each track comes back as a see-through **ghost** to race, and the clock's readout shows how far ahead (green) or behind (pink) of it you are at the same point on the track. The stage list shows each best time; a **Ghost** switch there turns the ghost off. Finishing offers **Retry**, **Next** and **Stages**; quitting (from the pause menu or the finish box) goes back to the stage list. |
+| **Practice** | One stage of your choice, played like Play, or one of three **stunt tracks**, where tricks always score and there's no finish line: **Mega Ramp** (a 450 m accelerator at 45°, a launch ramp good for about 470 km/h and 13 s in the air, then a long run-out ending in a quarter pipe), **Kicker Run** (a bumpy downhill of small kickers that goes on for ever) and **Halfpipe** (a bowl: walls nearly vertical at the lips, easing to a flat floor, with a ledge along each top). Options on the stage screen switch **Damage** off and play by **Classic** rules. The pause menu can **Restart** the stage. Finishing offers **Again**, **Next** and **Stages**; quitting goes back to the stage list. |
 
 Outside Classic, the driving view fills the window, on a phone held either way up (the
 on-screen controls sit over the bottom of it). Close in, it never shows less of the world than
@@ -20,10 +20,10 @@ Classic's 576×448: a taller window shows more sky and ground, and a wider one m
 (the truck keeps Classic's place in the middle 576). The backdrop scales up evenly to cover it.
 Classic keeps the original 576×448 view. The menus' backdrop fills the window, with the menu centred on it. In a window at least as
 tall as it is wide (a phone held upright, say), every menu switches to a tall layout: one column,
-with the title screen's options under the game modes, Practice's stages in a 3×3 grid, and
+with the title screen's buttons in one column, Practice's stages in a 3×3 grid, and
 everything scaled up to fill the width, so the buttons are much bigger.
 
-**Dynamic camera** (outside Classic; a switch on the title screen turns it off): it follows the
+**Dynamic camera** (outside Classic; a switch on the Options screen turns it off): it follows the
 truck exactly as the original camera does, keeping it in the same place on screen, but pulls the
 frame back when the truck keeps up a good speed (mostly: full pull-back from speed comes at about
 120 km/h) or has been high in the air for a while, up to 1.8 times as much of the world. It never
@@ -54,7 +54,7 @@ truck stops looking stuck. A flip upright isn't a trick: tricks count again a se
 Outside Classic the body touching ground underneath it (the chassis bottoming out on a hard landing
 or a ramp) isn't a scrape: no damage, bail or scrape sound. Hitting the cab's roof or sides is.
 
-**One Button / Touch Zones** (one option, on the title screen or as Controls in the pause menu;
+**One Button / Touch Zones** (one option, on the Options screen or as Controls in the pause menu;
 it's called One Button on a keyboard and Touch Zones on a touchscreen). On a keyboard, Space is the
 one button: on the ground it drives, and in the air it tilts the truck back. On a touchscreen the
 pedals go and the screen is in three zones: the middle drives, the right tilts forwards, and the
@@ -82,8 +82,13 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Flip upright (when offered) | R | Flip button | Y |
 | Play again (game over) | Space, Enter or Ctrl | Play Again button | A |
 | Back to menu | Esc | Menu button | |
-| Sound on / off | M | Sound switch (title screen or pause menu) | |
+| Sound on / off | M | Sound switch (Options screen or pause menu) | |
 | Full screen | F | | |
+
+**Options** (a button next to How to Play on the title screen) has the switches for sound, the
+controls (One Button / Touch Zones), the dynamic camera, and **Show Frame Rate** (frames per second
+in the bottom left corner). Options for one mode stay on that mode's screen (Practice's Damage and
+Classic, Time Trial's Ghost).
 
 **How to Play** is the small button under the controls hint on the title screen. The game's
 version is in the title screen's bottom-right corner; on the live site it's followed by the

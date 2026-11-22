@@ -497,7 +497,7 @@ const RIGHTING_STEPS = 80;
 const ONE_BUTTON_AIR = 4;        // steps off the ground before one-button and touch-zone controls count as in the air
 
 /**
- * Screens: 'title' | 'help' | 'garage' | 'practiceSelect' | 'trialSelect' | 'playing' | 'paused' | 'gameOver'
+ * Screens: 'title' | 'options' | 'help' | 'garage' | 'practiceSelect' | 'trialSelect' | 'playing' | 'paused' | 'gameOver'
  * Modes: 'campaign' (all nine stages), 'practice' (one stage), 'endless' (a generated course),
  * 'trial' (Time Trial: a stage or all nine against the clock, see trial.js).
  * The title screen's Play and Classic both start a campaign, under different rules.
@@ -543,6 +543,7 @@ export class Game {
     this.practiceClassic = flag('practiceClassic', false);
     this.dynamicCamera = flag('dynamicCamera', true);
     this.ghostOn = flag('ghost', true);
+    this.showFps = flag('showFps', false);
     // Time Trial: the best time on each track (see trial.js), and the run under way.
     this.trialBests = validBests(this.store.get('trialBests'));
     this.track = 0;                   // which track (0-8 a stage, TRIAL_ALL all nine)
@@ -633,9 +634,9 @@ export class Game {
     this.saveLook();
   }
 
-  /** Flip an on/off option and save it: 'soundOn', 'oneButton', 'practiceDamage', 'practiceClassic', 'dynamicCamera', 'ghostOn'. */
+  /** Flip an on/off option and save it: 'soundOn', 'oneButton', 'practiceDamage', 'practiceClassic', 'dynamicCamera', 'ghostOn', 'showFps'. */
   toggle(option) {
-    const key = { soundOn: 'sound', oneButton: 'oneButton', practiceDamage: 'practiceDamage', practiceClassic: 'practiceClassic', dynamicCamera: 'dynamicCamera', ghostOn: 'ghost' }[option];
+    const key = { soundOn: 'sound', oneButton: 'oneButton', practiceDamage: 'practiceDamage', practiceClassic: 'practiceClassic', dynamicCamera: 'dynamicCamera', ghostOn: 'ghost', showFps: 'showFps' }[option];
     if (!key) return;
     this[option] = !this[option];
     this.store.set(key, this[option]);
@@ -698,8 +699,9 @@ export class Game {
     if (this.landed) for (let c = m.length; c <= col; c++) m[c] = this.clock;
     if (this.ghost) {
       this.ghostT = ghostPose(this.ghost, this.runStep, this.level);
+      // The split only moves while the clock runs: once over the finish line it stays put.
       const g = this.ghost.marks[this.level];
-      if (this.landed && g && g[col] != null && m[col] != null) this.split = m[col] - g[col];
+      if (this.landed && this.endTimer === 0 && !this.wreck && g && g[col] != null && m[col] != null) this.split = m[col] - g[col];
     }
     this.runStep++;
   }
@@ -821,6 +823,12 @@ export class Game {
     this.shiftCount++;
     this.lastShift = dx; this.lastShiftY = dy;
   }
+
+  /**
+   * Where quitting a run goes: back to its list of stages for Practice and Time Trial, otherwise
+   * the title screen.
+   */
+  get quitScreen() { return this.mode === 'practice' ? 'practiceSelect' : this.mode === 'trial' ? 'trialSelect' : 'title'; }
 
   showMenu(screen) {
     // Leaving an Endless run part-way (quitting from pause, say) still counts its distance.

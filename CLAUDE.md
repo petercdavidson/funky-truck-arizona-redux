@@ -50,8 +50,10 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   `game.rules = { classic, damage }`. Play, Endless, Time Trial and Practice share the new features; Classic
   has none of them (no tricks, ragdoll, one-button controls or flip-upright, and it keeps the
   ceiling and the original flip bonus). Display fixes and quality-of-life touches are fine in Classic.
-- New features go in every mode except Classic unless the user says otherwise, and new options go
-  in the small on/off switches at the side of a screen (`option()` in `render.js`).
+- New features go in every mode except Classic unless the user says otherwise. General options go
+  on the Options screen (`OPTIONS` in `render.js`); an option for one mode goes in the small on/off
+  switches at the side of that mode's screen (`option()`).
+- Quitting a Practice or Time Trial run goes back to its stage list (`Game.quitScreen`).
 
 ## Rules that keep the game feeling right
 
@@ -62,7 +64,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   for game state. `Renderer` scales the stage to fit the screen.
 - The physics is a faithful port of the original game. Treat changes to `Truck` / `CollisionWorld`
   as gameplay changes: say so explicitly and add or adjust tests.
-- Screens are `game.screen` strings: `title`, `help`, `garage`, `practiceSelect`, `trialSelect`, `playing`,
+- Screens are `game.screen` strings: `title`, `options`, `help`, `garage`, `practiceSelect`, `trialSelect`, `playing`,
   `paused`, `gameOver`. A new screen needs an entry in `BUTTONS`, a case in `Renderer.draw`, and
   `body[data-screen]` CSS if it affects touch controls.
 - Saved data goes through `game.store` (key prefix `funkytruck.` in localStorage). Validate
