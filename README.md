@@ -11,7 +11,7 @@ site on GitHub Pages.
 | **Play** | The nine stages, with tricks, a ragdoll wreck, and no invisible ceiling. The camera follows the truck up and down anywhere, even above or below the stage. |
 | **Classic** | The nine stages as the original game played: the original flip bonus, the ceiling, the original controls, and a wrecked truck stays in one piece. Only display fixes (live text, alignment) and the pause button are new. |
 | **Endless** | A course generated as you drive that never ends. No damage: it's free play. **End Run** in the pause menu finishes the run and saves your best distance. |
-| **Practice** | One stage of your choice, played like Play. Options on the stage screen switch **Damage** off and play by **Classic** rules. |
+| **Practice** | One stage of your choice, played like Play, or one of three **stunt tracks** (Mega Ramp, Kicker Run, Sky Launch): huge speed and airtime for flips, where tricks always score. Options on the stage screen switch **Damage** off and play by **Classic** rules. Finishing offers **Again**, **Next**, **Stages** and **Menu**. |
 
 Outside Classic, the driving view fills the window, on a phone held either way up (the
 on-screen controls sit over the bottom of it). Close in, it shows the same width of the
@@ -22,28 +22,34 @@ tall as it is wide (a phone held upright, say), every menu switches to a tall la
 with the title screen's options under the game modes, Practice's stages in a 3×3 grid, and
 everything scaled up to fill the width, so the buttons are much bigger.
 
-**Dynamic camera** (outside Classic; a switch on the title screen turns it off): the camera pulls
-back when the truck keeps up a good speed or has been high in the air for a while, up to 1.8 times
-as much of the world. High up it also aims a little below the truck (by up to a fifth of the view), so you can see where you'll land. It
-reacts only to smoothed speed and height (height counts after half a second in the air), eases
-in and out slowly, ignores small changes, and is limited in how quickly it can speed up or slow
-down, so bumps and short hops don't move it. Classic keeps the original fixed camera. The
-settings are `CAMERA` in `src/game.js`.
+**Dynamic camera** (outside Classic; a switch on the title screen turns it off): it follows the
+truck exactly as the original camera does, keeping it in the same place on screen, but pulls the
+frame back when the truck keeps up a good speed or has been high in the air for a while, up to
+1.8 times as much of the world. The pull-back moves like a spring and reacts to smoothed speed and
+height (height fades in over the first second in the air), so bumps and short hops don't move it.
+The settings are `CAMERA` in `src/game.js`.
 
-**Garage**: choose the truck's body, paint, tyres and wheels. Any body can wear any body's
-colour; each body starts in its own and remembers the paint you give it. Only the look changes:
-every body and tyre drives exactly the same.
+Outside Classic the HUD has a **speedometer** in km/h (64 px of the stage is 2.5 m).
+
+**Garage**: choose the truck's body, paint, tyres and wheels. Choosing a body puts it in its own
+colour; Paint then gives it any other body's colour. Only the look changes: every body and tyre
+drives exactly the same (the garage says so).
 
 Play, Classic and Endless each keep their own best (score, score, distance). A Practice run with
 damage saves to Play's or Classic's best; a damage-free one saves none.
 
 In damage-free runs outside Classic (Endless, and Practice with damage off), a **Flip** button
 appears at the top of the screen when the truck has been stuck on its roof or side for two seconds.
-It hops the truck up and turns it back onto its wheels.
+It hops the truck up and turns it back onto its wheels, and stays for three seconds after the
+truck stops looking stuck. A flip upright isn't a trick: tricks count again a second after it lands.
 
-**One-button controls** (an option on the title screen) use a single button: Space on a keyboard,
-or holding anywhere on a touchscreen. On the ground it drives; in the air it tilts the truck back.
-Classic always uses the original controls.
+Outside Classic the body touching ground underneath it (the chassis bottoming out on a hard landing
+or a ramp) isn't a scrape: no damage, bail or scrape sound. Hitting the cab's roof or sides is.
+
+**One-button controls** (an option on the title screen, or Controls in the pause menu) use a
+single button: Space on a keyboard, or holding the middle of a touchscreen. On the ground it drives;
+in the air it tilts the truck back. On a touchscreen the right third drives while leaning forwards
+(for climbing) and the left third reverses. Classic always uses the original controls.
 
 It's plain JavaScript (ES modules) and a 2D canvas, with no build step and no npm dependencies.
 
@@ -60,7 +66,7 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | --- | --- | --- | --- |
 | Forwards / reverse | ↑ / ↓ (or W / S) | right-hand pedals | A or RT / B or LT |
 | Tilt back / forwards | ← / → (or A / D) | left-hand buttons | stick or d-pad |
-| One-button controls | Space | hold anywhere | A |
+| One-button controls | Space | hold the middle (right: climb, left: reverse) | A |
 | Pause | P | ⏸ button | Start |
 | Flip upright (when offered) | R | Flip button | Y |
 | Play again (game over) | Space, Enter or Ctrl | Play Again button | A |
@@ -89,6 +95,9 @@ turns into something new. The ground is kept inside a fixed height band, and the
 by the stage they came from, so a course starts like Stage One and drifts towards the later stages
 the further you get. The course lives in a window of 128 columns that scrolls as you drive
 (`src/endless.js`).
+
+The course never climbs more than 5 tiles within 4 columns, and the generator looks ahead so it
+never wanders into a valley that can only be left by a steeper wall: every hill can be driven up.
 
 Score: 10 points for every new tile of ground, plus tricks as usual. The HUD shows the
 distance in metres.
@@ -152,6 +161,7 @@ saved to storage while a test parameter is set.
 | `src/game.js` | All game logic: truck physics, collisions, scoring, stages and the screen state machine. No DOM access, so tests run it under Node. |
 | `src/render.js` | Draws everything on the canvas, and defines the clickable menu areas. |
 | `src/endless.js` | Endless Mode's course generator. |
+| `tools/make-stunts.mjs` | Builds Practice's stunt tracks into `assets/stunts.json` from the stages' column shapes: `node tools/make-stunts.mjs`. |
 | `src/audio.js`, `src/sound-events.js` | Synthesised sound, and the watcher that turns game events into sound cues. |
 | `sounds.html` | A page for hearing every sound. |
 | `src/wreck.js` | The ragdoll wreck: a wrecked truck's loose pieces (outside Classic). |
