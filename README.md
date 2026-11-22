@@ -80,7 +80,9 @@ it stays centred where it would be to show them all. `CRASH_CAM` in `src/game.js
 **One Button** (the Controls option: Standard, Pedals on a touchscreen, or One Button): one button drives on the
 ground and tilts the truck back in the air. On a keyboard it's Space or the up arrow (the other
 arrow keys do nothing); on a touchscreen the pedals go and holding anywhere on the screen is the
-button. Classic always uses the original controls.
+button. Classic always uses the original controls. It also helps you balance: tipped more than 45°
+onto one wheel (nose down on the front wheel, or a wheelie on the back wheel), holding the button
+still drives but also turns the truck back towards level. `BALANCE` in `src/game.js`.
 
 It's plain JavaScript (ES modules) and a 2D canvas, with no build step and no npm dependencies.
 

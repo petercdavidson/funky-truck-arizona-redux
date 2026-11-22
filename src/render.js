@@ -959,7 +959,7 @@ export class Renderer {
     const keys = ['Forwards', 'Reverse', 'Tilt Back', 'Tilt Forwards'];
     const lines = ['Your truck is four-wheel drive.',
       'To climb steep hills, tilt forwards so that your front wheel stays on the ground.',
-      'One Button (an option): hold Space or the up arrow (on a touch screen, hold anywhere) to drive, and to tilt back in the air.',
+      'One Button (an option): hold Space or the up arrow (on a touch screen, hold anywhere) to drive, and to tilt back in the air. Tipped onto one wheel, it also tips you back towards level.',
       'Tricks: flips, Big Air, wheelies and clean landings. Chain them together for a multiplier.'];
     if (this.tall) {
       const k = 1.25, x0 = 72, y0 = 36;

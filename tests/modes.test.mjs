@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Game, TILE, STUCK_STEPS, CAMERA, UPRIGHT_LINGER, TRICK_COOLDOWN, KMH_PER_PX_STEP, unpackLevel } from '../src/game.js';
+import { Game, TILE, BALANCE, STUCK_STEPS, CAMERA, UPRIGHT_LINGER, TRICK_COOLDOWN, KMH_PER_PX_STEP, unpackLevel } from '../src/game.js';
 import { turnOver, memoryStore } from './helpers.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
@@ -150,6 +150,88 @@ test('one-button controls: the button drives on the ground and tilts back in the
   c.oneButton = true;
   c.startCampaign(true);
   assert.equal(c.oneButtonActive, false, 'Classic uses the original controls');
+});
+
+/** A long flat track, as a Practice stunt track. */
+function flatGame(oneButton = true) {
+  const w = 200, h = 30, row = 22;
+  const tiles = Array.from({ length: h }, (_, y) => Array(w).fill(y > row ? 1 : 0));
+  for (let x = 0; x < w; x++) tiles[row][x] = 2;
+  const g = new Game({ ...data, stunts: [{ name: 'Flat', width: w, height: h, tiles, start: [3 * TILE, (row - 3) * TILE] }] });
+  if (oneButton) g.toggle('oneButton');
+  g.practiceDamage = false;
+  g.startPractice(data.levels.length);
+  settle(g, 150);
+  return g;
+}
+/** Turn the truck `deg` degrees (clockwise) about one of its wheels, at rest. */
+function tipOnto(t, deg, front) {
+  const i = front ? 4 : 2, cx = t.T[i], cy = t.T[i + 1], r = deg * Math.PI / 180;
+  for (let k = 0; k < 10; k += 2) {
+    const x = t.T[k] - cx, y = t.T[k + 1] - cy;
+    t.T[k] = cx + x * Math.cos(r) - y * Math.sin(r); t.T[k + 1] = cy + x * Math.sin(r) + y * Math.cos(r);
+  }
+  t.P = t.T.slice(); t.probePrev = null;
+}
+/** Hold the button for `n` steps; returns whether the truck went over and its tilt at the end. */
+function hold(g, n = 150) {
+  g.keys.one = true;
+  let over = false;
+  for (let i = 0; i < n; i++) { g.step(); if (Math.abs(g.truck.bodyRot) > 120) over = true; }
+  return { over, rot: g.truck.bodyRot };
+}
+
+test('one-button balance assist: a wheelie or a nose-down tip is turned back towards level', () => {
+  for (const deg of [-50, -60, -70]) {
+    const g = flatGame();
+    tipOnto(g.truck, deg, false);
+    const { over, rot } = hold(g);
+    assert.ok(!over && Math.abs(rot) < 15, `wheelie at ${deg}° came back down (${rot.toFixed(0)}°)`);
+    assert.ok(g.truck.T[0] > 4 * TILE, 'and the button still drove');
+    // without the assist, holding the gas in a wheelie that far over flips the truck
+    const s = flatGame(false);
+    tipOnto(s.truck, deg, false);
+    s.keys.up = true;
+    let over2 = false;
+    for (let i = 0; i < 150; i++) { s.step(); if (Math.abs(s.truck.bodyRot) > 120) over2 = true; }
+    assert.ok(over2, `standard controls go over at ${deg}°`);
+  }
+  for (const deg of [50, 70]) {
+    const g = flatGame();
+    tipOnto(g.truck, deg, true);
+    const { over, rot } = hold(g);
+    assert.ok(!over && Math.abs(rot) < 15, `nose down at ${deg}° came back (${rot.toFixed(0)}°)`);
+  }
+});
+
+test('one-button balance assist: only past the angle, with just that wheel down, and the button held', () => {
+  // whether the assist pushes the truck, tipped `deg` about a wheel with the given wheels down
+  const pushes = (deg, front, rear, frontDown) => {
+    const g = flatGame(), t = g.truck;
+    tipOnto(t, deg, front);
+    t.rearContact = rear; t.frontContact = frontDown;
+    const P = t.P.slice(), r = g.balanceAssist(t);
+    return { r, moved: t.P.some((v, i) => v !== P[i]) };
+  };
+  const a = BALANCE.angle;
+  assert.deepEqual(pushes(-(a + 5), false, true, false), { r: 1, moved: true }, 'a wheelie turns clockwise');
+  assert.deepEqual(pushes(a + 5, true, false, true), { r: -1, moved: true }, 'nose down on the front wheel turns anticlockwise');
+  assert.deepEqual(pushes(-(a + 5), false, true, true), { r: 0, moved: false }, 'not with both wheels down (a steep slope or a loop)');
+  assert.deepEqual(pushes(-(a + 5), false, false, true), { r: 0, moved: false }, 'not on the wrong wheel');
+  assert.deepEqual(pushes(a + 5, true, true, false), { r: 0, moved: false }, 'not on the wrong wheel');
+  assert.deepEqual(pushes(-(a - 5), false, true, false), { r: 0, moved: false }, 'not under the angle');
+  assert.deepEqual(pushes(a - 5, true, false, true), { r: 0, moved: false }, 'not under the angle');
+
+  // only while the one button drives, and never in Classic
+  const calls = (setup) => {
+    const h = flatGame(); setup(h);
+    let n = 0; const f = h.balanceAssist.bind(h); h.balanceAssist = (x) => { n++; return f(x); };
+    settle(h, 30); return n;
+  };
+  assert.equal(calls(() => {}), 0, 'not without the button');
+  assert.ok(calls((h) => { h.keys.one = true; }) > 0, 'checked while the button drives');
+  assert.equal(calls((h) => { h.oneButton = false; h.keys.up = true; }), 0, 'not with the standard controls');
+  assert.equal(calls((h) => { h.rules = { ...h.rules, classic: true }; h.keys.one = true; }), 0, 'not in Classic');
 });
 
 test('stuck on its roof in a damage-free run, the truck can be flipped back onto its wheels', () => {
