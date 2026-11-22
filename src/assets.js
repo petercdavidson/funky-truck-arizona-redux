@@ -158,10 +158,13 @@ export const HUD_FONT = '"Arial Rounded MT Bold", "Varela Round", "Nunito", "Ave
 export const TITLE_FONT = '"Avenir Next", Avenir, "Nunito", "Segoe UI", system-ui, sans-serif';
 
 export async function loadAssets(base = 'assets/', onProgress = () => {}) {
-  const [levels, frames] = await Promise.all([
+  const [levels, frames, stunts] = await Promise.all([
     fetch(base + 'levels.json').then((r) => r.json()),
     fetch(base + 'sprites.json').then((r) => r.json()),
+    // Practice's stunt tracks (built by tools/make-stunts.mjs); the game manages without them.
+    fetch(base + 'stunts.json').then((r) => (r.ok ? r.json() : [])).catch(() => []),
   ]);
+  levels.stunts = Array.isArray(stunts) ? stunts : [];
   const spriteFiles = new Set();
   for (const list of Object.values(frames)) for (const f of list) spriteFiles.add(f.file);
   const files = [...IMAGE_FILES, ...spriteFiles];

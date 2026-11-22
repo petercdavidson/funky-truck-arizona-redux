@@ -553,3 +553,35 @@ test('the speedometer reads the truck speed in km/h', () => {
   }
   assert.ok(max > 40 && max < 200, `a sensible top speed (${max.toFixed(0)} km/h)`);
 });
+
+test('Practice offers the stunt tracks after the nine stages; they can be finished and score only tricks', () => {
+  const stunts = JSON.parse(readFileSync(new URL('../assets/stunts.json', import.meta.url)));
+  assert.equal(stunts.length, 3);
+  const withStunts = { ...data, stunts };
+  for (const [i, s] of stunts.entries()) {
+    assert.ok(s.name && s.width > 50 && s.tiles.length === s.height && s.tiles.every((row) => row.length === s.width), `${s.name} is a well-formed track`);
+    for (let x = 0; x < s.width; x++) assert.equal(s.tiles[s.height - 1][x], 1, `${s.name}: column ${x} ends in solid dirt`);
+    const store = memoryStore();
+    const g = new Game(withStunts, { store });
+    g.practiceDamage = false;
+    g.startPractice(9 + i);
+    assert.equal(g.stageName(9 + i), s.name);
+    assert.equal(g.bonus, 0, 'no time bonus on a stunt track');
+    g.keys.up = true;
+    let steps = 0;
+    for (; steps < 8000 && g.screen === 'playing'; steps++) {
+      g.keys.right = g.truck.bodyRot < -20; g.keys.left = g.truck.bodyRot > 30;
+      g.step();
+      if (g.canUpright) g.upright();
+    }
+    assert.equal(g.screen, 'gameOver', `${s.name} can be finished (${steps} steps)`);
+    assert.ok(g.lastScore > 0, `${s.name}: tricks scored (${g.lastScore})`);
+    assert.equal(store.get('bestPlay'), null, 'a stunt score is not a best');
+    assert.equal(g.hasNextPractice, i < stunts.length - 1);
+  }
+  const g = new Game(withStunts);
+  g.startPractice(8);
+  assert.ok(g.hasNextPractice, 'Stage Nine leads on to the first stunt track');
+  g.nextPractice();
+  assert.equal(g.levelData, stunts[0]);
+});

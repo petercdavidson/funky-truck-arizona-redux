@@ -3,7 +3,7 @@
 // All drawing uses the original 576x448 stage coordinates (y down, clockwise rotation), scaled to
 // the canvas. Tiles are drawn in device pixels with snapped edges so they never show seams.
 
-import { TILE, STAGE_W, STAGE_H, STAGE_NAMES } from './game.js';
+import { TILE, STAGE_W, STAGE_H } from './game.js';
 import { HUD_FONT, TITLE_FONT } from './assets.js';
 import { TRICK } from './tricks.js';
 import { VERSION, BUILD } from './version.js';
@@ -40,6 +40,11 @@ const PRACTICE_OPTIONS = [
   [(g) => `Classic: ${onOff(g.practiceClassic)}`, 'practiceClassic'],
 ];
 const LOOK_PARTS = ['body', 'paint', 'tyre', 'hub'];
+/** Practice's stunt-track buttons (after the nine stages), labelled with the tracks' names. */
+const STUNTS = 3;
+const stuntButtons = (place, extra = {}) => Array.from({ length: STUNTS }, (_, i) => ({
+  rect: place(i), label: (g) => g.stageName(9 + i), action: `stage${9 + i}`, show: (g) => (g.stunts?.length ?? 0) > i, ...extra,
+}));
 /** The garage's note that the truck's look is only a look. */
 const COSMETIC = 'Looks only: every truck drives exactly the same';
 
@@ -91,6 +96,7 @@ export const BUTTONS = {
   ],
   practiceSelect: [
     ...Array.from({ length: 9 }, (_, i) => ({ rect: r(136 + 34 * i, 228.05, 32, 32), action: `stage${i}` })),
+    ...stuntButtons((i) => r(154 + 92 * i, 290, 84, 25)),
     { rect: r(229, 413, 120, 25), label: 'Menu', action: 'menu' },
     ...PRACTICE_OPTIONS.map(([label, action], i) => option(290 + 24 * i, label, action)),
   ],
@@ -100,7 +106,7 @@ export const BUTTONS = {
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 690, help: 560, garage: 580, practiceSelect: 490, paused: 410, gameOver: 330 };
+export const TALL_H = { title: 690, help: 560, garage: 580, practiceSelect: 540, paused: 410, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
@@ -123,8 +129,9 @@ export const TALL_BUTTONS = {
   ],
   practiceSelect: [
     ...Array.from({ length: 9 }, (_, i) => ({ rect: r(tallStage(i).x, tallStage(i).y, 72, 72), action: `stage${i}` })),
-    ...PRACTICE_OPTIONS.map(([label, action], i) => ({ rect: r(95, 340 + 35 * i, 170, 28), label, action, ...T_SMALL })),
-    { rect: r(80, 436, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
+    ...stuntButtons((i) => r(9 + 116 * i, 344, 110, 36), { size: 13 }),
+    ...PRACTICE_OPTIONS.map(([label, action], i) => ({ rect: r(95, 404 + 35 * i, 170, 28), label, action, ...T_SMALL })),
+    { rect: r(80, 490, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
   ],
   gameOver: gameOverButtons((i) => ({ ...r(60, 200 + 50 * i, 240, 40), ...T_BIG }),
     (i) => ({ ...r(60 + 125 * (i % 2), 200 + 50 * Math.floor(i / 2), 115, 40), ...T_BIG })),
@@ -143,7 +150,7 @@ export function buttonsFor(screen, tall = false) {
 /** Which run this is, for the pause screen: "Play  ·  Stage Three", "Endless  ·  420 m", ... */
 export function runName(game) {
   if (game.mode === 'endless') return `Endless  ·  ${game.metres} m`;
-  const stage = STAGE_NAMES[game.level];
+  const stage = game.stageName(game.level);
   if (game.mode === 'campaign') return `${game.rules.classic ? 'Classic' : 'Play'}  ·  ${stage}`;
   const rules = [game.rules.classic && 'Classic rules', !game.rules.damage && 'no damage'].filter(Boolean);
   return `Practice  ·  ${stage}${rules.length ? `  (${rules.join(', ')})` : ''}`;
@@ -657,6 +664,7 @@ export class Renderer {
         this.box('screen_practice.png', 136, 228, 32, 32, x, y, 72, 72, 10);
         this.text(String(i + 1), x + 36, y + 22, { size: 28, weight: '700' });
       }
+      if (game.stunts.length) this.text('Stunt Tracks', TALL_W / 2, 318, { size: 17, weight: '700' });
       this.buttons('practiceSelect', game);
       return;
     }
@@ -666,6 +674,7 @@ export class Renderer {
       this.box('screen_practice.png', 136, 228, 32, 32, x, 228, 32, 32);
       this.text(String(i + 1), x + 16, 234.5, { size: 17, weight: '700' });
     }
+    if (game.stunts.length) this.text('Stunt Tracks', 288, 272, { size: 13, weight: '700' });
     this.buttons('practiceSelect', game);
   }
 

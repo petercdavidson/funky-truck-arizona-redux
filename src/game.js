@@ -563,7 +563,17 @@ export class Game {
   get viewH() { return this.rules.classic ? STAGE_H : this.fillViewH; }
   set viewH(h) { this.fillViewH = h; }
 
-  get levelData() { return this.mode === 'endless' ? this.course.level : this.data.levels[this.level]; }
+  get levelData() {
+    if (this.mode === 'endless') return this.course.level;
+    return this.isStunt ? this.stunts[this.level - this.data.levels.length] : this.data.levels[this.level];
+  }
+
+  /** Practice's stunt tracks (assets/stunts.json), which come after the nine stages. */
+  get stunts() { return this.data.stunts || []; }
+  /** Whether this run is on a stunt track. */
+  get isStunt() { return this.mode === 'practice' && this.level >= this.data.levels.length; }
+  /** The name of stage `i` of Practice: "Stage One" ... "Stage Nine", then the stunt tracks. */
+  stageName(i) { return i < this.data.levels.length ? STAGE_NAMES[i] : this.stunts[i - this.data.levels.length]?.name ?? ''; }
   get maxCamX() { return this.levelData.width * TILE - STAGE_W * this.zoom; }   // N53D4
   get maxCamY() { return this.levelData.height * TILE - this.viewH * this.zoom; }  // o64D4
 
@@ -639,11 +649,12 @@ export class Game {
     this.camY = s[1] - this.viewH / 2;
     if (this.rules.classic) this.camY = Math.min(Math.max(this.camY, 0), this.maxCamY);
     this.updateCamera();
-    this.ticker = STAGE_NAMES[this.level]; this.tickerTimer = 140;      // m2813
+    this.ticker = this.stageName(this.level); this.tickerTimer = 140;   // m2813
     this.endTimer = 0;
     this.score += this.bonus;
     this.bonus = (this.level + 1) * 10000;
     if (this.mode === 'endless') { this.ticker = 'Endless'; this.bonus = 0; }
+    if (this.isStunt) this.bonus = 0; // stunt tracks are all about the tricks: no time bonus
     this.flipBonusTimer = 0;
     this.tricks.reset();
     for (const d of this.dirt) d.life = 0;
@@ -654,7 +665,7 @@ export class Game {
   /** Practice: whether there's a stage after this one to go on to. */
   get hasNextPractice() { return this.mode === 'practice' && this.lastLevel + 1 < this.practiceCount; }
   /** How many stages Practice offers. */
-  get practiceCount() { return this.data.levels.length; }
+  get practiceCount() { return this.data.levels.length + this.stunts.length; }
 
   /** Practice: go on to the next stage. */
   nextPractice() { if (this.hasNextPractice) this.startPractice(this.lastLevel + 1); }
@@ -839,7 +850,7 @@ export class Game {
     // Flips and the other tricks are scored in chains by TrickTracker. A flip still pays the
     // original game's points (its degrees), as part of its chain.
     // Tricks score while the time bonus is running (as flips always did), or all run in Endless.
-    const scoring = (this.mode === 'endless' || this.bonus !== 0) && this.endTimer === 0;
+    const scoring = (this.mode === 'endless' || this.isStunt || this.bonus !== 0) && this.endTimer === 0;
     if (this.righting > 0 || this.trickCooldown > 0) {
       // A flip upright isn't a trick: tricks aren't watched for until the truck has been back on
       // its wheels for a moment, and then the trick tracker starts afresh.
@@ -939,7 +950,7 @@ export class Game {
       this.finished = !isWrecked;
       this.lastScore = this.score;
       if (this.mode === 'endless') this.saveEndlessBest();
-      else if (this.rules.damage) this.saveBest(this.score);
+      else if (this.rules.damage && !this.isStunt) this.saveBest(this.score);
       this.restartLatch = true;
       this.screen = 'gameOver';
     } else {
