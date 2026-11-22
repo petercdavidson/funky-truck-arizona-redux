@@ -654,6 +654,14 @@ export class Game {
     this.screen = 'playing';
   }
 
+  /** Practice: whether there's a stage after this one to go on to. */
+  get hasNextPractice() { return this.mode === 'practice' && this.lastLevel + 1 < this.practiceCount; }
+  /** How many stages Practice offers. */
+  get practiceCount() { return this.data.levels.length; }
+
+  /** Practice: go on to the next stage. */
+  nextPractice() { if (this.hasNextPractice) this.startPractice(this.lastLevel + 1); }
+
   restart() {
     if (this.mode === 'campaign') this.startCampaign(this.rules.classic);
     else if (this.mode === 'endless') this.startEndless();

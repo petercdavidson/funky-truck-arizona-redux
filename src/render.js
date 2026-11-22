@@ -55,6 +55,23 @@ function pauseButtons(place) {
   ].filter(Boolean).map((b, i) => ({ ...b, rect: place(i), show: when })));
 }
 
+/**
+ * The game-over buttons. Practice gets four in a 2x2 grid (placed by `grid(i)`): the same stage
+ * again, the next stage (if there is one), the stage list, and the main menu. Other runs get Play
+ * Again and Menu in a column (placed by `column(i)`).
+ */
+function gameOverButtons(column, grid) {
+  const practice = (g) => g.mode === 'practice', other = (g) => g.mode !== 'practice';
+  return [
+    { label: 'Play Again', action: 'again', rect: column(0), show: other },
+    { label: 'Menu', action: 'menu', rect: column(1), show: other },
+    { label: 'Again', action: 'again', rect: grid(0), show: practice },
+    { label: 'Next', action: 'nextStage', rect: grid(1), show: (g) => practice(g) && g.hasNextPractice },
+    { label: 'Stages', action: 'practice', rect: grid(2), show: practice },
+    { label: 'Menu', action: 'menu', rect: grid(3), show: practice },
+  ];
+}
+
 export const BUTTONS = {
   title: [
     ...MODES.map(([label, action], i) => ({ rect: r(229, 250 + 28 * i, 120, 25), label, action })),
@@ -74,10 +91,7 @@ export const BUTTONS = {
     { rect: r(229, 413, 120, 25), label: 'Menu', action: 'menu' },
     ...PRACTICE_OPTIONS.map(([label, action], i) => option(290 + 24 * i, label, action)),
   ],
-  gameOver: [
-    { rect: r(229, 250, 120, 25), label: 'Play Again', action: 'again' },
-    { rect: r(229, 281, 120, 25), label: 'Menu', action: 'menu' },
-  ],
+  gameOver: gameOverButtons((i) => r(229, 250 + 31 * i, 120, 25), (i) => r(165 + 126 * (i % 2), 250 + 31 * Math.floor(i / 2), 120, 25)),
   paused: pauseButtons((i) => r(213, 250 + 31 * i, 150, 25)),
   playing: [],
 };
@@ -108,15 +122,14 @@ export const TALL_BUTTONS = {
     ...PRACTICE_OPTIONS.map(([label, action], i) => ({ rect: r(60, 340 + 35 * i, 240, 28), label, action, ...T_SMALL })),
     { rect: r(80, 436, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
   ],
-  gameOver: [
-    { rect: r(60, 200, 240, 40), label: 'Play Again', action: 'again', ...T_BIG },
-    { rect: r(60, 250, 240, 40), label: 'Menu', action: 'menu', ...T_BIG },
-  ],
+  gameOver: gameOverButtons((i) => ({ ...r(60, 200 + 50 * i, 240, 40), ...T_BIG }),
+    (i) => ({ ...r(60 + 125 * (i % 2), 200 + 50 * Math.floor(i / 2), 115, 40), ...T_BIG })),
   paused: pauseButtons((i) => ({ ...r(60, 160 + 48 * i, 240, 40), ...T_BIG })),
   playing: [],
 };
-// pauseButtons puts the extra fields in the rect for the tall layout; move them onto the button.
-for (const b of TALL_BUTTONS.paused) { const { x, y, w, h, ...rest } = b.rect; Object.assign(b, rest); b.rect = { x, y, w, h }; }
+// pauseButtons and gameOverButtons put the extra fields in the rect for the tall layout; move
+// them onto the button.
+for (const b of [...TALL_BUTTONS.paused, ...TALL_BUTTONS.gameOver]) { const { x, y, w, h, ...rest } = b.rect; Object.assign(b, rest); b.rect = { x, y, w, h }; }
 
 /** The buttons a screen shows in the usual or the tall layout. */
 export function buttonsFor(screen, tall = false) {
@@ -657,6 +670,7 @@ export class Renderer {
     this.overlayDim(0.45);
     let title = game.wrecked ? 'Truck Wrecked' : (game.finished && game.mode === 'campaign' ? 'Well Driven!' : 'Game Over');
     if (game.mode === 'endless') title = 'Nice Run!';
+    else if (game.mode === 'practice' && !game.wrecked) title = 'Practice Complete';
     const lines = game.mode === 'endless'
       ? [`${game.metres} m  ·  ${game.lastScore}`, `Best: ${game.bestEndless} m`]
       : [`Score: ${game.lastScore}`, game.rules.damage ? `Best: ${game.bestForRules}` : ''];

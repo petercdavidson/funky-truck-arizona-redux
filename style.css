@@ -119,14 +119,13 @@ body.touch-mode[data-screen="paused"] #touch .pad { visibility: hidden; }
   border-color: #fff;
 }
 .ctl svg, #corner svg {
-  width: 52%;
-  height: 52%;
   fill: none;
   stroke: currentColor;
   stroke-width: 2.6;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.ctl svg { width: 52%; height: 52%; }
 
 /* Pause (all devices) and flip-upright buttons, at the top centre of the game view while driving.
    main.js keeps --view-x/y/w set to where the game view is on the page. */
@@ -140,16 +139,33 @@ body.touch-mode[data-screen="paused"] #touch .pad { visibility: hidden; }
   z-index: 3;
 }
 body[data-screen="playing"] #corner { display: flex; }
+/* Fixed sizes throughout: an icon sized as a share of a button that's sized by its contents
+   makes Safari stretch the button. */
 #corner button {
-  height: 40px;
-  min-width: 40px;
-  border-radius: 20px;
+  flex: none;
+  height: 44px;
+  border-radius: 22px;
   cursor: pointer;
 }
+#corner svg { width: 22px; height: 22px; flex: none; }
 #corner button:hover { background: rgba(110, 76, 64, 0.7); }
-#upright-button { display: none !important; grid-auto-flow: column; gap: 4px; padding: 0 14px 0 10px; font: inherit; font-weight: 800; font-size: 13px; text-transform: uppercase; }
-#upright-button svg { width: 20px; height: 20px; }
-body[data-upright="1"] #upright-button { display: grid !important; }
+#pause-button { width: 44px; }
+#corner #upright-button {
+  display: none !important;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  padding: 0 18px 0 13px;
+  font: inherit;
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+body[data-upright="1"] #corner #upright-button { display: grid !important; }
 
 /* One-button controls on a touch screen: hide the pedals, and the whole screen is the button. */
 #tap { display: none; position: fixed; inset: 0; z-index: 2; touch-action: none; }

@@ -116,6 +116,7 @@ function doAction(a) {
   else if (a === 'help') game.showMenu('help');
   else if (a === 'menu') goMenu();
   else if (a === 'again') game.restart();
+  else if (a === 'nextStage') game.nextPractice();
   else if (a === 'resume') game.togglePause();
   else if (a.startsWith('stage')) game.startPractice(Number(a.slice(5)));
   else {
