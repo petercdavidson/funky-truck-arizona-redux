@@ -437,13 +437,13 @@ export const RULES = {
 /**
  * The dynamic camera (outside Classic, when switched on): it pulls back to show more when the
  * truck is going fast or has been high above the ground for a while, and closes in again when it
- * settles. `zoom` is how many times the usual view it shows (1 = the original 576 across).
+ * settles. `zoom` is how many times the usual view it shows (1 = the original 576 across). It
+ * follows the truck just as the original camera does, with the frame scaled by the zoom.
  *
- * Everything moves like a spring, so nothing starts or stops suddenly: speed, height and zoom
- * are each followed by a critically damped spring, height fades in over the first second in the
- * air, and the camera itself follows its target with a spring that also matches the target's
- * (smoothed) velocity, so it keeps up with a fall without trailing behind it, but never jolts.
- * `w` values are a spring's stiffness per step (bigger is quicker): it settles in about 5/w steps.
+ * The zoom moves like a spring, so it never starts or stops suddenly: speed, height and zoom are
+ * each followed by a critically damped spring, and height fades in over the first second in the
+ * air. `w` values are a spring's stiffness per step (bigger is quicker): it settles in about 5/w
+ * steps.
  */
 export const CAMERA = {
   maxZoom: 1.8,
@@ -452,9 +452,6 @@ export const CAMERA = {
   airFrom: 10, airTo: 70,                          // height fades in between these steps in the air
   speedW: 0.035, heightW: 0.05, zoomW: 0.045,      // springs for the smoothed speed, height and zoom
   maxRate: 0.006,                                  // most the zoom changes in one step
-  followW: 0.1,                                    // the camera's spring towards where it aims
-  velSmooth: 0.15,                                 // how quickly the matched velocity catches up
-  accel: 1.5,                                      // px/step² the camera's acceleration eases off at
 };
 
 /** Flip-upright assist: steps of being stuck before the button appears. */
@@ -539,9 +536,6 @@ export class Game {
     this.ground = 0; this.groundV = 0;     // smoothed height above the ground
     this.camSpeed = 0; this.camSpeedV = 0; // smoothed speed
     this.zoomV = 0;
-    this.camVX = 0; this.camVY = 0;        // the camera's own velocity
-    this.aimV = [0, 0, 0, 0];              // where it aims: velocity, smoothed twice (x, x, y, y)
-    this.lastAim = null;
     // How much of the world the driving view shows top to bottom (at zoom 1) when it fills the
     // window: the renderer keeps it up to date with the window's shape, even on the menus, so a
     // stage starts with its camera in the right place. Classic always shows 448 (see viewH).
@@ -637,7 +631,6 @@ export class Game {
     this.truck.reset(s[0], s[1]);
     this.truck.rearWheelRot = 0; this.truck.frontWheelRot = 0;
     this.zoom = 1; this.zoomV = 0; this.ground = 0; this.groundV = 0; this.camSpeed = 0; this.camSpeedV = 0;
-    this.camVX = 0; this.camVY = 0; this.aimV = [0, 0, 0, 0]; this.lastAim = null;
     this.camX = Math.min(Math.max(s[0] - 150, 0), this.maxCamX);       // s4833
     this.camY = s[1] - this.viewH / 2;
     if (this.rules.classic) this.camY = Math.min(Math.max(this.camY, 0), this.maxCamY);
@@ -717,47 +710,20 @@ export class Game {
 
   updateCamera() { // T5933 + w6015
     const [fx, fy] = this.focus;
-    const dyn = this.dynamicCameraActive;
-    if (dyn) this.updateZoom();
+    if (this.dynamicCameraActive) this.updateZoom();
     else this.zoom = 1;
+    // The original camera: it keeps the truck 150 from the left and halfway down, moving a fifth
+    // of the way there each step, at most a tile. The dynamic camera is the same with the frame
+    // pulled back: distances on the stage scale with the zoom, so on screen it behaves alike.
     const z = this.zoom;
-    // High in the air, the camera aims below the truck so the ground it's coming down on shows,
-    // by up to a fifth of the view (so the truck stays at least 30% of the way down it).
-    const lower = dyn ? Math.min(this.ground * 0.5, this.viewH * z * 0.2) : 0;
-    // Classic keeps the original camera, which stays inside the level. Outside Classic the camera
-    // follows the truck up and down wherever it goes: above the level there's sky, and below it
-    // the renderer keeps drawing dirt (every column of every stage ends in solid dirt).
-    const clampX = (x) => Math.min(Math.max(x, 0), this.maxCamX);
-    const clampY = this.rules.classic ? (y) => Math.min(Math.max(y, 0), this.maxCamY) : (y) => y;
-    let wantX = fx - 150 * z, wantY = fy + lower - this.viewH * z / 2;
-    // The dynamic camera aims inside the level's edges, so it slows to a stop at one rather than hitting it.
-    if (dyn) { wantX = clampX(wantX); wantY = clampY(wantY); }
-    if (dyn && Math.hypot(wantX - this.camX, wantY - this.camY) > 2 * this.viewH * z) {
-      // Too far to pan to (the truck was moved, not driven): cut straight there.
-      this.camX = wantX; this.camY = wantY; this.camVX = 0; this.camVY = 0;
-      this.aimV = [0, 0, 0, 0]; this.lastAim = [wantX, wantY];
-      return;
-    }
-    let dx, dy;
-    if (dyn) {
-      // Follow with a spring that also matches how fast the aim point is moving (smoothed twice,
-      // so a landing or take-off never jolts it), easing off its acceleration near CAMERA.accel.
-      const C = CAMERA, w = C.followW, k = C.velSmooth, A = C.accel, V = this.aimV;
-      const last = this.lastAim || [wantX, wantY];
-      this.lastAim = [wantX, wantY];
-      V[0] += (wantX - last[0] - V[0]) * k; V[1] += (V[0] - V[1]) * k;
-      V[2] += (wantY - last[1] - V[2]) * k; V[3] += (V[2] - V[3]) * k;
-      const soft = (a) => A * Math.tanh(a / A);
-      this.camVX += soft(w * w * (wantX - this.camX) + 2 * w * (V[1] - this.camVX));
-      this.camVY += soft(w * w * (wantY - this.camY) + 2 * w * (V[3] - this.camVY));
-      dx = this.camVX; dy = this.camVY;
-    } else {
-      dx = Math.max(Math.min((wantX - this.camX) * 0.2, TILE), -TILE);
-      dy = Math.max(Math.min((wantY - this.camY) * 0.2, TILE), -TILE);
-    }
-    const x = clampX(this.camX + dx), y = clampY(this.camY + dy);
-    if (dyn && x !== this.camX + dx) this.camVX = x - this.camX; // stopped by the level's end
-    this.camX = x; this.camY = y;
+    const dx = Math.max(Math.min((fx - 150 * z - this.camX) * 0.2, TILE * z), -TILE * z);
+    const dy = Math.max(Math.min((fy - this.viewH * z / 2 - this.camY) * 0.2, TILE * z), -TILE * z);
+    this.camX = Math.min(Math.max(this.camX + dx, 0), this.maxCamX);
+    // Classic stays inside the level. Elsewhere the camera follows the truck up and down wherever
+    // it goes: above the level there's sky, and below it the renderer keeps drawing dirt (every
+    // column of every stage ends in solid dirt).
+    this.camY += dy;
+    if (this.rules.classic) this.camY = Math.min(Math.max(this.camY, 0), this.maxCamY);
   }
 
   /** How far below the point (x, y) the ground is (a wheel centre's resting height), up to `max`. */

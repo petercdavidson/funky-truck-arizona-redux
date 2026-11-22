@@ -14,7 +14,7 @@ function launch(g, speed = 10) {
   const dy = 140 - t.T[1];
   for (let i = 1; i < 10; i += 2) { t.T[i] += dy; t.P[i] = t.T[i] + speed; }
   t.probePrev = null;
-  g.camY = t.T[1] - g.viewH / 2; g.camVY = 0; // the truck was moved, so start the camera on it
+  g.camY = t.T[1] - g.viewH / 2; // the truck was moved, so start the camera on it
   let top = Infinity, cam = Infinity, onScreen = 0;
   for (let i = 0; i < 120; i++) {
     g.step();
@@ -345,7 +345,7 @@ test('the dynamic camera is steady: it rarely changes direction and never lurche
   }
 });
 
-test('in a tall window the camera starts steady, and a resize part-way through causes no runaway', () => {
+test('in a tall window the camera starts steady, and settles back after a resize part-way through', () => {
   for (const stage of [0, 3, 5]) {
     for (const resized of [false, true]) {
       const g = new Game(data);
@@ -355,11 +355,13 @@ test('in a tall window the camera starts steady, and a resize part-way through c
       let prev = [g.camX, g.camY], fastest = 0;
       for (let i = 0; i < 280; i++) {
         g.step();
-        // A resize can push the camera off the level's edge for a single step; after that it must be calm.
-        if (!resized || i > 0) fastest = Math.max(fastest, Math.hypot(g.camX - prev[0], g.camY - prev[1]));
+        fastest = Math.max(fastest, Math.hypot(g.camX - prev[0], g.camY - prev[1]));
         prev = [g.camX, g.camY];
       }
-      assert.ok(fastest < 30, `stage ${stage + 1}${resized ? ', resized' : ''}: the camera moved ${fastest.toFixed(0)} px in one step`);
+      // A resize moves the camera as the original did (up to a tile a step); otherwise it's calm.
+      if (!resized) assert.ok(fastest < 30, `stage ${stage + 1}: the camera moved ${fastest.toFixed(0)} px in one step`);
+      const y = (g.focus[1] - g.camY) / g.zoom;
+      assert.ok(Math.abs(y - 550) < 80, `stage ${stage + 1}${resized ? ', resized' : ''}: the truck settled ${y.toFixed(0)} down a 1100 view`);
     }
   }
 });
@@ -492,20 +494,47 @@ test('a flip upright is not a trick, and tricks count again a moment after it la
   assert.ok(g.tricks.done > done, 'tricks count again');
 });
 
-test('the dynamic camera never jolts: its vertical acceleration changes smoothly', () => {
+test('the dynamic camera keeps the truck where the original camera would on screen', () => {
   for (const stage of [0, 1, 4, 5]) {
-    const g = new Game(data);
-    g.practiceDamage = false;
-    g.startPractice(stage);
-    g.keys.up = true;
-    const ys = [];
-    for (let i = 0; i < 2000 && g.screen === 'playing'; i++) {
-      g.keys.right = g.truck.bodyRot < -25; g.keys.left = g.truck.bodyRot > 25;
-      g.step();
-      ys.push(g.camY + g.viewH * g.zoom / 2);
+    const run = (dynamic) => {
+      const g = new Game(data);
+      g.practiceDamage = false; g.dynamicCamera = dynamic;
+      g.startPractice(stage);
+      g.keys.up = true;
+      const pos = [];
+      for (let i = 0; i < 1500 && g.screen === 'playing'; i++) {
+        g.keys.right = g.truck.bodyRot < -25; g.keys.left = g.truck.bodyRot > 25;
+        g.step();
+        const [fx, fy] = g.focus;
+        pos.push([(fx - g.camX) / g.zoom, (fy - g.camY) / g.zoom, g.zoom]); // where it shows on screen
+      }
+      return pos;
+    };
+    const plain = run(false), dyn = run(true);
+    let worst = 0, zoomed = 1;
+    for (let i = 0; i < Math.min(plain.length, dyn.length); i++) {
+      worst = Math.max(worst, Math.abs(plain[i][0] - dyn[i][0]), Math.abs(plain[i][1] - dyn[i][1]));
+      zoomed = Math.max(zoomed, dyn[i][2]);
     }
-    let jerk = 0;
-    for (let i = 3; i < ys.length; i++) jerk = Math.max(jerk, Math.abs(ys[i] - 3 * ys[i - 1] + 3 * ys[i - 2] - ys[i - 3]));
-    assert.ok(jerk < 0.5, `stage ${stage + 1}: the camera's acceleration jumped by ${jerk.toFixed(2)} px/step in one step`);
+    assert.ok(zoomed > 1.1, `stage ${stage + 1}: the dynamic camera did pull back (${zoomed.toFixed(2)})`);
+    assert.ok(worst < 40, `stage ${stage + 1}: the truck showed up to ${worst.toFixed(0)} away from where the original camera puts it`);
   }
+});
+
+test('Endless scrolling the world never makes the camera jump', () => {
+  const g = new Game(data, { random: () => 0.37 });
+  g.practiceDamage = false;
+  g.startEndless();
+  g.keys.up = true;
+  let shifts = 0, worst = 0;
+  for (let i = 0; i < 6000 && g.screen === 'playing'; i++) {
+    g.keys.right = g.truck.bodyRot < -25; g.keys.left = g.truck.bodyRot > 25;
+    const before = g.shiftCount, [fx0] = g.focus, x0 = (fx0 - g.camX) / g.zoom;
+    g.step();
+    const [fx] = g.focus, x = (fx - g.camX) / g.zoom;
+    if (g.shiftCount !== before) shifts++;
+    worst = Math.max(worst, Math.abs(x - x0));
+  }
+  assert.ok(shifts > 0, 'the world scrolled');
+  assert.ok(worst < 25, `the truck moved up to ${worst.toFixed(0)} across the screen in one step`);
 });
