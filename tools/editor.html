@@ -57,7 +57,8 @@
     <span class="group">
       <button id="modePaint" class="on" title="P">Paint</button>
       <button id="modeSelect" title="S: drag a box, then Ctrl+C / Ctrl+X">Select</button>
-      <button id="modePath" title="D: draw the ground's line left to right; the right tiles go in under it">Path</button>
+      <button id="modePath" title="D: click to add points to a curve; the tiles follow it">Path</button>
+      <button id="pathNew" title="Keep the tiles as they are and start a new path">New path</button>
       <button id="undo" title="Ctrl+Z">Undo</button>
       <button id="redo" title="Ctrl+Shift+Z">Redo</button>
     </span>
@@ -65,6 +66,7 @@
       <label>Zoom <input id="zoom" type="range" min="0.15" max="1.5" step="0.05" value="0.6"></label>
       <label><input id="grid" type="checkbox" checked> grid</label>
       <label><input id="coll" type="checkbox"> collision</label>
+      <label title="Show the Path tool's curve in every mode"><input id="showPath" type="checkbox" checked> path</label>
       <label title="Painting a tile fills the column below it with solid dirt"><input id="fill" type="checkbox" checked> dirt below</label>
     </span>
     <span class="group">
@@ -87,9 +89,11 @@
       truck drops in. <b>Select</b> (<kbd>S</kbd>): drag a box, <kbd>Ctrl+C</kbd> copies,
       <kbd>Ctrl+V</kbd> then click to stamp it (<kbd>Esc</kbd> stops). <kbd>Del</kbd> clears the box.
       <b>Shift</b> moves the whole level (<kbd>Shift</kbd>+arrow keys: 1 tile).
-      <b>Path</b> (<kbd>D</kbd>): draw the line of the ground, left to right, and the editor puts in the
-      tiles that follow it (with the fill below), joining the ground on either side. Draw over part of a
-      track to redo it. Tiles are 64 px; 1 tile is 2.5 m.
+      <b>Path</b> (<kbd>D</kbd>): click to add points to a curve, and the editor lays the tiles that
+      follow it (with the fill below), joining the ground on either side. Drag a point or its handles
+      to reshape it (<kbd>Alt</kbd>-drag a handle to bend at the point); right-click a point to remove
+      it, double-click to make it smooth again. The tiles update as you go; <b>New path</b> keeps
+      them and starts another curve. Tiles are 64 px; 1 tile is 2.5 m.
     </div>
     <h3>Tiles (as laid out in the tile sheet)</h3>
     <div id="palette"></div>
@@ -130,7 +134,11 @@
     let L = null;          // { name, width, height, tiles, start }
     const undo = [], redo = [];
     const snapshot = () => JSON.stringify(L);
-    function remember() { undo.push(snapshot()); if (undo.length > 200) undo.shift(); redo.length = 0; }
+    // An edit that isn't to the path makes the tiles as they are now the path's new starting point.
+    function remember(pathEdit = false) {
+      undo.push(snapshot()); if (undo.length > 200) undo.shift(); redo.length = 0;
+      if (!pathEdit && L.guide) L.guide.base = null;
+    }
     function restore(s) { L = JSON.parse(s); $('w').value = L.width; $('h').value = L.height; $('name').value = L.name; sizeCanvas(); }
 
     function blank(w, h) {
@@ -174,6 +182,7 @@
         Math.max(TILE / 2, Math.min(W * TILE - TILE / 2, L.start[0] + dx * TILE)),
         Math.max(TILE / 2, Math.min(H * TILE - TILE / 2, L.start[1] + dy * TILE)),
       ];
+      if (L.guide) for (const p of L.guide.pts) { p.x += dx * TILE; p.y += dy * TILE; }
       box = null;
       drawAll(); save();
       $('status').textContent = `Shifted the level ${Math.abs(dx || dy)} tile${Math.abs(dx || dy) === 1 ? '' : 's'} ${dx < 0 ? 'left' : dx > 0 ? 'right' : dy < 0 ? 'up' : 'down'}.`;
@@ -247,7 +256,7 @@
       for (let y = 0; y < L.height; y++) for (let x = 0; x < L.width; x++) drawTile(x, y);
       drawOver();
     }
-    let hover = null, box = null, clip = null, mode = 'paint', stroke = null;
+    let hover = null, box = null, clip = null, mode = 'paint';
     function drawOver() {
       const s = TILE * Z;
       ox.clearRect(0, 0, oc.width, oc.height);
@@ -280,10 +289,7 @@
       ox.beginPath(); ox.arc(L.start[0] * Z, L.start[1] * Z, Math.max(5, 20 * Z), 0, Math.PI * 2); ox.fill(); ox.stroke();
       ox.fillStyle = '#000'; ox.font = 'bold 11px sans-serif'; ox.fillText('start', L.start[0] * Z + 8, L.start[1] * Z - 8);
       const rect = (x0, y0, x1, y1, color) => { ox.strokeStyle = color; ox.lineWidth = 2; ox.strokeRect(x0 * s + 1, y0 * s + 1, (x1 - x0 + 1) * s - 2, (y1 - y0 + 1) * s - 2); };
-      if (stroke && stroke.length > 1) {
-        ox.strokeStyle = '#ff3d8b'; ox.lineWidth = 3; ox.lineJoin = ox.lineCap = 'round';
-        ox.beginPath(); stroke.forEach(([x, y], i) => (i ? ox.lineTo(x * Z, y * Z) : ox.moveTo(x * Z, y * Z))); ox.stroke();
-      }
+      if (L.guide && ($('showPath').checked || mode === 'path')) drawGuide();
       if (box) rect(Math.min(box.x0, box.x1), Math.min(box.y0, box.y1), Math.max(box.x0, box.x1), Math.max(box.y0, box.y1), '#ffd54a');
       if (hover) {
         if (mode === 'paste' && clip) {
@@ -299,7 +305,7 @@
           if (sel !== SKY) ox.drawImage(a.tiles[sel], hover.x * s, hover.y * s, s, s);
           ox.globalAlpha = 1;
           rect(hover.x, hover.y, hover.x, hover.y, '#fff');
-        } else rect(hover.x, hover.y, hover.x, hover.y, '#fff');
+        } else if (mode !== 'path') rect(hover.x, hover.y, hover.x, hover.y, '#fff');
       }
     }
 
@@ -327,14 +333,14 @@
     oc.addEventListener('mousedown', (e) => {
       const c = cell(e);
       if (e.shiftKey) { remember(); L.start = [Math.round(c.px), Math.round(c.py)]; drawOver(); save(); return; }
-      if (e.altKey) { pick(L.tiles[c.y]?.[c.x] ?? SKY); return; }
+      if (e.altKey && mode !== 'path') { pick(L.tiles[c.y]?.[c.x] ?? SKY); return; }
       if (mode === 'paste' && clip) {
         remember();
         clip.forEach((row, dy) => row.forEach((id, dx) => set(c.x + dx, c.y + dy, id)));
         drawOver(); save(); return;
       }
       if (mode === 'select') { box = { x0: c.x, y0: c.y, x1: c.x, y1: c.y }; dragging = 'box'; drawOver(); return; }
-      if (mode === 'path') { if (e.button === 0) { stroke = [[c.px, c.py]]; dragging = 'path'; drawOver(); } return; }
+      if (mode === 'path') { pathDown(e, c); return; }
       remember();
       dragging = e.button === 2 ? SKY : sel;
       if (dragging === SKY) set(c.x, c.y, SKY); else paintAt(c.x, c.y, dragging);
@@ -344,27 +350,145 @@
       const c = cell(e);
       hover = c;
       if (dragging === 'box') { box.x1 = c.x; box.y1 = c.y; }
-      else if (dragging === 'path') stroke.push([c.px, c.py]);
+      else if (dragging?.path) pathDrag(e, c);
       else if (dragging !== null) { if (dragging === SKY) set(c.x, c.y, SKY); else paintAt(c.x, c.y, dragging); }
       const id = L.tiles[c.y]?.[c.x];
       $('status').textContent = `column ${c.x}, row ${c.y}  ·  ${(c.x * METRES_PER_TILE).toFixed(1)} m  ·  tile here: ${id ?? '-'}  ·  selected: ${sel}  ·  ${L.width}×${L.height} tiles  ·  mode: ${mode}`;
       drawOver();
     });
     window.addEventListener('mouseup', () => {
-      if (dragging === 'path') finishPath();
+      if (dragging?.path) { layGuide(); save(); }
       else if (dragging !== null && dragging !== 'box') save();
       dragging = null;
     });
-    // ---- the Path tool: turn the drawn line into tiles
-    function finishPath() {
-      const line = stroke; stroke = null;
-      const r = line && line.length > 1 ? drawPath(L, line, kit) : null;
-      if (!r) { $('status').textContent = 'Draw the line left to right, at least one tile long.'; drawOver(); return; }
-      remember();
-      L.tiles = r.tiles;
-      drawAll(); save();
-      $('status').textContent = `Laid ${r.chain.length} ground pieces over columns ${r.x0} to ${r.x1 - 1}. Ctrl+Z undoes it.`;
+    oc.addEventListener('dblclick', (e) => {
+      if (mode !== 'path' || !L.guide) return;
+      const h = pathHit(cell(e));
+      if (h?.part === 'pt') { remember(true); L.guide.pts[h.i].auto = true; layGuide(); save(); }
+    });
+
+    // ---- the Path tool: a curve through points (cubic Bézier), and the tiles that follow it.
+    // L.guide = { pts: [{ x, y, auto, ix, iy, ox, oy }], base }: points left to right in stage pixels,
+    // each with handles (in and out, relative to the point) unless `auto` (smooth, worked out from its
+    // neighbours); `base` is the tiles before the path went in, so the path can be reshaped freely.
+    const HIT = 9;   // screen pixels
+    function handles(i) {
+      const P = L.guide.pts, p = P[i];
+      if (!p.auto) return { ix: p.ix, iy: p.iy, ox: p.ox, oy: p.oy };
+      const a = P[i - 1] || p, b = P[i + 1] || p, k = P[i - 1] && P[i + 1] ? 6 : 3;
+      const tx = (b.x - a.x) / k, ty = (b.y - a.y) / k;
+      return { ix: -tx, iy: -ty, ox: tx, oy: ty };
     }
+    /** The curve as a list of points, a few pixels apart. */
+    function guideLine() {
+      const P = L.guide.pts, out = [];
+      for (let i = 0; i + 1 < P.length; i++) {
+        const a = P[i], b = P[i + 1], ha = handles(i), hb = handles(i + 1);
+        const c1 = [a.x + ha.ox, a.y + ha.oy], c2 = [b.x + hb.ix, b.y + hb.iy];
+        const n = Math.max(8, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 6));
+        for (let k = i ? 1 : 0; k <= n; k++) {
+          const t = k / n, u = 1 - t;
+          out.push([u * u * u * a.x + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t * t * t * b.x,
+            u * u * u * a.y + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t * t * t * b.y]);
+        }
+      }
+      return out;
+    }
+    /** Lay the tiles for the curve over the level as it was before the path. */
+    function layGuide() {
+      const g = L.guide;
+      if (!g) return;
+      if (!g.base) g.base = L.tiles.map((r) => r.slice());
+      const r = g.pts.length > 1 ? drawPath({ ...L, tiles: g.base }, guideLine(), kit, { smooth: 2 }) : null;
+      const next = r ? r.tiles : g.base.map((row) => row.slice());
+      for (let y = 0; y < L.height; y++) for (let x = 0; x < L.width; x++) if (next[y][x] !== L.tiles[y][x]) { L.tiles[y][x] = next[y][x]; drawTile(x, y); }
+      drawOver();
+      $('status').textContent = r ? `${g.pts.length} points · ${r.chain.length} ground pieces over columns ${r.x0} to ${r.x1 - 1}`
+        : g.pts.length > 1 ? 'No ground fits that curve: keep it inside the level, running left to right.' : 'Click to add the next point.';
+    }
+    function pathHit(c) {
+      const g = L.guide;
+      if (!g) return null;
+      const near = (x, y) => Math.hypot((x - c.px) * Z, (y - c.py) * Z) <= HIT;
+      for (let i = g.pts.length - 1; i >= 0; i--) {
+        const p = g.pts[i], h = handles(i);
+        if (near(p.x, p.y)) return { i, part: 'pt' };
+        if (i > 0 && near(p.x + h.ix, p.y + h.iy)) return { i, part: 'in' };
+        if (i + 1 < g.pts.length && near(p.x + h.ox, p.y + h.oy)) return { i, part: 'out' };
+      }
+      return null;
+    }
+    let pathSel = -1, pathPending = false;
+    function pathDown(e, c) {
+      const h = pathHit(c);
+      if (e.button === 2) {
+        if (h?.part === 'pt') { remember(true); L.guide.pts.splice(h.i, 1); pathSel = -1; layGuide(); save(); }
+        return;
+      }
+      remember(true);
+      if (h) { pathSel = h.i; dragging = { path: true, ...h }; drawOver(); return; }
+      // a new point, in its place left to right
+      if (!L.guide) L.guide = { pts: [], base: null };
+      const P = L.guide.pts;
+      let i = P.findIndex((p) => p.x > c.px);
+      if (i < 0) i = P.length;
+      P.splice(i, 0, { x: c.px, y: c.py, auto: true });
+      pathSel = i;
+      dragging = { path: true, i, part: 'pt' };
+      layGuide();
+    }
+    function pathDrag(e, c) {
+      const P = L.guide.pts, d = dragging, p = P[d.i];
+      if (d.part === 'pt') {
+        p.x = c.px; p.y = c.py;
+        // keep the points in order left to right
+        while (d.i > 0 && P[d.i - 1].x > p.x) { [P[d.i - 1], P[d.i]] = [P[d.i], P[d.i - 1]]; d.i--; }
+        while (d.i + 1 < P.length && P[d.i + 1].x < p.x) { [P[d.i + 1], P[d.i]] = [P[d.i], P[d.i + 1]]; d.i++; }
+        pathSel = d.i;
+      } else {
+        if (p.auto) Object.assign(p, handles(d.i), { auto: false });
+        const hx = c.px - p.x, hy = c.py - p.y;
+        const [mx, my, ox, oy] = d.part === 'in' ? ['ix', 'iy', 'ox', 'oy'] : ['ox', 'oy', 'ix', 'iy'];
+        p[mx] = hx; p[my] = hy;
+        if (!e.altKey) {
+          // the other handle stays opposite (keeping its length), so the curve stays smooth here
+          const len = Math.hypot(p[ox], p[oy]) || Math.hypot(hx, hy), l2 = Math.hypot(hx, hy) || 1;
+          p[ox] = -hx / l2 * len; p[oy] = -hy / l2 * len;
+        }
+      }
+      if (!pathPending) { pathPending = true; requestAnimationFrame(() => { pathPending = false; layGuide(); }); }
+    }
+    function drawGuide() {
+      const g = L.guide, P = g.pts;
+      if (!P.length) return;
+      ox.lineJoin = ox.lineCap = 'round';
+      if (P.length > 1) {
+        const line = guideLine();
+        for (const [w, col] of [[5, 'rgba(0,0,0,0.45)'], [2.5, '#ff3d8b']]) {
+          ox.strokeStyle = col; ox.lineWidth = w;
+          ox.beginPath(); line.forEach(([x, y], i) => (i ? ox.lineTo(x * Z, y * Z) : ox.moveTo(x * Z, y * Z))); ox.stroke();
+        }
+      }
+      if (mode !== 'path') return;
+      P.forEach((p, i) => {
+        const h = handles(i);
+        ox.strokeStyle = 'rgba(255,255,255,0.8)'; ox.lineWidth = 1;
+        for (const [hx, hy, show] of [[h.ix, h.iy, i > 0], [h.ox, h.oy, i + 1 < P.length]]) {
+          if (!show) continue;
+          ox.beginPath(); ox.moveTo(p.x * Z, p.y * Z); ox.lineTo((p.x + hx) * Z, (p.y + hy) * Z); ox.stroke();
+          ox.fillStyle = p.auto ? '#bbb' : '#fff';
+          ox.beginPath(); ox.arc((p.x + hx) * Z, (p.y + hy) * Z, 4, 0, Math.PI * 2); ox.fill(); ox.stroke();
+        }
+        ox.fillStyle = i === pathSel ? '#ff3d8b' : '#fff'; ox.strokeStyle = '#000';
+        ox.fillRect(p.x * Z - 5, p.y * Z - 5, 10, 10); ox.strokeRect(p.x * Z - 5, p.y * Z - 5, 10, 10);
+      });
+    }
+    $('pathNew').onclick = () => {
+      if (!L.guide) { setMode('path'); return; }
+      remember(); L.guide = null; pathSel = -1; setMode('path');
+      $('status').textContent = 'The tiles stay as they are. Click to start a new path.';
+    };
+    $('showPath').onchange = () => drawOver();
     oc.addEventListener('mouseleave', () => { hover = null; drawOver(); });
 
     function setMode(m) {
@@ -396,6 +520,9 @@
         e.preventDefault(); return;
       }
       if (mod && e.key === 'v' && clip) { e.preventDefault(); setMode('paste'); return; }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && mode === 'path' && L.guide?.pts[pathSel]) {
+        remember(true); L.guide.pts.splice(pathSel, 1); pathSel = -1; layGuide(); save(); return;
+      }
       if ((e.key === 'Delete' || e.key === 'Backspace') && box) { remember(); const b = boxTiles(); for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) set(x, y, SKY); drawOver(); save(); return; }
       const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
       if (e.shiftKey && !mod && arrows[e.key]) { e.preventDefault(); shift(...arrows[e.key]); return; }
@@ -420,7 +547,17 @@
       try { localStorage.setItem(KEY, JSON.stringify(L)); } catch { alert('Could not store the level in this browser'); return; }
       window.open(`../index.html?test=custom${$('nodamage').checked ? '&damage=0' : ''}`, 'funkytruck-play');
     };
-    const json = () => JSON.stringify({ name: L.name, width: L.width, height: L.height, start: L.start, tiles: L.tiles });
+    const json = () => JSON.stringify({ name: L.name, width: L.width, height: L.height, start: L.start, tiles: L.tiles,
+      ...(L.guide?.pts.length ? { path: L.guide.pts } : {}) });
+    /** A saved path's points, checked, or null. */
+    function readGuide(pts) {
+      const num = (v) => Number.isFinite(v);
+      if (!Array.isArray(pts) || !pts.length) return null;
+      const ok = pts.filter((p) => p && num(p.x) && num(p.y)).map((p) => (p.auto === false && [p.ix, p.iy, p.ox, p.oy].every(num)
+        ? { x: p.x, y: p.y, auto: false, ix: p.ix, iy: p.iy, ox: p.ox, oy: p.oy } : { x: p.x, y: p.y, auto: true }));
+      ok.sort((p, q) => p.x - q.x);
+      return ok.length ? { pts: ok, base: null } : null;
+    }
     $('export').onclick = () => {
       const url = URL.createObjectURL(new Blob([json()], { type: 'application/json' }));
       const link = Object.assign(document.createElement('a'), { href: url, download: `${(L.name || 'track').replace(/[^\w-]+/g, '-')}.json` });
@@ -435,7 +572,7 @@
         const v = JSON.parse(await f.text());
         if (!Array.isArray(v.tiles) || !v.tiles.length || !v.tiles.every((r) => Array.isArray(r) && r.length === v.tiles[0].length && r.every((id) => Number.isInteger(id) && id >= 0 && id < NT))) throw new Error('not a level');
         remember();
-        L = { name: v.name || f.name.replace(/\.json$/, ''), width: v.tiles[0].length, height: v.tiles.length, tiles: v.tiles, start: Array.isArray(v.start) ? v.start : [3 * TILE, 3 * TILE] };
+        L = { name: v.name || f.name.replace(/\.json$/, ''), width: v.tiles[0].length, height: v.tiles.length, tiles: v.tiles, start: Array.isArray(v.start) ? v.start : [3 * TILE, 3 * TILE], guide: readGuide(v.path) };
         $('w').value = L.width; $('h').value = L.height; $('name').value = L.name;
         sizeCanvas(); save();
       } catch (err) { alert(`Couldn't open that file: ${err.message}`); }
@@ -443,7 +580,15 @@
     };
 
     // ---- start: the last level edited in this browser, or a blank one
-    try { const v = JSON.parse(localStorage.getItem(KEY)); if (v && Array.isArray(v.tiles)) L = v; } catch { /* none */ }
+    try {
+      const v = JSON.parse(localStorage.getItem(KEY));
+      if (v && Array.isArray(v.tiles)) {
+        const base = v.guide?.base;
+        const baseOk = Array.isArray(base) && base.length === v.tiles.length && base.every((r, y) => Array.isArray(r) && r.length === v.tiles[y].length);
+        L = { ...v, guide: readGuide(v.guide?.pts) };
+        if (L.guide && baseOk) L.guide.base = base;
+      }
+    } catch { /* none */ }
     if (!L) L = blank(60, 24);
     $('w').value = L.width; $('h').value = L.height; $('name').value = L.name || 'My Track';
     sizeCanvas();

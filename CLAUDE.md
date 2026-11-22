@@ -42,7 +42,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `tools/editor.html`: a local level editor for the user to try tile combinations. Its level is
   kept in localStorage (`funkytruck.editorLevel`), and `index.html?test=custom` plays it as a
   Practice track with no finish. Levels the user sends from it are JSON: { name, width, height,
-  start, tiles }.
+  start, tiles }, plus `path` (the Path tool's curve points) when there is one; the game ignores it.
 - `src/autotile.js` (no DOM): the editor's Path tool. Every tile with collision is a piece of
   floor running from one edge point to another; a sketched line becomes the chain of pieces that
   follows it best (a shortest-path search preferring joins the stages use), with the fill below
