@@ -6,9 +6,12 @@
 //   scrape            a run of hard hits while the cab drags along the ground
 //   start, land, bump, flip, trick, flipCount, milestone, stage, win, wreck, click, boing
 //                     one-shot sounds
+//   missile, enemyMissile, boom, crunch, pickup, jump, boost, takedown, wave
+//                     Battle Mode's one-shot sounds
 // SoundWatcher (sound-events.js) decides when cues happen; this file decides how they sound.
 
-export const CUES = ['start', 'land', 'bump', 'flip', 'trick', 'flipCount', 'milestone', 'stage', 'win', 'wreck', 'click', 'boing'];
+export const CUES = ['start', 'land', 'bump', 'flip', 'trick', 'flipCount', 'milestone', 'stage', 'win', 'wreck', 'click', 'boing',
+  'missile', 'enemyMissile', 'boom', 'crunch', 'pickup', 'jump', 'boost', 'takedown', 'wave'];
 
 
 const note = (n) => 440 * Math.pow(2, (n - 69) / 12); // MIDI note number -> Hz
@@ -160,6 +163,56 @@ const SET = {
     melody(k, [64, 60, 55], 0.22, (f, t) => bell(k, f, 0.35 + t, 0.08, 0.8));
   },
   click(k) { tone(k, { f: 1800, f2: 1200, dur: 0.035, gain: 0.08 }); },
+
+  // ---- Battle Mode
+  /** Your missile away: a rising whoosh. */
+  missile(k) {
+    noise(k, { dur: 0.45, gain: 0.22, type: 'bandpass', f: 500, f2: 2600, Q: 1.2 });
+    tone(k, { type: 'sawtooth', f: 180, f2: 700, dur: 0.3, gain: 0.05 });
+  },
+  /** An enemy's missile: lower, and a warning blip. */
+  enemyMissile(k) {
+    noise(k, { dur: 0.5, gain: 0.16, type: 'bandpass', f: 300, f2: 1200, Q: 1.2 });
+    tone(k, { type: 'square', f: note(81), dur: 0.08, gain: 0.04 });
+    tone(k, { type: 'square', f: note(81), t: 0.12, dur: 0.08, gain: 0.04 });
+  },
+  /** An explosion: a crack, a rumble and falling debris. */
+  boom(k, { big = false } = {}) {
+    const g = big ? 1 : 0.7;
+    noise(k, { dur: 0.06, gain: 0.3 * g, type: 'highpass', f: 1500, attack: 0.001 });
+    noise(k, { dur: big ? 1.1 : 0.7, gain: 0.5 * g, f: 1800, f2: 60, attack: 0.002 });
+    tone(k, { f: big ? 80 : 110, f2: 26, dur: big ? 0.9 : 0.55, gain: 0.45 * g, attack: 0.002 });
+    if (big) for (let i = 0; i < 5; i++) noise(k, { t: 0.25 + i * 0.09 + Math.random() * 0.05, dur: 0.05, gain: 0.06, type: 'bandpass', f: 1500 + Math.random() * 1500, Q: 2 });
+  },
+  /** Trucks crunching into each other. */
+  crunch(k, { force = 0.5 } = {}) {
+    hit(k, { pitch: 0.7 + Math.random() * 0.2, force });
+    noise(k, { t: 0.03, dur: 0.18, gain: 0.08 + force * 0.12, type: 'bandpass', f: 2600, f2: 900, Q: 3 });
+  },
+  /** A pickup: a quick bright arpeggio. */
+  pickup(k) { melody(k, [84, 88, 91, 96], 0.05, (f, t) => bell(k, f, t, 0.1, 0.35)); },
+  /** The jump: a springy boing, a puff of air under it. */
+  jump(k) {
+    tone(k, { type: 'triangle', f: 150, f2: 560, dur: 0.28, gain: 0.18, vibrato: 14, vibratoRate: 26 });
+    noise(k, { dur: 0.2, gain: 0.1, f: 900, f2: 300 });
+  },
+  /** The boost lighting up: a roaring sweep. */
+  boost(k) {
+    noise(k, { dur: 0.7, gain: 0.22, type: 'bandpass', f: 250, f2: 2200, Q: 0.8 });
+    tone(k, { type: 'sawtooth', f: 70, f2: 220, dur: 0.6, gain: 0.07 });
+  },
+  /** An enemy truck taken out: a fanfare, higher for a combo. */
+  takedown(k, { combo = 1 } = {}) {
+    const up = 2 * Math.min(combo - 1, 5);
+    melody(k, [72 + up, 79 + up, 84 + up], 0.08, (f, t, i) => bell(k, f, 0.15 + t, 0.12, i === 2 ? 0.9 : 0.4));
+  },
+  /** A wave coming: a klaxon, twice. */
+  wave(k) {
+    for (const t of [0, 0.32]) {
+      tone(k, { type: 'sawtooth', f: note(62), f2: note(57), dur: 0.26, t, gain: 0.07, glide: 'lin' });
+      tone(k, { type: 'square', f: note(50), dur: 0.26, t, gain: 0.03 });
+    }
+  },
 };
 
 const semis = (n) => Math.pow(2, n / 12);

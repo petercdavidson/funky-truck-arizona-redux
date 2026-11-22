@@ -9,6 +9,7 @@ import { TRICK } from './tricks.js';
 import { VERSION, BUILD } from './version.js';
 import { Wreck } from './wreck.js';
 import { TRIAL_ALL, formatTime, formatGap } from './trial.js';
+import { battleBack, battleFront, battleHud } from './render-battle.js';
 
 const DEG = Math.PI / 180;
 const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'gameOver']);
@@ -89,8 +90,9 @@ export const MODES = [
   ['Endless', 'endless', 'A course that goes on for ever: how far can you get?'],
   ['Time Trial', 'trial', 'Race the clock, and your best run\'s ghost'],
   ['Practice', 'practice', 'Any one stage, and the stunt tracks'],
+  ['Battle', 'battle', 'Enemy trucks charge at you: get past them!'],
 ];
-const modeRow = (i, tall) => (tall ? r(40, 112 + 82 * i, 280, 40) : r(112, 122 + 40 * i, 120, 28));
+const modeRow = (i, tall) => (tall ? r(40, 104 + 76 * i, 280, 40) : r(112, 114 + 36 * i, 120, 28));
 const PRACTICE_OPTIONS = [
   [(g) => `Damage: ${onOff(g.practiceDamage)}`, 'practiceDamage'],
   [(g) => `Classic: ${onOff(g.practiceClassic)}`, 'practiceClassic'],
@@ -119,12 +121,13 @@ function pauseButtons(place) {
     ['practiceClassic', (g) => g.mode === 'practice' && g.rules.classic],
     ['practice', (g) => g.mode === 'practice' && !g.rules.classic],
     ['trial', (g) => g.mode === 'trial'],
+    ['battle', (g) => g.mode === 'battle'],
   ];
   return kinds.flatMap(([kind, when]) => [
     { label: 'Resume', action: 'resume' },
     kind === 'endless' && { label: 'End Run', action: 'endRun' },
     // Practice and Time Trial can start the run again (the stunt tracks have no end)
-    (kind.startsWith('practice') || kind === 'trial') && { label: 'Restart', action: 'again' },
+    (kind.startsWith('practice') || kind === 'trial' || kind === 'battle') && { label: 'Restart', action: 'again' },
     // Quitting Practice or Time Trial goes back to its list of stages
     { label: (g) => (g.quitScreen === 'title' ? 'Quit to Menu' : 'Quit to Stages'), action: 'menu' },
     { label: 'Options', action: 'pauseOptions' },
@@ -153,7 +156,7 @@ export const BUTTONS = {
   title: MENU.map(([label, action], i) => ({ rect: r(223, 248 + 29 * i, 130, 25), label, action })),
   modes: [
     ...MODES.map(([label, action], i) => ({ rect: modeRow(i, false), label, action })),
-    { rect: r(228, 330, 120, 24), label: 'Back', action: 'back' },
+    { rect: r(228, 340, 120, 24), label: 'Back', action: 'back' },
   ],
   stats: statsButtons(false),
   options: [
@@ -198,7 +201,7 @@ export const TALL_BUTTONS = {
   title: MENU.map(([label, action], i) => ({ rect: r(60, 262 + 54 * i, 240, 42), label, action, ...T_BIG })),
   modes: [
     ...MODES.map(([label, action], i) => ({ rect: modeRow(i, true), label, action, ...T_BIG })),
-    { rect: r(80, 562, 200, 38), label: 'Back', action: 'back', ...T_BIG },
+    { rect: r(80, 576, 200, 38), label: 'Back', action: 'back', ...T_BIG },
   ],
   stats: statsButtons(true, T_BIG),
   options: [
@@ -244,6 +247,7 @@ export function buttonsFor(screen, tall = false) {
 /** Which run this is, for the pause screen: "Play  ·  Stage Three", "Endless  ·  420 m", ... */
 export function runName(game) {
   if (game.mode === 'endless') return `Endless  ·  ${game.metres} m`;
+  if (game.mode === 'battle') return `Battle  ·  Wave ${Math.max(1, game.battle.wave)}  ·  ${game.metres} m`;
   if (game.mode === 'trial') return `Time Trial  ·  ${trialName(game, game.track)}`;
   const stage = game.stageName(game.level);
   if (game.mode === 'campaign') return `${game.rules.classic ? 'Classic' : 'Standard'}  ·  ${stage}`;
@@ -257,6 +261,7 @@ export function runName(game) {
  */
 export function reachedLine(game) {
   if (game.mode === 'endless') return '';
+  if (game.mode === 'battle') { const b = game.battle; return `Wave ${Math.max(1, b.wave)}  ·  ${b.takedowns} takedown${b.takedowns === 1 ? '' : 's'}`; }
   const stage = game.stageName(game.level);
   const n = game.data.levels.length;
   const allNine = game.mode === 'campaign' || (game.mode === 'trial' && game.track === TRIAL_ALL);
@@ -287,6 +292,7 @@ export function statsColumns(game) {
     ['Standard', or(game.bestPlay, n)],
     ['Classic', or(game.best, n)],
     ['Endless', or(game.bestEndless, (v) => `${n(v)} m`)],
+    ['Battle', or(game.bestBattle, n)],
     ['Time Trial (All Nine)', game.trialBests[TRIAL_ALL] ? formatTime(game.trialBests[TRIAL_ALL]) : none],
     ['Records'],
     ['Longest airtime', or(S.maxAir, secs)],
@@ -295,6 +301,7 @@ export function statsColumns(game) {
     ['Longest wheelie', or(S.longestWheelie, secs)],
     ['Best trick chain', or(S.bestChain, (v) => `${n(v)} pts`)],
     ['Longest trick chain', or(S.longestChain, (v) => `${n(v)} tricks`)],
+    ['Battle takedowns', n(S.takedowns)],
   ], [
     ['Totals'],
     ['Distance driven', dist(S.distance)],
@@ -378,7 +385,9 @@ export class Renderer {
     this.menuK = Math.min(this.viewW / this.page.w, this.viewH / this.page.h);
     // The camera always knows the filled view's size (Classic uses 576x448 regardless), so a
     // stage started from a menu begins with its camera in the right place.
-    if (game) { game.viewW = W / fill; game.viewH = H / fill; }
+    // (A canvas with no size, while the window is hidden or resizing, would make them NaN, and the
+    // camera would never recover.)
+    if (game && W > 0 && H > 0) { game.viewW = W / fill; game.viewH = H / fill; }
   }
 
   /** Convert a point in canvas CSS pixels to menu (page) coordinates. */
@@ -696,8 +705,10 @@ export class Renderer {
       this.truck(v.G, rot, rot, game.look);
       ctx.restore();
     }
+    if (game.battle) battleBack(this, game, v);
     if (game.wreck && v.W) this.wreck(game.wreck, v.W, game.look);
     else this.truck(v.T, v.rr, v.fr, game.look);
+    if (game.battle) battleFront(this, game, v);
     ctx.restore();
     if (!game.rules.classic && !game.wreck) this.flipCount(game, v, zoom);
     this.hud(game);
@@ -729,7 +740,8 @@ export class Renderer {
     if (m && m.n !== this.confettiFor && game.screen === 'playing') {
       this.confettiFor = m.n;
       const colors = BODY_PAINTS; // the trucks' own paints
-      for (let i = 0; i < 70; i++) {
+      // (Battle's waves come in without confetti)
+      for (let i = 0; i < (m.confetti === false ? 0 : 70); i++) {
         const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, sp = 120 + Math.random() * 260;
         this.confetti.push({ x: this.viewW / 2 + (Math.random() - 0.5) * 60, y: 168, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
           rot: Math.random() * 6, spin: (Math.random() - 0.5) * 14, color: colors[i % colors.length], life: 1.6 + Math.random() * 0.8 });
@@ -787,11 +799,12 @@ export class Renderer {
     if (game.rules.damage) { this.meter('damage', game.damage / 1000, y); y += 34; }
     // Outside Classic: the speedometer, in km/h (the bar is full at SPEEDO_MAX).
     if (!game.rules.classic) this.meter('speed', game.speedKmh / SPEEDO_MAX, y, `${Math.round(game.speedKmh)} km/h`);
+    if (game.battle) battleHud(this, game, y + 34);
     const hud = { size: 12.85, font: HUD_FONT, weight: '800', align: 'right' };
     if (game.mode === 'trial') { this.trialHud(game, R, hud); return; }
     this.text('score', R + 0.5, 9, { size: 12.5, font: HUD_FONT, weight: '800', align: 'right' });
     this.text(String(game.score), R, 22, hud);
-    if (game.mode === 'endless') this.text(`${game.metres} m`, R, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
+    if (game.onCourse) this.text(`${game.metres} m`, R, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
     else this.text(`+${game.bonus}`, R, 34, { ...hud, color: 'rgba(255,255,255,0.9)' });
     const chain = game.tricks.chain;
     if (game.rules.classic) {
@@ -801,7 +814,7 @@ export class Renderer {
       this.text(`+${game.tricks.chainPoints}${m > 1 ? `  x${m}` : ''}`, R, 46, { ...hud, color: 'rgba(255,255,255,0.6)' });
     } else if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, R, 46, { ...hud, color: 'rgba(255,255,255,0.9)' });
     if (!game.rules.classic) this.trickNames(game);
-    if (game.mode === 'endless') this.milestone(game);
+    if (game.onCourse) this.milestone(game);
     if (game.tickerTimer > 0 && game.screen !== 'gameOver') {
       this.text(game.ticker, this.viewW / 2, 82, { size: 15, font: HUD_FONT, weight: '800' });
     }
@@ -899,11 +912,11 @@ export class Renderer {
     const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
     const about = { weight: '600', color: 'rgba(255,255,255,0.85)' };
     if (tall) {
-      this.roundRect(16, 40, TALL_W - 32, 584, 12, BOX_FILL, BOX_EDGE);
+      this.roundRect(16, 40, TALL_W - 32, 598, 12, BOX_FILL, BOX_EDGE);
       this.text('Choose a Mode', cx, 60, { size: 26, weight: '900' });
     } else {
-      this.roundRect(96, 76, 384, 292, 10, BOX_FILL, BOX_EDGE);
-      this.text('Choose a Mode', cx, 88, { size: 20, weight: '900' });
+      this.roundRect(96, 68, 384, 312, 10, BOX_FILL, BOX_EDGE);
+      this.text('Choose a Mode', cx, 80, { size: 20, weight: '900' });
     }
     MODES.forEach(([, , text], i) => {
       const b = modeRow(i, tall);
@@ -1087,9 +1100,11 @@ export class Renderer {
     this.overlayDim(0.45);
     let title = game.wrecked ? 'Truck Wrecked' : (game.finished && game.mode === 'campaign' ? 'Well Driven!' : 'Game Over');
     if (game.mode === 'endless') title = 'Nice Run!';
+    else if (game.mode === 'battle') title = 'Battle Over';
     else if (game.mode === 'practice' && !game.wrecked) title = 'Practice Complete';
     let lines = game.mode === 'endless'
       ? [`${game.metres} m  ·  ${game.lastScore}`, `Best: ${game.bestEndless} m`]
+      : game.mode === 'battle' ? [`Score: ${game.lastScore}  ·  ${game.metres} m`, `Best: ${game.bestBattle}`]
       : [`Score: ${game.lastScore}`, game.rules.damage ? `Best: ${game.bestForRules}` : ''];
     let gapColor = null;
     if (game.mode === 'trial') {

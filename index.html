@@ -40,6 +40,22 @@
         <svg viewBox="0 0 24 24"><path d="M12 19V5" /><path d="M6 11l6-6 6 6" /></svg>
       </button>
     </div>
+    <!-- Battle Mode: jump (left), fire a missile and boost (right). The icons are ICONS in render-battle.js. -->
+    <div class="actions actions-left">
+      <button class="act" data-press="jump" aria-label="Jump">
+        <svg viewBox="0 0 24 24"><path d="M12 2.5v7 M8.5 6L12 2.5 15.5 6 M7 12.5h10l-10 3h10l-10 3h10 M6 21.5h12" /></svg>
+        <b id="jump-count">2</b>
+      </button>
+    </div>
+    <div class="actions actions-right">
+      <button class="act" data-press="fire" aria-label="Fire a missile">
+        <svg viewBox="0 0 24 24"><path d="M3 9.5h11l5.5 2.5-5.5 2.5H3z M6 9.5L3.5 5.5 M6 14.5l-2.5 4" /></svg>
+        <b id="fire-count">3</b>
+      </button>
+      <button class="act" data-key="boost" aria-label="Boost">
+        <svg viewBox="0 0 24 24"><path d="M13.5 2.5L5.5 13.5h6l-1 8 8-11.5h-6z" /></svg>
+      </button>
+    </div>
   </div>
 
   <!-- One button on a touch screen: hold anywhere to drive (and to tilt back in the air). -->

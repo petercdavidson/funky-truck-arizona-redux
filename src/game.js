@@ -9,6 +9,7 @@ import { TrickTracker } from './tricks.js';
 import { Wreck } from './wreck.js';
 import { TRIAL_ALL, TRIAL_TRACKS, GHOST_EVERY, validBests, loadGhost, saveGhost, ghostPose } from './trial.js';
 import { validStats, emptyStats, countTrick, countChain } from './stats.js';
+import { Battle, BATTLE } from './battle.js';
 
 export const TILE = 64;          // s4c2
 export const STAGE_W = 576;      // Z7552
@@ -177,6 +178,7 @@ export class Truck {
     this.probePrev = null;                               // N5555
     this.probeHit = null;                                // what the roof probe last touched
     this.airborne = false; this.flipLast = 0; this.flipAccum = 0; // s0a55, T1B55, u2c55
+    this.power = 1;                    // drive power (Battle's enemies differ; yours is always 1)
   }
 
   reset(x, y) { // u4095 + parts of s46B2
@@ -308,7 +310,7 @@ export class Truck {
   }
 
   drive(keys) { // F7Fc5
-    const k = 0.4, P = this.P;
+    const k = 0.4 * this.power, P = this.P;
     let s;
     if (keys.up) s = -k; else if (keys.down) s = k; else return;
     if (this.rearContact) { P[2] -= this.rearN[1] * s; P[3] -= -this.rearN[0] * s; }
@@ -513,7 +515,8 @@ function validCount(v) {
 
 export function emptyKeys() {
   // `one` is the single button of the one-button controls (Space, or holding the touch screen).
-  return { up: false, down: false, left: false, right: false, pause: false, restart: false, one: false, upright: false };
+  // `boost` is Battle's boost (held); its missiles and jump are presses (Game.press).
+  return { up: false, down: false, left: false, right: false, pause: false, restart: false, one: false, upright: false, boost: false };
 }
 
 /**
@@ -526,6 +529,7 @@ export const RULES = {
   play: { classic: false, damage: true },
   classic: { classic: true, damage: true },
   endless: { classic: false, damage: false },
+  battle: { classic: false, damage: true },
 };
 
 /**
@@ -597,7 +601,8 @@ const STATS_SAVE_EVERY = 700;
  * Screens: 'title' | 'modes' (the mode picker over the title) | 'stats' | 'options' | 'help' | 'garage' |
  * 'practiceSelect' | 'trialSelect' | 'playing' | 'paused' | 'pauseOptions' | 'gameOver'
  * Modes: 'campaign' (all nine stages), 'practice' (one stage), 'endless' (a generated course),
- * 'trial' (Time Trial: a stage or all nine against the clock, see trial.js).
+ * 'trial' (Time Trial: a stage or all nine against the clock, see trial.js), 'battle' (Endless's
+ * course with enemy trucks, see battle.js).
  * The title screen's Play and Classic both start a campaign, under different rules.
  */
 export class Game {
@@ -639,6 +644,8 @@ export class Game {
     this.best = validCount(this.store.get('bestScore')); // a0a82
     this.bestPlay = validCount(this.store.get('bestPlay'));
     this.bestEndless = validCount(this.store.get('bestEndless'));
+    this.bestBattle = validCount(this.store.get('bestBattle'));
+    this.battle = null;               // Battle Mode's enemies, missiles and pickups (battle.js)
     // Options (all off by default, apart from damage in Practice).
     const flag = (k, dflt) => { const v = this.store.get(k); return typeof v === 'boolean' ? v : dflt; };
     this.soundOn = flag('sound', false);
@@ -722,9 +729,15 @@ export class Game {
   get camAnchorX() { return 150 + (this.viewW - STAGE_W) / 2 + this.back * CAMERA.lookBack; }
 
   get levelData() {
-    if (this.mode === 'endless') return this.course.level;
+    if (this.onCourse) return this.course.level;
     return this.isStunt ? this.stunts[this.level - this.data.levels.length] : this.data.levels[this.level];
   }
+
+  /** Endless and Battle are played on a generated course (endless.js). */
+  get onCourse() { return this.mode === 'endless' || this.mode === 'battle'; }
+
+  /** The level's collision world with a thin offset (for wreck pieces and missiles), made when first needed. */
+  get thinWorld() { return (this.thin ||= this.makeWorld(3)); }
 
   /** Practice's stunt tracks (assets/stunts.json), which come after the nine stages. */
   get stunts() { return this.data.stunts || []; }
@@ -765,8 +778,8 @@ export class Game {
   /** One-button controls apply outside Classic. */
   get oneButtonActive() { return this.oneButton && !this.rules.classic; }
 
-  /** The flip-upright assist is offered in damage-free runs outside Classic. */
-  get uprightAllowed() { return !this.rules.damage && !this.rules.classic; }
+  /** The flip-upright assist is offered in damage-free runs outside Classic, and in Battle (you get knocked over a lot). */
+  get uprightAllowed() { return (!this.rules.damage || this.mode === 'battle') && !this.rules.classic; }
 
   // ---- flow
 
@@ -781,14 +794,34 @@ export class Game {
   startEndless() {
     this.mode = 'endless';
     this.rules = RULES.endless;
+    this.newCourse();
+    this.bestToBeat = this.bestEndless; // a new best distance is a milestone too
+    this.beginRun(0);
+  }
+
+  /**
+   * Battle Mode: Endless's course, with damage, and enemy trucks coming at you in waves
+   * (battle.js). It ends when your truck is wrecked.
+   */
+  startBattle() {
+    this.mode = 'battle';
+    this.rules = RULES.battle;
+    this.newCourse();
+    this.bestToBeat = 0;
+    this.battle = new Battle(this);
+    this.beginRun(0);
+  }
+
+  newCourse() {
     if (!this.grammar) this.grammar = buildGrammar(this.data.levels);
     this.course = new EndlessCourse(this.grammar, this.data.levels, this.random);
     this.distance = 0;
     this.nextMetres = 0; this.nextScore = 0;
-    this.bestToBeat = this.bestEndless; // a new best distance is a milestone too
     this.milestone = null; this.milestones = [];
-    this.beginRun(0);
   }
+
+  /** Battle: fire a missile or jump ('fire', 'jump') at the next step. */
+  press(what) { if (this.mode === 'battle' && this.battle && this.screen === 'playing') this.battle.request(what); }
 
   /**
    * Time Trial: a stage (0-8), or all nine in a row (TRIAL_ALL), against the clock, by Play's rules.
@@ -840,6 +873,7 @@ export class Game {
 
   beginRun(firstLevel) { // H5D52
     if (this.mode !== 'trial') { this.ghost = null; this.ghostT = null; this.split = null; }
+    if (this.mode !== 'battle') this.battle = null;
     if (this.mode === 'campaign' || (this.mode === 'trial' && this.track === TRIAL_ALL)) { this.lastLevel = this.data.levels.length - 1; this.level = 0; }
     else { this.level = firstLevel; this.lastLevel = firstLevel; }
     this.score = 0; this.bonus = 0; this.damage = 0;
@@ -853,7 +887,7 @@ export class Game {
   }
 
   startStage() { // u8a62
-    this.world = this.makeWorld();
+    this.world = this.makeWorld(); this.thin = null;
     this.wreck = null; this.selfWrecked = false;
     this.stuck = 0; this.canUpright = false; this.righting = 0; this.airSteps = 0;
     this.landed = false; // the truck is dropped in at the start; until it lands it isn't driving
@@ -872,7 +906,7 @@ export class Game {
     this.endTimer = 0;
     this.score += this.bonus;
     this.bonus = (this.level + 1) * 10000;
-    if (this.mode === 'endless') { this.ticker = 'Endless'; this.bonus = 0; }
+    if (this.onCourse) { this.ticker = this.mode === 'battle' ? 'Battle' : 'Endless'; this.bonus = 0; }
     if (this.isStunt) this.bonus = 0; // stunt tracks are all about the tricks: no time bonus
     if (this.mode === 'trial') this.bonus = 0; // the clock is what counts
     this.flipBonusTimer = 0;
@@ -893,8 +927,13 @@ export class Game {
   restart() {
     if (this.mode === 'campaign') this.startCampaign(this.rules.classic);
     else if (this.mode === 'endless') this.startEndless();
+    else if (this.mode === 'battle') this.startBattle();
     else if (this.mode === 'trial') this.startTrial(this.track);
     else this.startPractice(this.lastLevel);
+  }
+
+  saveBattleBest() {
+    if (this.score > this.bestBattle) { this.bestBattle = this.score; this.store.set('bestBattle', this.bestBattle); }
   }
 
   saveEndlessBest() {
@@ -914,7 +953,7 @@ export class Game {
       this.stats.endlessMetres += (col - this.distance) * METRES_PER_TILE;
       this.distance = col;
     }
-    this.checkMilestones();
+    if (this.mode === 'endless') this.checkMilestones();
     if (x > (ENDLESS_WIDTH - 40) * TILE) this.scrollWorld(ENDLESS_SHIFT);
   }
 
@@ -931,10 +970,18 @@ export class Game {
     const S = MILESTONES.scores;
     while (this.nextScore < S.length && this.score >= S[this.nextScore]) found.push(`${S[this.nextScore++].toLocaleString('en-US')} points!`);
     if (this.bestToBeat > 0 && this.metres > this.bestToBeat) { found.push('New best distance!'); this.bestToBeat = 0; }
-    for (const text of found) {
-      this.milestoneCount++;
-      if (this.milestone) this.milestones.push(text); else this.milestone = { text, timer: MILESTONE_SHOW, n: this.milestoneCount };
-    }
+    for (const text of found) this.announce(text);
+  }
+
+  /**
+   * Put news up in big letters (Endless milestones, Battle's waves), or queue it behind what's up.
+   * `extra` goes with it to the renderer and the sound: { confetti: false, sound: 'wave' }.
+   */
+  announce(text, extra = null) {
+    this.milestoneCount++;
+    const item = extra ? { text, ...extra } : text;
+    if (this.milestone) this.milestones.push(item);
+    else this.milestone = { ...(extra || {}), text, timer: MILESTONE_SHOW, n: this.milestoneCount };
   }
 
   /** Count down the milestone on screen; the next one waiting comes on once it's been seen a while. */
@@ -942,7 +989,10 @@ export class Game {
     const m = this.milestone;
     if (!m) return;
     m.timer--;
-    if (this.milestones.length && m.timer < MILESTONE_SHOW - 60) this.milestone = { text: this.milestones.shift(), timer: MILESTONE_SHOW, n: m.n + 1 };
+    if (this.milestones.length && m.timer < MILESTONE_SHOW - 60) {
+      const next = this.milestones.shift();
+      this.milestone = { ...(typeof next === 'string' ? { text: next } : next), timer: MILESTONE_SHOW, n: m.n + 1 };
+    }
     else if (m.timer <= 0) this.milestone = null;
   }
 
@@ -950,7 +1000,9 @@ export class Game {
   scrollWorld(n) {
     this.course.scroll(n);
     this.shiftWorld(n * TILE, 0);
-    this.world = this.makeWorld();
+    this.world = this.makeWorld(); this.thin = null;
+    // A wreck tumbling across the scroll goes on in the new world.
+    if (this.wreck) { this.wreck.wheelWorld = this.world; this.wreck.thinWorld = this.thinWorld; }
   }
 
   /**
@@ -972,6 +1024,7 @@ export class Game {
     if (t.probePrev) move(t.probePrev);
     if (this.wreck) { move(this.wreck.T); move(this.wreck.P); }
     for (const d of this.dirt) { d.x -= dx; d.y -= dy; }
+    if (this.battle) this.battle.shift(dx, dy);
     this.camX -= dx; this.camY -= dy;
     this.shiftCount++;
     this.lastShift = dx; this.lastShiftY = dy;
@@ -986,6 +1039,7 @@ export class Game {
   showMenu(screen) {
     // Leaving an Endless run part-way (quitting from pause, say) still counts its distance.
     if (this.mode === 'endless' && (this.screen === 'playing' || this.screen === 'paused')) this.saveEndlessBest();
+    if (this.mode === 'battle' && (this.screen === 'playing' || this.screen === 'paused')) this.saveBattleBest();
     if (this.screen === 'playing' || this.screen === 'paused') this.saveStats();
     // The title's truck carries on as it was under the mode picker, and back from it.
     const overTitle = (a, b) => (a === 'title' && b === 'modes') || (a === 'modes' && b === 'title');
@@ -1006,10 +1060,10 @@ export class Game {
   /** Clear every best score, best time, ghost and stat. Only once the wait is over. */
   resetScores() {
     if (!this.resetReady) return false;
-    this.best = 0; this.bestPlay = 0; this.bestEndless = 0;
+    this.best = 0; this.bestPlay = 0; this.bestEndless = 0; this.bestBattle = 0;
     this.trialBests = {};
     this.stats = emptyStats();
-    for (const k of ['bestScore', 'bestPlay', 'bestEndless']) this.store.set(k, 0);
+    for (const k of ['bestScore', 'bestPlay', 'bestEndless', 'bestBattle']) this.store.set(k, 0);
     this.store.set('trialBests', {});
     for (let t = 0; t < TRIAL_TRACKS; t++) this.store.set(`ghost${t}`, null);
     this.saveStats();
@@ -1045,7 +1099,7 @@ export class Game {
   selfWreck() {
     if (!this.selfWreckAllowed || this.screen !== 'playing' || this.wreck || this.endTimer > 0) return false;
     this.bankTricks();
-    this.wreck = new Wreck(this.truck, this.world, this.makeWorld(3));
+    this.wreck = new Wreck(this.truck, this.world, this.thinWorld);
     this.selfWrecked = true;
     this.tricks.reset();
     this.canUpright = false; this.righting = 0; this.stuck = 0;
@@ -1252,7 +1306,7 @@ export class Game {
     this.scraping = touching; // heard even after the finish line
     // It only damages the truck or bails a chain before the stage is over.
     const scraped = touching && this.endTimer === 0;
-    if (scraped && this.rules.damage) this.damage = Math.min(1000, this.damage + 6);
+    if (scraped && this.rules.damage) this.damage = Math.min(1000, this.damage + (this.mode === 'battle' ? BATTLE.scrape : 6));
     const flip = t.trackFlip();
     if (this.rules.classic) {
       // The original flip bonus: a landed flip's degrees, paid at once while the time bonus runs.
@@ -1267,7 +1321,7 @@ export class Game {
     // Flips and the other tricks are scored in chains by TrickTracker. A flip still pays the
     // original game's points (its degrees), as part of its chain.
     // Tricks score while the time bonus is running (as flips always did), or all run in Endless.
-    const scoring = (this.mode === 'endless' || this.isStunt || this.bonus !== 0) && this.endTimer === 0;
+    const scoring = (this.onCourse || this.isStunt || this.bonus !== 0) && this.endTimer === 0;
     if (this.righting > 0 || this.trickCooldown > 0) {
       // A flip upright isn't a trick: tricks aren't watched for until the truck has been back on
       // its wheels for a moment, and then the trick tracker starts afresh.
@@ -1343,7 +1397,7 @@ export class Game {
     }
     // The stunt tracks have no finish: they're for playing on.
     // (A truck wrecked on purpose finishes if its body gets over the line.)
-    if (this.mode !== 'endless' && !this.isStunt && this.focus[0] >= (this.levelData.width - 9) * TILE) {
+    if (!this.onCourse && !this.isStunt && this.focus[0] >= (this.levelData.width - 9) * TILE) {
       this.ticker = 'Stage Complete !'; this.tickerTimer = 140; this.endTimer = 210;
       this.bankTricks(); // a chain still going at the finish line is paid out
     }
@@ -1352,7 +1406,7 @@ export class Game {
       if (!this.rules.classic) {
         // The truck comes apart and collapses; the pieces tumble for a moment before the game-over
         // screen. (One wrecked on purpose is in pieces already.)
-        if (!this.wreck) this.wreck = new Wreck(this.truck, this.world, this.makeWorld(3));
+        if (!this.wreck) this.wreck = new Wreck(this.truck, this.world, this.thinWorld);
         this.endTimer = 160;
         this.tricks.reset();
       }
@@ -1371,6 +1425,7 @@ export class Game {
       this.finished = !isWrecked;
       this.lastScore = this.score;
       if (this.mode === 'endless') this.saveEndlessBest();
+      else if (this.mode === 'battle') this.saveBattleBest();
       else if (this.mode === 'trial') { if (!isWrecked) this.finishTrial(); }
       else if (this.rules.damage && !this.isStunt) this.saveBest(this.score);
       this.restartLatch = true;
@@ -1405,16 +1460,18 @@ export class Game {
 
   /** Advance one 1/70 s frame. */
   step() {
+    if (this.battle) this.battle.events.length = 0;
     switch (this.screen) {
       case 'playing':
         if (!this.world) return;
         if (this.wreck) this.stepWreck(); else this.stepTruck(this.world);
+        if (this.battle) this.battle.step();
         this.updateSpeedometer();
         this.stats.driveSteps++;
         if (++this.statsSince >= STATS_SAVE_EVERY) this.saveStats();
         this.tickMilestone();
         if (this.keys.upright) this.upright();
-        if (this.mode === 'endless') this.updateEndless();
+        if (this.onCourse) this.updateEndless();
         else this.updateLoop();
         this.updateCamera();
         this.updateDirt();
@@ -1445,6 +1502,7 @@ export class Game {
       case 'gameOver':
         // A wrecked truck's pieces keep tumbling behind the game-over box.
         if (this.wreck) { this.wreck.step(); this.updateCamera(); }
+        if (this.battle) this.battle.step();
         if (!this.keys.restart) this.restartLatch = false;
         else if (!this.restartLatch) this.restart();
         break;

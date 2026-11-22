@@ -8,7 +8,7 @@
 /** Records (the most in one go) and totals. Times are in 1/70 s steps, distances in metres. */
 export const STAT_KEYS = [
   'maxAir', 'topSpeed', 'mostFlips', 'longestWheelie', 'bestChain', 'longestChain',
-  'distance', 'driveSteps', 'runs', 'stages', 'wrecks', 'selfWrecks', 'bails', 'endlessMetres',
+  'distance', 'driveSteps', 'runs', 'stages', 'wrecks', 'selfWrecks', 'bails', 'endlessMetres', 'takedowns',
 ];
 
 /** The tricks counted one by one (by kind: no counts or airtimes in the name). */

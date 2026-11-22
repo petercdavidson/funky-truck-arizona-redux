@@ -29,6 +29,10 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   with Web Audio (sound is on/off, off by default). `sounds.html` plays every sound. No
   sound files.
 - `src/wreck.js` (no DOM): the ragdoll wreck, a wrecked truck's loose pieces.
+- `src/battle.js` (no DOM): Battle Mode (`mode: 'battle'`, `RULES.battle`): enemy trucks, truck-on-truck
+  collisions, missiles, explosions, pickups and waves, on Endless's course. Enemies are ordinary
+  `Truck`s simulated in a mirrored world (`MirrorWorld`, x -> -x) so they face left; mirror their
+  points (x -> -x) wherever they meet the real world. `src/render-battle.js` draws it.
 - `src/trial.js` (no DOM): Time Trial's time formats, saved bests and ghosts. `Game.updateTrial` runs
   the clock (from first landing to the finish line) and records the ghost; ghosts are poses, not
   inputs, so they survive physics changes.

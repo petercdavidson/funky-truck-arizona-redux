@@ -68,7 +68,9 @@ export class SoundWatcher {
     this.tricksDone = game.tricks.done;
     this.flipCounts = game.tricks.flipCounts;
     // Endless milestones, as each comes on screen.
-    if (playing && game.milestone && game.milestone.n !== this.milestone) events.push({ type: 'milestone' });
+    if (playing && game.milestone && game.milestone.n !== this.milestone) events.push({ type: game.milestone.sound || 'milestone' });
+    // Battle Mode says what happened each step (missiles, explosions, pickups...).
+    if (game.battle) for (const e of game.battle.events) events.push(e);
     this.milestone = game.milestone?.n ?? this.milestone;
     if (game.tickerTimer > this.tickerTimer || game.ticker !== this.ticker) {
       if (game.ticker.startsWith('Stage Complete')) events.push({ type: 'stage' });

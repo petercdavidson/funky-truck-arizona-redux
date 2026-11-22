@@ -6,6 +6,7 @@ import { loadAssets } from './assets.js';
 import { Renderer, hitButton, buttonsFor } from './render.js';
 import { Sound } from './audio.js';
 import { SoundWatcher } from './sound-events.js';
+import { lerpBattle } from './battle.js';
 
 const DT = 1000 / STEP_HZ;
 
@@ -54,6 +55,7 @@ const KEY_MAP = {
   ArrowRight: 'right', KeyD: 'right',
   KeyP: 'pause',
   KeyR: 'upright',
+  KeyC: 'boost', ShiftLeft: 'boost', ShiftRight: 'boost', // Battle's boost (held)
   Space: ['restart', 'one'], Enter: 'restart', NumpadEnter: 'restart', ControlLeft: 'restart', ControlRight: 'restart',
 };
 
@@ -86,14 +88,18 @@ function escape() {
   if (game.screen !== 'title') goMenu();
 }
 
+/** Battle's presses: a missile, and the jump. */
+const PRESS_KEYS = { KeyX: 'fire', KeyZ: 'jump' };
+
 function onKey(e, down) {
   const name = KEY_MAP[e.code];
-  if (name || e.code === 'Escape') e.preventDefault();
+  if (name || e.code === 'Escape' || PRESS_KEYS[e.code]) e.preventDefault();
   if (down) setTouchMode(false);
   if (down && !e.repeat) {
     if (e.code === 'Escape') { escape(); return; }
     if (e.code === 'KeyF') { toggleFullscreen(); return; }
     if (e.code === 'KeyM') { doAction('sound'); return; }
+    if (PRESS_KEYS[e.code]) { game.press(PRESS_KEYS[e.code]); return; }
     if (game.screen === 'title' && (e.code === 'Space' || e.code === 'Enter')) { doAction('play'); moveModeChoice(0); return; }
     if (game.screen === 'modes') {
       if (name === 'up' || name === 'down') { moveModeChoice(name === 'up' ? -1 : 1); return; }
@@ -151,6 +157,7 @@ function doAction(a) {
   else if (a === 'standard') game.startCampaign();
   else if (a === 'classic') game.startCampaign(true);
   else if (a === 'endless') game.startEndless();
+  else if (a === 'battle') game.startBattle();
   else if (a === 'endRun') game.endRun();
   else if (a === 'practice') game.showMenu('practiceSelect');
   else if (a === 'trial') game.showMenu('trialSelect');
@@ -224,6 +231,18 @@ for (const btn of touchUI.querySelectorAll('[data-key]')) {
   }
 }
 
+// Battle's fire and jump buttons: a press each (a quick tap still counts).
+for (const btn of touchUI.querySelectorAll('[data-press]')) {
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setTouchMode(true);
+    game.press(btn.dataset.press);
+    btn.classList.add('held');
+    setTimeout(() => btn.classList.remove('held'), 120);
+  });
+}
+
 // One button on a touch screen: holding anywhere on the screen (apart from the pause and flip
 // buttons) is the button. Any number of fingers count as one.
 {
@@ -269,11 +288,12 @@ for (const ev of ['touchstart', 'touchend']) {
 let padPauseWasDown = false;
 let padStartWasDown = false;
 let padUpWasDown = false, padDownWasDown = false;
+let padFireWasDown = false, padJumpWasDown = false;
 
 function pollGamepads() {
   const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
   Object.assign(padKeys, emptyKeys());
-  let pauseDown = false, startDown = false, upDown = false, downDown = false;
+  let pauseDown = false, startDown = false, upDown = false, downDown = false, fireDown = false, jumpDown = false;
   for (const p of pads) {
     const b = (i) => !!p.buttons[i]?.pressed;
     const ax = p.axes[0] || 0;
@@ -284,6 +304,9 @@ function pollGamepads() {
     padKeys.restart ||= b(0) || b(9);
     padKeys.one ||= b(0);
     padKeys.upright ||= b(3);                      // Y
+    padKeys.boost ||= b(5);                        // Battle: right bumper boosts,
+    fireDown ||= b(2);                             // X fires a missile,
+    jumpDown ||= b(4);                             // and the left bumper jumps
     pauseDown ||= b(9);                            // Start
     startDown ||= b(0) || b(9);
     upDown ||= b(12) || (p.axes[1] || 0) < -0.5;
@@ -297,6 +320,8 @@ function pollGamepads() {
       else if (upDown && !padUpWasDown) moveModeChoice(-1);
       else if (downDown && !padDownWasDown) moveModeChoice(1);
     }
+    if (fireDown && !padFireWasDown) game.press('fire');
+    if (jumpDown && !padJumpWasDown) game.press('jump');
     padKeys.restart = padKeys.restart && game.screen === 'gameOver';
     combineKeys();
   }
@@ -304,6 +329,8 @@ function pollGamepads() {
   padStartWasDown = startDown;
   padUpWasDown = upDown;
   padDownWasDown = downDown;
+  padFireWasDown = fireDown;
+  padJumpWasDown = jumpDown;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -316,6 +343,7 @@ function snapshot() {
     G: game.ghostT && game.screen !== 'title' ? game.ghostT.slice() : null,
     gT: g.T.slice(), grr: g.rearWheelRot, gfr: g.frontWheelRot,
     W: game.wreck ? game.wreck.T.slice() : null,
+    B: game.battle ? game.battle.snapshot() : null,
   };
 }
 
@@ -327,6 +355,7 @@ function lerpView(a, b, t) {
     gT: a.gT.map((x, i) => L(x, b.gT[i])), grr: L(a.grr, b.grr), gfr: L(a.gfr, b.gfr),
     W: a.W && b.W && a.W.length === b.W.length ? a.W.map((x, i) => L(x, b.W[i])) : b.W,
     G: a.G && b.G ? a.G.map((x, i) => L(x, b.G[i])) : b.G,
+    B: b.B && lerpBattle(a.B, b.B, t),
   };
 }
 
@@ -377,7 +406,7 @@ function frame(now) {
       seenShift = game.shiftCount;
       for (let i = 0; i < 10; i += 2) { prev.T[i] -= game.lastShift; prev.T[i + 1] -= game.lastShiftY; }
       prev.camX -= game.lastShift; prev.camY -= game.lastShiftY;
-      prev.W = null;
+      prev.W = null; prev.B = null;
     }
     const heard = watcher.observe(game);
     for (const e of heard.events) sound.play(e.type, e);
@@ -397,10 +426,20 @@ function frame(now) {
   if (ds.screen !== game.screen) ds.screen = game.screen;
   const cur = snapshot();
   const t = ['playing', 'title', 'modes', 'garage'].includes(game.screen) ? Math.min(acc / DT, 1) : 1;
-  renderer.draw(game, prev ? lerpView(prev, cur, t) : cur);
+  renderer.draw(game, prev ? lerpView(prev, cur, t) : { ...cur, B: cur.B && lerpBattle(null, cur.B, 1) });
   const one = game.oneButtonActive ? '1' : '0', up = game.canUpright && game.screen === 'playing' ? '1' : '0';
   if (ds.onebutton !== one) ds.onebutton = one;
   if (ds.upright !== up) ds.upright = up;
+  if (ds.mode !== game.mode) ds.mode = game.mode;
+  if (game.battle) showCounts(game.battle);
+}
+
+/** Battle: what's left, on the touch buttons. */
+const fireCount = document.getElementById('fire-count'), jumpCount = document.getElementById('jump-count');
+function showCounts(b) {
+  const f = String(b.missilesLeft), j = String(b.jumps);
+  if (fireCount.textContent !== f) { fireCount.textContent = f; fireCount.parentElement.classList.toggle('empty', b.missilesLeft === 0); }
+  if (jumpCount.textContent !== j) { jumpCount.textContent = j; jumpCount.parentElement.classList.toggle('empty', b.jumps === 0); }
 }
 
 function fit() {
@@ -411,7 +450,7 @@ function fit() {
 
 /**
  * Test hook for automated screenshots, e.g. ?test=play&stage=5&frames=400&touch=1
- *   test   = title | modes | stats | options | garage | help | practice | trials | play | trial | endless | paused | gameover
+ *   test   = title | modes | stats | options | garage | help | practice | trials | play | trial | endless | battle | paused | gameover
  *            (trial: a Time Trial of `stage`, 9 for All Nine)
  *   stage  = stage index for play (0-8), frames = steps to simulate with the gas held
  *   seed   = for endless: a number, so the same course comes up every time
@@ -453,6 +492,10 @@ function applyTestParams() {
     let s = Number(q.get('seed')) || 1;
     game.random = () => (s = (s * 16807) % 2147483647) / 2147483647;
     game.startEndless();
+  } else if (test === 'battle') {
+    let s = Number(q.get('seed')) || 1;
+    game.random = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    game.startBattle();
   } else if (test === 'trial') {
     game.startTrial(Number(q.get('stage')) || 0);
   } else if (test === 'custom') {
