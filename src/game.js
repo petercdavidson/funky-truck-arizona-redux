@@ -12,6 +12,7 @@ import { validStats, emptyStats, countTrick, countChain } from './stats.js';
 import { Battle } from './battle.js';
 import { validSandbox, applySandbox, stepTraffic, SANDBOX_ROW } from './sandbox.js';
 import { validStage, validStages, addStage } from './stages.js';
+import { formTable } from './tile-forms.js';
 
 export const TILE = 64;          // s4c2
 export const STAGE_W = 576;      // Z7552
@@ -1005,7 +1006,17 @@ export class Game {
   }
 
   makeWorld(radius = this.truck.wheelRadius) {
-    return new CollisionWorld(this.levelData, this.data.collision, radius, { ceiling: this.rules.classic });
+    return new CollisionWorld(this.levelData, this.tileTable, radius, { ceiling: this.rules.classic });
+  }
+
+  /**
+   * The collision lines of each tile id the level uses. A custom stage may use tiles turned or
+   * flipped (walls, ceilings, overhangs: src/tile-forms.js); every other level is the table as is.
+   */
+  get tileTable() {
+    if (this.mode !== 'custom') return this.data.collision;
+    if (this.formsFor !== this.levelData) { this.formsFor = this.levelData; this.forms = formTable(this.data.collision, this.levelData); }
+    return this.forms;
   }
 
   startStage() { // u8a62

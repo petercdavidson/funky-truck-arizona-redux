@@ -14,34 +14,8 @@
 
 const SKY = 0, DIRT = 1;
 
-/**
- * Tiles that are each other's left-right mirror image (in what they do: the art differs a little on
- * purpose). Found from the collision lines (each pair's lines mirror within a pixel or two; tested)
- * and from the tile sheet, which lays mirrored tiles out in mirrored rows. 41 to 55 (the kickers)
- * have none. Tiles not listed (sky, plain dirt, the flat piece 2) are their own mirror.
- */
-export const MIRROR_PAIRS = [
-  [4, 24], [5, 25], [6, 26], [10, 20], [11, 21], [12, 22], [13, 23], [14, 34], [15, 35], [16, 36],
-  [60, 63], [61, 62], [64, 67], [65, 66], [70, 73], [71, 72], [74, 77], [75, 76],
-  [80, 83], [81, 82], [84, 87], [85, 86], [90, 93], [91, 92], [94, 97], [95, 96],
-  [100, 103], [101, 102], [104, 107], [105, 106],
-  [110, 117], [111, 116], [112, 115], [113, 114], [120, 127], [121, 126], [122, 125], [123, 124],
-  [130, 135], [131, 134], [132, 133], [140, 145], [141, 144], [142, 143],
-  [150, 153], [151, 152], [154, 155], [160, 163], [161, 162], [164, 165],
-  [170, 183], [171, 182], [172, 181], [173, 180], [174, 186], [175, 185], [176, 184], [177, 188], [178, 187], [179, 189],
-  [190, 213], [191, 212], [192, 211], [193, 210], [194, 216], [195, 215], [196, 214], [197, 218], [198, 217], [199, 219],
-  [200, 223], [201, 222], [202, 221], [203, 220], [204, 226], [205, 225], [206, 224], [207, 228], [208, 227], [209, 229],
-];
-/** Tiles with no mirror: flipping leaves them as they are. */
-export const NO_MIRROR = new Set([41, 43, 45, 50, 51, 52, 53, 54, 55]);
-const mirrors = new Map(MIRROR_PAIRS.flatMap(([a, b]) => [[a, b], [b, a]]));
-/** A tile's left-right mirror (itself when it has none, or is symmetric). */
-export const mirrorOf = (id) => mirrors.get(id) ?? id;
-
-/** Tiles (rows of ids) flipped left to right, each tile swapped for its mirror. */
-export function flipTiles(rows) {
-  return rows.map((r) => r.slice().reverse().map(mirrorOf));
-}
+// The tiles' mirrors (and their turned and flipped forms) are in tile-forms.js.
+export { MIRROR_PAIRS, NO_MIRROR, mirrorOf, flipTiles } from './tile-forms.js';
 
 /**
  * Learn the pieces and the fill from the stages.
@@ -343,8 +317,8 @@ export function drawPath(level, sketch, kit, opts = {}) {
   if (!done) return null;
   const chain = [];
   for (let key = done.key; key && from.get(key)?.cell; key = from.get(key).prev) chain.unshift(from.get(key).cell);
-  const tiles = buildTiles(level, chain, x0, x1, kit);
-  if (seam && opts.look !== false) polish(tiles, chain, x0, x1, kit);
+  const { tiles, tops } = buildTiles(level, chain, x0, x1, kit);
+  if (seam && opts.look !== false) polish(tiles, chain, x0, x1, kit, tops);
   return { chain, x0, x1, tiles };
 }
 
@@ -367,17 +341,27 @@ function buildTiles(level, chain, x0, x1, kit) {
     }
   }
   const onChain = new Map(chain.map((c) => [`${c.x},${c.y}`, c.id]));
-  for (let x = x0; x < x1; x++) for (let y = 0; y < H; y++) {
-    const id = onChain.get(`${x},${y}`);
-    if (id !== undefined) { tiles[y][x] = id; continue; }
+  // Each column: the chain, ground below it, and sky above it, as far up as the old ground went
+  // (up to its first sky). Anything above that gap (an overhang, a ceiling) is left as it was.
+  // tops[x - x0] is the column's first rebuilt row.
+  const tops = new Int32Array(x1 - x0);
+  for (let x = x0; x < x1; x++) {
     const s = surf[(x - x0) * T + T / 2];
-    tiles[y][x] = y * T + T / 2 > s ? DIRT : SKY;
+    let top = H;
+    for (let y = 0; y < H; y++) if (onChain.has(`${x},${y}`) || y * T + T / 2 > s) { top = y; break; }
+    for (let y = top; y < H; y++) {
+      const id = onChain.get(`${x},${y}`);
+      tiles[y][x] = id !== undefined ? id : y * T + T / 2 > s ? DIRT : SKY;
+    }
+    let y = top - 1;
+    for (; y >= 0 && level.tiles[y][x] !== SKY; y--) tiles[y][x] = SKY;
+    tops[x - x0] = y + 1;
   }
   // the fill: the stages' tile for what's above, left and right, top down
   const at = (x, y) => (y < 0 ? SKY : y >= H || x < 0 || x >= W ? DIRT : tiles[y][x]);
   for (let pass = 0; pass < 2; pass++) {
     for (let y = 0; y < H; y++) for (let x = x0; x < x1; x++) {
-      if (tiles[y][x] === SKY || isPiece.has(tiles[y][x])) continue;
+      if (y < tops[x - x0] || tiles[y][x] === SKY || isPiece.has(tiles[y][x])) continue;
       let pick = DIRT;
       for (const key of fillKeysFor(at(x, y - 1), at(x - 1, y), at(x + 1, y), isPiece)) {
         const f = fillPick.get(key);
@@ -386,7 +370,7 @@ function buildTiles(level, chain, x0, x1, kit) {
       tiles[y][x] = pick;
     }
   }
-  return tiles;
+  return { tiles, tops };
 }
 
 function fillKeysFor(up, left, right, isPiece) { return fillKeys(up, left, right, isPiece); }
@@ -398,7 +382,7 @@ function fillKeysFor(up, left, right, isPiece) { return fillKeys(up, left, right
  * tiles either side held, a few times over. Only tiles near the surface change; the rest stay
  * dirt. Changes `tiles` in place.
  */
-function polish(tiles, chain, x0, x1, kit, rounds = 3) {
+function polish(tiles, chain, x0, x1, kit, tops, rounds = 3) {
   const { seam, isPiece, variants, fills } = kit;
   const H = tiles.length, W = tiles[0].length;
   const PRIOR = 0.04;        // choosing other than the stages' usual tile there
@@ -412,7 +396,7 @@ function polish(tiles, chain, x0, x1, kit, rounds = 3) {
     }
     return false;
   };
-  for (let x = x0; x < x1; x++) for (let y = 0; y < H; y++) {
+  for (let x = x0; x < x1; x++) for (let y = tops[x - x0]; y < H; y++) {
     const id = tiles[y][x];
     if (id === SKY) continue;
     if (onChain.has(y * W + x)) { const v = variants.get(id); if (v && v.length > 1) cand.set(y * W + x, v); }

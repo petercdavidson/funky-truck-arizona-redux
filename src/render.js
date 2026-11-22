@@ -4,7 +4,7 @@
 // the canvas. Tiles are drawn in device pixels with snapped edges so they never show seams.
 
 import { TILE, STAGE_W, STAGE_H, STEP_HZ, RESET_WAIT, STAGES_PER_PAGE } from './game.js';
-import { HUD_FONT, TITLE_FONT, BODY_PAINTS } from './assets.js';
+import { HUD_FONT, TITLE_FONT, BODY_PAINTS, tileImage } from './assets.js';
 import { TRICK } from './tricks.js';
 import { VERSION, BUILD } from './version.js';
 import { Wreck } from './wreck.js';
@@ -763,7 +763,7 @@ export class Renderer {
         const id = gy >= fillFrom ? FILL_TILE : gy < level.height ? level.tiles[gy][gx] : 0;
         if (id === 0) continue; // tile 0 is empty sky
         const y0 = edgeY(gy), y1 = edgeY(gy + 1);
-        ctx.drawImage(this.a.tiles[id], x0, y0, x1 - x0, y1 - y0);
+        ctx.drawImage(this.a.tiles[id] || tileImage(this.a, id), x0, y0, x1 - x0, y1 - y0);
       }
     }
     ctx.restore();
@@ -1248,7 +1248,7 @@ export class Renderer {
    * ground), the circles trucks hit each other with, and a wreck's pieces.
    */
   hitboxes(game, v) {
-    const ctx = this.ctx, L = game.levelData, table = game.data.collision, z = game.zoom;
+    const ctx = this.ctx, L = game.levelData, table = game.tileTable, z = game.zoom;
     ctx.save();
     ctx.lineWidth = 2 * z; ctx.lineCap = 'round';
     const x0 = Math.max(0, Math.floor(v.camX / TILE)), x1 = Math.min(L.width - 1, Math.floor((v.camX + this.viewW * z) / TILE));

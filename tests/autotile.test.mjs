@@ -193,6 +193,22 @@ test('mirrored tiles have mirrored collision, and flipping twice changes nothing
   // every piece of ground but the kickers has a mirror (2 is its own)
   for (const p of kit.pieces) if (!NO_MIRROR.has(p.id) && p.id !== 2) assert.ok(seen.has(p.id), `piece ${p.id} has a mirror`);
   const rows = [[0, 4, 14, 97], [45, 1, 110, 2]];
-  assert.deepEqual(flipTiles(rows), [[94, 34, 24, 0], [2, 117, 1, 45]]);
+  assert.deepEqual(flipTiles(rows), [[94, 34, 24, 0], [2, 117, 1, 45 + 256 * 6]]);   // a kicker: its own art, mirrored
   assert.deepEqual(flipTiles(flipTiles(rows)), rows);
+});
+
+test('a path leaves an overhang above a gap of sky alone, and clears old ground just above it', () => {
+  const level = blank(30, 16, 9);
+  // a ledge (ground on top, a ceiling under it) at rows 3 and 4, over columns 8 to 14
+  for (let x = 8; x <= 14; x++) { level.tiles[3][x] = 2; level.tiles[4][x] = 2 + 256 * 2; }
+  // the sketch dips two rows below the flat ground under the ledge
+  const line = [];
+  for (let x = 4 * TILE; x <= 24 * TILE; x += 8) line.push([x, 9 * TILE + 32 + (x > 8 * TILE && x < 18 * TILE ? 2 * TILE : 0)]);
+  const r = drawPath(level, line, artKit, { smooth: 2 });
+  assert.ok(r);
+  for (let x = 8; x <= 14; x++) {
+    assert.equal(r.tiles[3][x], 2, `ledge top at ${x}`);
+    assert.equal(r.tiles[4][x], 2 + 256 * 2, `ledge underside at ${x}`);
+    assert.equal(r.tiles[9][x], 0, `the old ground above the dip is cleared at ${x}`);
+  }
 });

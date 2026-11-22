@@ -12,19 +12,24 @@
 // Stages the editor saves into the game are kept in localStorage as `funkytruck.stages`: a list
 // of stages, each with `saved` (a time in ms). Stages loaded from a file are added to that list.
 
+import { isTileId } from './tile-forms.js';
+
 const TILE = 64;
 export const MAX_STAGES = 40;          // the most kept in the game's storage
 export const MAX_TILES = 4e6;          // width x height
 const MAX_NAME = 40;
 
-/** A stage, checked: a clean copy, or null if it isn't one. `tileCount` is how many tile ids there are. */
+/**
+ * A stage, checked: a clean copy, or null if it isn't one. `tileCount` is how many tiles the sheet
+ * has; a tile may also be one of those turned or flipped (src/tile-forms.js).
+ */
 export function validStage(v, tileCount) {
   if (!v || typeof v !== 'object') return null;
   const { tiles, start } = v;
   if (!Array.isArray(tiles) || !tiles.length || !Array.isArray(tiles[0])) return null;
   const h = tiles.length, w = tiles[0].length;
   if (!w || w * h > MAX_TILES) return null;
-  if (!tiles.every((row) => Array.isArray(row) && row.length === w && row.every((id) => Number.isInteger(id) && id >= 0 && id < tileCount))) return null;
+  if (!tiles.every((row) => Array.isArray(row) && row.length === w && row.every((id) => isTileId(id, tileCount)))) return null;
   const s = Array.isArray(start) && start.length === 2 && start.every(Number.isFinite)
     ? [Math.min(Math.max(start[0], TILE / 2), w * TILE - TILE / 2), Math.min(Math.max(start[1], 0), h * TILE)]
     : [3 * TILE, 3 * TILE];

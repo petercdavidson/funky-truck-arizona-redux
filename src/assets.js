@@ -1,6 +1,7 @@
 // assets.js — loads images and level data, and prepares tiles.
 
 import { TILE, unpackLevel } from './game.js';
+import { baseOf, formOf, formMatrix } from './tile-forms.js';
 
 const IMAGE_FILES = [
   'bg.jpg', 'tiles_rgb.jpg', 'tiles_alpha.png',
@@ -35,6 +36,19 @@ function tint(img, mul) {
     d.data[i] *= mul; d.data[i + 1] *= mul; d.data[i + 2] *= mul;
   }
   ctx.putImageData(d, 0, 0);
+  return c;
+}
+
+/**
+ * Tile `id`'s image: a sheet tile turned or flipped (src/tile-forms.js), made the first time it's
+ * needed and kept in `a.tiles`.
+ */
+export function tileImage(a, id) {
+  if (a.tiles[id]) return a.tiles[id];
+  const c = makeCanvas(TILE, TILE), g = c.getContext('2d'), [p, q, r, s] = formMatrix(formOf(id));
+  g.setTransform(p, r, q, s, TILE / 2, TILE / 2);
+  g.drawImage(a.tiles[baseOf(id)], -TILE / 2, -TILE / 2);
+  a.tiles[id] = c;
   return c;
 }
 

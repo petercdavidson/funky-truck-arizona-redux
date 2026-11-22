@@ -13,8 +13,15 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
   canvases), the nine stages (`a.levels.levels`), the stunt tracks (`a.levels.stunts`) and the
   collision table (`a.levels.collision[id]`: line segments `x1, y1, x2, y2, type` per tile).
 - `../src/game.js`: only the constants `TILE` (64 px), `STAGE_NAMES`, `METRES_PER_TILE` (2.5).
-- `../src/autotile.js`: the Path tool (`buildKit`, `drawPath`), and the tile mirrors (`mirrorOf`,
-  `flipTiles`, `NO_MIRROR`), tested in `tests/autotile.test.mjs`.
+- `../src/autotile.js`: the Path tool (`buildKit`, `drawPath`), tested in `tests/autotile.test.mjs`.
+  A path rebuilds its columns from its curve down, and clears the old ground above the curve only
+  up to the first sky, so an overhang above a gap is left alone.
+- `../src/tile-forms.js`: tiles turned and flipped (walls, ceilings, overhangs) and the mirrors:
+  ids `base + 256 * form`, `mirrorId` / `flipUpId` / `turnId` for one tile, `flipTiles` /
+  `flipTilesUp` / `turnTiles` for an area, `formCollision`, `tileLabel` (e.g. `2→`, `24↓`). The
+  editor only makes turned tiles (upside down is the mirror tile turned half round); only the
+  kickers (41 to 55, no mirror tile) get flipped art. Tested in `tests/tile-forms.test.mjs`.
+- `../src/assets.js`: `tileImage(a, id)` draws a turned tile (and keeps it in `a.tiles`).
 - `../src/tile-art.js`: each tile's edge pixels (made by `tools/make-tile-art.mjs`), passed to
   `buildKit` so the Path tool picks tiles whose art joins up.
 
@@ -29,6 +36,16 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
 - Zoom: pinch (Ctrl+wheel in Chrome/Firefox, `gesture*` events in Safari), Ctrl/⌘+scroll,
   `+`/`-`/`0`, zooming at the pointer. `#mini` along the bottom is the whole level.
 - Tools (`tool`): `paint`, `select`, `path`, `start`, `finish`; each has a panel (`.tp`).
+- Tiles: `sel` is the chosen tile id (any form). The palette shows the sheet in `palForm`
+  (upright, upside down, turned either way); H / V / R change the chosen tile or the selection.
+  `img(id)` and `lines(id)` give any tile's image and collision lines.
+- Paths: `L.paths = [{ pts }]`, `L.ap` the one being edited (-1 none), `L.pathBase` the tiles from
+  before it (null: taken when it's next edited; any other edit sets it null). Points have handles
+  (`ix, iy, ox, oy`) unless `auto`; `broken` points (Alt-dragged handles) move their handles
+  separately until Alt-clicked. Moving, clearing or flipping tiles a path made runs `cutPaths(box)`,
+  which cuts the curve where it runs over the area (exactly, with de Casteljau) into separate
+  paths, so editing one doesn't bring those tiles back. Saved as `paths` (lists of points); older
+  files' single `path` still opens.
 - Select: `box` is the selected area. Moving, Alt-drag copying, nudging and pasting make a
   floating area, `flt = { tiles, x, y, base }`: the level's tiles are `base` with `flt.tiles`
   stamped on, so it can be moved again without wiping what it passed over; `dropFloat()` lets go
@@ -46,7 +63,10 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
 - `start`: where the truck drops in, in px (a tile is 64 px). `finish`: the x (px) of the finish
   line, optional; the stage is complete when the truck gets past it. With none, the stage goes on
   until the player quits (like a stunt track).
-- `path`: the Path tool's curve points. Only the editor reads it; the game ignores it.
+- `tiles` may hold turned tiles (`src/tile-forms.js`: `base + 256 * form`); the game reads and
+  plays them (custom stages only).
+- `paths`: the Path tool's curves (lists of points; older files have one `path`). Only the editor
+  reads them; the game ignores them.
 - The game checks every stage it reads (`validStage` in `src/stages.js`); a stage it can't read is
   left out, never an error.
 

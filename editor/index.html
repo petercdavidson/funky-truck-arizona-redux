@@ -88,6 +88,8 @@
     .cur .big { font-size: 15px; font-weight: 600; }
     .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
     .grid2 .btn { justify-content: flex-start; }
+    #palForms { text-transform: none; letter-spacing: 0; font-size: 12px; }
+    #palForms label { height: 24px; padding: 0 8px; }
     #palette { display: grid; grid-template-columns: repeat(10, 1fr); gap: 1px; background: #4c5a44; border-radius: 4px; overflow: hidden; }
     #palette canvas { width: 100%; aspect-ratio: 1; cursor: pointer; display: block; background: #8fae7a; }
     #palette canvas.sel { outline: 3px solid var(--sel); outline-offset: -3px; }
@@ -188,9 +190,12 @@
           </div>
         </div>
         <div class="row">
-          <button class="btn" id="flipTile" title="Swap to its mirror image (H)"><svg viewBox="0 0 20 20"><path d="M10 2v16" stroke-dasharray="2 2"/><path d="M7 5 2 10l5 5zM13 5l5 5-5 5z"/></svg>Flip <kbd>H</kbd></button>
-          <label class="check" title="Painting a tile fills the column below it with solid dirt"><input id="fill" type="checkbox" checked> fill dirt below</label>
+          <button class="btn" id="flipTile" title="Mirror it left to right (H)"><svg viewBox="0 0 20 20"><path d="M10 2v16" stroke-dasharray="2 2"/><path d="M7 5 2 10l5 5zM13 5l5 5-5 5z"/></svg>↔ <kbd>H</kbd></button>
+          <button class="btn" id="flipUpTile" title="Turn it upside down: ceilings and overhangs (V)"><svg viewBox="0 0 20 20"><path d="M2 10h16" stroke-dasharray="2 2"/><path d="M5 7 10 2l5 5zM5 13l5 5 5-5z"/></svg>↕ <kbd>V</kbd></button>
+          <button class="btn" id="turnTile" title="Turn it a quarter clockwise: walls (R; Shift+R the other way)"><svg viewBox="0 0 20 20"><path d="M16 10a6 6 0 1 1-2-4.5"/><path d="M15 2v4h-4"/></svg>Turn <kbd>R</kbd></button>
+          <button class="btn icon" id="plainTile" title="Back to the tile as it is in the sheet">⟲</button>
         </div>
+        <div class="row"><label class="check" title="Painting a tile fills the column below it with solid dirt"><input id="fill" type="checkbox" checked> fill dirt below</label></div>
         <div class="hint"><p>Drag paints · right-drag erases to sky</p><p><kbd>Alt</kbd>-click picks up a tile · <kbd>Shift</kbd>-click moves the start</p></div>
       </div>
       <div class="tp" data-tp="select">
@@ -199,17 +204,22 @@
           <button class="btn" id="selCut">Cut <kbd>⌘X</kbd></button>
           <button class="btn" id="selPaste">Paste <kbd>⌘V</kbd></button>
           <button class="btn" id="selFlip">Flip ↔ <kbd>H</kbd></button>
+          <button class="btn" id="selFlipUp" title="Turn it upside down: an overhang or a ceiling from ground">Flip ↕ <kbd>V</kbd></button>
+          <button class="btn" id="selTurn" title="Turn it a quarter clockwise (Shift+R the other way)">Turn ↻ <kbd>R</kbd></button>
           <button class="btn" id="selDel">Clear <kbd>Del</kbd></button>
           <button class="btn" id="selAll">Select all <kbd>⌘A</kbd></button>
         </div>
         <div class="hint"><p>Drag a box. Drag inside it to <b>move</b> it; <kbd>Alt</kbd>-drag to move a <b>copy</b>. Arrow keys nudge it a tile.</p>
-          <p>A moved or pasted area floats over the stage until you click outside it, press <kbd>Enter</kbd> or switch tools, so you can keep moving it without wiping what's underneath.</p></div>
+          <p>A moved or pasted area floats over the stage until you click outside it, press <kbd>Enter</kbd> or switch tools, so you can keep moving it without wiping what's underneath.</p>
+          <p>Moving, clearing or flipping ground a path made breaks the path there, so editing the path doesn't bring the tiles back.</p></div>
       </div>
       <div class="tp" data-tp="path">
-        <div class="row"><button class="btn" id="pathNew" title="Keep the tiles as they are and start another curve">New path</button>
-          <button class="btn" id="pathDel" title="Remove the selected point (Del)">Remove point</button></div>
-        <div class="hint"><p>Click to add points; the tiles follow the curve, joining the ground either side, with fill chosen so the dirt's edge carries on from tile to tile.</p>
-          <p>Drag a point or a handle to reshape (<kbd>Alt</kbd>-drag a handle for a corner). Right-click a point to remove it, double-click to smooth it.</p></div>
+        <div class="row"><button class="btn" id="pathNew" title="Keep this path and its tiles, and start another curve (Esc)">New path</button>
+          <button class="btn" id="pathDel" title="Remove the selected point (Del)">Remove point</button>
+          <button class="btn" id="pathForget" title="Forget this path's curve; its tiles stay">Forget path</button></div>
+        <div class="hint"><p>Click to add points; the tiles follow the curve, joining the ground either side, with fill chosen so the dirt's edge carries on from tile to tile. Where a click would add a point, a <b>+</b> shows.</p>
+          <p>Drag a point or a handle to reshape. <kbd>Alt</kbd>-drag a handle to make a corner: its handles then move on their own (the point shows as a diamond) until you <kbd>Alt</kbd>-click the point to line them up again. Double-click a point to make it smooth, right-click to remove it.</p>
+          <p>Click another path's point to edit that path. Its tiles only change in the columns it covers, and ground above a gap of sky (an overhang) is left alone.</p></div>
       </div>
       <div class="tp" data-tp="start">
         <div class="hint"><p>Click (or drag) where the truck drops in.</p><p id="startInfo"></p></div>
@@ -221,7 +231,13 @@
     </section>
 
     <section class="card">
-      <h2>Tiles <span class="grow"></span><span style="text-transform:none;letter-spacing:0;font-weight:400" id="palHint">as in the tile sheet</span></h2>
+      <h2>Tiles <span class="grow"></span>
+        <span class="toggles" id="palForms" title="Show the sheet turned: pick a tile to paint it that way round">
+          <label title="As in the sheet"><input type="radio" name="palForm" value="0" checked>Upright</label>
+          <label title="Upside down: ceilings, overhangs"><input type="radio" name="palForm" value="4">↕</label>
+          <label title="Turned a quarter clockwise: walls"><input type="radio" name="palForm" value="1">↻</label>
+          <label title="Turned a quarter anticlockwise: walls"><input type="radio" name="palForm" value="3">↺</label>
+        </span></h2>
       <div id="palette"></div>
       <div class="legend" id="legend" hidden><span><b style="color:#ffe14d">12</b> ground</span><span><b style="color:#5ee8ff">12</b> fill</span><span><b style="color:#bbb">1</b> plain dirt</span><span>dashed: the mirror</span></div>
     </section>
@@ -249,7 +265,9 @@
       <div id="scroller"><div id="spacer"></div></div>
       <div class="floating" id="selBox">
         <span class="info" id="selInfo"></span>
-        <button class="btn" id="fbFlip" title="Flip left to right (H)">Flip ↔</button>
+        <button class="btn" id="fbFlip" title="Flip left to right (H)">↔</button>
+        <button class="btn" id="fbFlipUp" title="Flip upside down (V)">↕</button>
+        <button class="btn" id="fbTurn" title="Turn a quarter clockwise (R)">↻</button>
         <button class="btn" id="fbCopy" title="Copy (Ctrl+C)">Copy</button>
         <button class="btn" id="fbDel" title="Clear to sky (Del)">Clear</button>
         <button class="btn" id="fbDone" title="Drop it here (Enter)">Done</button>
@@ -270,9 +288,9 @@
     <h3>Stage Editor: keyboard and mouse</h3>
     <h4>Tools</h4>
     <table>
-      <tr><td><kbd>B</kbd> Paint</td><td>Drag paints the chosen tile, right-drag erases. <kbd>Alt</kbd>-click picks up a tile; <kbd>H</kbd> swaps the chosen tile for its mirror.</td></tr>
-      <tr><td><kbd>S</kbd> Select</td><td>Drag a box; drag inside to move it, <kbd>Alt</kbd>-drag to copy. <kbd>H</kbd> flips it, arrows nudge it, <kbd>Del</kbd> clears it, <kbd>Enter</kbd> drops it, <kbd>Esc</kbd> lets go.</td></tr>
-      <tr><td><kbd>D</kbd> Path</td><td>Click to add points to a curve; the tiles follow it. Drag points and handles; right-click removes a point.</td></tr>
+      <tr><td><kbd>B</kbd> Paint</td><td>Drag paints the chosen tile, right-drag erases. <kbd>Alt</kbd>-click picks up a tile. <kbd>H</kbd> mirrors the chosen tile, <kbd>V</kbd> turns it upside down, <kbd>R</kbd> turns it a quarter (<kbd>Shift+R</kbd> the other way).</td></tr>
+      <tr><td><kbd>S</kbd> Select</td><td>Drag a box; drag inside to move it, <kbd>Alt</kbd>-drag to copy. <kbd>H</kbd> flips it left to right, <kbd>V</kbd> upside down, <kbd>R</kbd> turns it; arrows nudge it, <kbd>Del</kbd> clears it, <kbd>Enter</kbd> drops it, <kbd>Esc</kbd> lets go.</td></tr>
+      <tr><td><kbd>D</kbd> Path</td><td>Click to add points to a curve; the tiles follow it. Drag points and handles; <kbd>Alt</kbd>-drag a handle for a corner, <kbd>Alt</kbd>-click the point to line its handles up again. Right-click removes a point; <kbd>Esc</kbd> starts a new path.</td></tr>
       <tr><td><kbd>T</kbd> Start</td><td>Click where the truck drops in (or <kbd>Shift</kbd>-click while painting).</td></tr>
       <tr><td><kbd>F</kbd> Finish</td><td>Click where the finish line goes.</td></tr>
     </table>
@@ -290,9 +308,10 @@
   </dialog>
 
   <script type="module">
-    import { loadAssets } from '../src/assets.js';
+    import { loadAssets, tileImage } from '../src/assets.js';
     import { TILE, STAGE_NAMES, METRES_PER_TILE } from '../src/game.js';
-    import { buildKit, drawPath, mirrorOf, flipTiles, NO_MIRROR } from '../src/autotile.js';
+    import { buildKit, drawPath } from '../src/autotile.js';
+    import { NO_MIRROR, mirrorOf, baseOf, formOf, makeId, isTileId, mirrorId, flipUpId, turnId, flipTiles, flipTilesUp, turnTiles, formCollision, tileLabel } from '../src/tile-forms.js';
     import { TILE_EDGES } from '../src/tile-art.js';
 
     const $ = (id) => document.getElementById(id);
@@ -303,6 +322,10 @@
     const KEY = 'funkytruck.editorLevel', VIEW_KEY = 'funkytruck.editorView';
     const kit = buildKit(collision, stages, TILE, { edges: TILE_EDGES });   // the Path tool's pieces, fill and look
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    // tiles turned and flipped (src/tile-forms.js): their images and collision lines, made when needed
+    const img = (id) => a.tiles[id] || tileImage(a, id);
+    const formLines = new Map();
+    const lines = (id) => (id < 256 ? collision[id] : formLines.get(id) || formLines.set(id, formCollision(collision[baseOf(id)], formOf(id))).get(id)) || [];
     const say = (text) => { $('msg').textContent = text; };
 
     // ---- which tiles sit next to which in the nine stages (to see how pieces fit together)
@@ -327,13 +350,13 @@
     });
 
     // ---- the level being edited
-    let L = null;          // { name, width, height, tiles, start, finish? (px), guide? }
+    let L = null;          // { name, width, height, tiles, start, finish? (px), paths, ap, pathBase }
     const undo = [], redo = [];
     const snapshot = () => JSON.stringify(L);
     // An edit that isn't to the path makes the tiles as they are now the path's new starting point.
     function remember(pathEdit = false) {
       undo.push(snapshot()); if (undo.length > 200) undo.shift(); redo.length = 0;
-      if (!pathEdit && L.guide) L.guide.base = null;
+      if (!pathEdit) L.pathBase = null;
     }
     function restore(s) {
       L = JSON.parse(s); flt = null; box = null;
@@ -344,10 +367,10 @@
     function blank(w, h) {
       const tiles = Array.from({ length: h }, (_, y) => Array(w).fill(y >= h - 6 ? DIRT : SKY));
       for (let x = 0; x < w; x++) tiles[h - 7][x] = 2;   // a strip of flat ground to start on
-      return { name: $('name').value || 'My Track', width: w, height: h, tiles, start: [3 * TILE, (h - 10) * TILE] };
+      return { name: $('name').value || 'My Track', width: w, height: h, tiles, start: [3 * TILE, (h - 10) * TILE], paths: [], ap: -1, pathBase: null };
     }
     function fromLevel(l, name) {
-      return { name, width: l.width, height: l.height, tiles: l.tiles.map((r) => r.slice()), start: l.start.slice() };
+      return { name, width: l.width, height: l.height, tiles: l.tiles.map((r) => r.slice()), start: l.start.slice(), paths: [], ap: -1, pathBase: null };
     }
     const sizeInputs = () => [clamp(Math.round(+$('w').value) || 60, 10, 2000), clamp(Math.round(+$('h').value) || 24, 8, 400)];
 
@@ -384,7 +407,7 @@
       const W = L.width, H = L.height;
       L.tiles = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => L.tiles[clamp(y - dy, 0, H - 1)][clamp(x - dx, 0, W - 1)]));
       L.start = [clamp(L.start[0] + dx * TILE, TILE / 2, W * TILE - TILE / 2), clamp(L.start[1] + dy * TILE, TILE / 2, H * TILE - TILE / 2)];
-      if (L.guide) for (const p of L.guide.pts) { p.x += dx * TILE; p.y += dy * TILE; }
+      for (const g of L.paths) for (const p of g.pts) { p.x += dx * TILE; p.y += dy * TILE; }
       if (Number.isFinite(L.finish)) L.finish = clamp(L.finish + dx * TILE, TILE, W * TILE - TILE);
       box = null;
       drawAll(); save();
@@ -399,51 +422,69 @@
 
     // ---- palette
     let sel = 2;
-    const numColour = (id) => (kit.isPiece.has(id) ? '#ffe14d' : id === DIRT ? 'rgba(200,200,200,0.75)' : '#5ee8ff');
+    const numColour = (id) => (kit.isPiece.has(baseOf(id)) ? '#ffe14d' : id === DIRT ? 'rgba(200,200,200,0.75)' : '#5ee8ff');
     function thumb(id, px, c = document.createElement('canvas'), numbered = false) {
       c.width = c.height = px * 2;   // sharp on high-density screens
       const g = c.getContext('2d');
       g.clearRect(0, 0, px * 2, px * 2);
       if (id === SKY) { g.fillStyle = '#9cbad1'; g.fillRect(0, 0, px * 2, px * 2); g.fillStyle = '#234'; g.font = `${px * 0.6}px sans-serif`; g.textAlign = 'center'; g.fillText('sky', px, px * 1.2); }
-      else g.drawImage(a.tiles[id], 0, 0, px * 2, px * 2);
+      else g.drawImage(img(id), 0, 0, px * 2, px * 2);
       if (numbered && id !== SKY) {
         g.font = `bold ${Math.round(px * 0.75)}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
         g.lineWidth = 4; g.lineJoin = 'round'; g.strokeStyle = 'rgba(0,0,0,0.85)'; g.fillStyle = numColour(id);
-        g.strokeText(id, px, px); g.fillText(id, px, px);
+        const t = tileLabel(id);
+        g.font = `bold ${Math.round(px * (t.length > 3 ? 0.6 : 0.75))}px system-ui, sans-serif`;
+        g.strokeText(t, px, px); g.fillText(t, px, px);
       }
-      c.title = `tile ${id}${id > DIRT && !used.has(id) ? ' (not used in the stages)' : ''}`;
+      c.title = `tile ${tileLabel(id)}${baseOf(id) > DIRT && !used.has(baseOf(id)) ? ' (not used in the stages)' : ''}`;
       return c;
     }
+    // the palette: the sheet's tiles, shown (and picked) the way round chosen above it
+    let palForm = 0;
     const palCells = [];
     for (let id = 0; id < NT; id++) {
       const c = thumb(id, 36);
       if (!used.has(id) && id > DIRT) c.style.opacity = '0.4';
-      c.onclick = () => pick(id);
+      c.onclick = () => pick(makeId(id, palForm));
       palCells.push(c);
       $('palette').append(c);
     }
     function drawPalette() {
       const on = $('nums').checked;
-      palCells.forEach((c, id) => thumb(id, 36, c, on));
+      palCells.forEach((c, id) => thumb(makeId(id, palForm), 36, c, on));
       $('legend').hidden = !on;
     }
+    document.querySelectorAll('input[name=palForm]').forEach((r) => {
+      r.onchange = () => { palForm = +r.value; drawPalette(); markPalette(); };
+    });
+    const FORM_NAMES = ['', 'turned a quarter clockwise', 'turned half round', 'turned a quarter anticlockwise',
+      'upside down', 'upside down, turned a quarter clockwise', 'mirrored (its own art)', 'upside down, turned a quarter anticlockwise'];
     function mirrorNote(id) {
-      if (NO_MIRROR.has(id)) return 'no mirror (a kicker)';
+      if (formOf(id)) return FORM_NAMES[formOf(id)];
+      if (NO_MIRROR.has(id)) return 'mirrors its own art (a kicker)';
       const m = mirrorOf(id);
       return m === id ? 'its own mirror' : `mirror: ${m}`;
     }
+    function markPalette() {
+      // the cell that gives the chosen tile the way round the sheet is shown (else its own tile)
+      const cellOf = (id) => { const i = palCells.findIndex((_, k) => makeId(k, palForm) === id); return i >= 0 ? i : baseOf(id); };
+      const b = cellOf(sel), m = cellOf(mirrorId(sel));
+      palCells.forEach((c, i) => { c.classList.toggle('sel', i === b); c.classList.toggle('mirror', i !== b && i === m); });
+    }
     function pick(id) {
       sel = id;
-      palCells.forEach((c, i) => { c.classList.toggle('sel', i === id); c.classList.toggle('mirror', i !== id && i === mirrorOf(id)); });
+      const b = baseOf(id);
+      markPalette();
       thumb(id, 32, $('curTile'));
-      $('curName').textContent = id === SKY ? 'Sky' : `Tile ${id}`;
-      $('curInfo').textContent = `${id === SKY ? 'erases' : kit.isPiece.has(id) ? 'ground' : id === DIRT ? 'plain dirt' : 'fill'} · ${mirrorNote(id)}`;
-      $('flipTile').disabled = mirrorOf(id) === id;
-      $('nearTitle').textContent = `Next to tile ${id} in the nine stages`;
+      $('curName').textContent = id === SKY ? 'Sky' : `Tile ${tileLabel(id)}`;
+      $('curInfo').textContent = `${id === SKY ? 'erases' : kit.isPiece.has(b) ? 'ground' : id === DIRT ? 'plain dirt' : 'fill'} · ${mirrorNote(id)}`;
+      for (const k of ['flipTile', 'flipUpTile', 'turnTile']) $(k).disabled = id <= DIRT;
+      $('plainTile').disabled = !formOf(id);
+      $('nearTitle').textContent = `Next to tile ${b} in the nine stages`;
       const box = $('near');
       box.innerHTML = '';
       for (const [dir, label] of [['right', 'To its right'], ['left', 'To its left'], ['above', 'Above it'], ['below', 'Below it']]) {
-        const list = [...near[id][dir]].sort((p, q) => q[1] - p[1]).slice(0, 14);
+        const list = [...near[b][dir]].sort((p, q) => q[1] - p[1]).slice(0, 14);
         const h = document.createElement('div'); h.className = 'hint'; h.textContent = `${label}${list.length ? '' : ': never'}`;
         box.append(h);
         const row = document.createElement('div'); row.className = 'near';
@@ -459,13 +500,17 @@
       }
       drawOver();
     }
-    function flipTile() {
-      const m = mirrorOf(sel);
-      if (m === sel) { say(`Tile ${sel} has ${NO_MIRROR.has(sel) ? 'no mirror' : 'no other mirror: it is its own'}.`); return; }
-      const was = sel; pick(m);
-      say(`Tile ${was} flipped: now tile ${m}.`);
+    /** The chosen tile changed by `fn` (mirrored, upside down, turned). */
+    function changeTile(fn, what) {
+      if (sel <= DIRT) { say(`${sel === SKY ? 'Sky' : 'Plain dirt'} looks the same every way round.`); return; }
+      const was = sel; pick(fn(sel));
+      say(`Tile ${tileLabel(was)} ${what}: now ${tileLabel(sel)}.`);
     }
+    const flipTile = () => changeTile(mirrorId, 'mirrored');
     $('flipTile').onclick = flipTile;
+    $('flipUpTile').onclick = () => changeTile(flipUpId, 'turned upside down');
+    $('turnTile').onclick = () => changeTile(turnId, 'turned');
+    $('plainTile').onclick = () => pick(baseOf(sel));
 
     // ---- the view: two canvases the size of the view, drawn for wherever it's scrolled to
     const scroller = $('scroller'), spacer = $('spacer');
@@ -495,7 +540,7 @@
       tx.fillStyle = '#9cbad1';
       tx.fillRect(px, py, pw, ph);
       const id = L.tiles[y][x];
-      if (id !== SKY && a.tiles[id]) tx.drawImage(a.tiles[id], px, py, pw, ph);
+      if (id !== SKY) tx.drawImage(img(id), px, py, pw, ph);
     }
     function drawTiles() {
       tx.setTransform(1, 0, 0, 1, 0, 0);
@@ -523,7 +568,8 @@
         if (id === SKY) continue;
         const cx = (x + 0.5) * s, cy = (y + 0.5) * s;
         ox.fillStyle = numColour(id);
-        ox.strokeText(id, cx, cy); ox.fillText(id, cx, cy);
+        const t = tileLabel(id);
+        ox.strokeText(t, cx, cy); ox.fillText(t, cx, cy);
       }
       ox.textAlign = 'start'; ox.textBaseline = 'alphabetic';
     }
@@ -553,7 +599,7 @@
         // collision segments; the short tick points out of the ground (the side the truck rides on)
         ox.strokeStyle = '#ff3355'; ox.lineWidth = 2;
         for (let y = v.ya; y < v.yb; y++) for (let x = v.xa; x < v.xb; x++) {
-          const d = collision[L.tiles[y][x]] || [];
+          const d = lines(L.tiles[y][x]);
           for (let i = 0; i < d.length; i += 5) {
             const x1 = (x * TILE + d[i]) * Z, y1 = (y * TILE + d[i + 1]) * Z, x2 = (x * TILE + d[i + 2]) * Z, y2 = (y * TILE + d[i + 3]) * Z;
             ox.beginPath(); ox.moveTo(x1, y1); ox.lineTo(x2, y2);
@@ -578,7 +624,7 @@
       ox.fillStyle = '#ffd54a'; ox.strokeStyle = '#000'; ox.lineWidth = 1.5;
       ox.beginPath(); ox.arc(L.start[0] * Z, L.start[1] * Z, Math.max(6, 20 * Z), 0, Math.PI * 2); ox.fill(); ox.stroke();
       ox.fillStyle = '#000'; ox.font = 'bold 11px system-ui, sans-serif'; ox.fillText('start', L.start[0] * Z + Math.max(8, 22 * Z), L.start[1] * Z - 6);
-      if (L.guide && ($('showPath').checked || tool === 'path')) drawGuide();
+      if ($('showPath').checked || tool === 'path') drawGuide();
       if (box && tool === 'select') {
         ox.fillStyle = flt ? 'rgba(255,213,74,0.10)' : 'rgba(255,213,74,0.06)';
         ox.fillRect(box.x0 * s, box.y0 * s, (box.x1 - box.x0 + 1) * s, (box.y1 - box.y0 + 1) * s);
@@ -587,7 +633,7 @@
       if (hover) {
         if (tool === 'paint' && !dragging) {
           ox.globalAlpha = 0.55;
-          if (sel !== SKY) ox.drawImage(a.tiles[sel], hover.x * s, hover.y * s, s, s);
+          if (sel !== SKY) ox.drawImage(img(sel), hover.x * s, hover.y * s, s, s);
           ox.globalAlpha = 1;
           rect(hover.x, hover.y, hover.x, hover.y, '#fff');
         } else if (tool === 'select' && !dragging && !inBox(hover)) rect(hover.x, hover.y, hover.x, hover.y, 'rgba(255,255,255,0.6)');
@@ -609,7 +655,7 @@
         miniImg.width = L.width; miniImg.height = L.height;
         const g = miniImg.getContext('2d'), img = g.createImageData(L.width, L.height);
         for (let y = 0; y < L.height; y++) for (let x = 0; x < L.width; x++) {
-          const c = avg[L.tiles[y][x]] || avg[SKY], i = (y * L.width + x) * 4;
+          const c = avg[baseOf(L.tiles[y][x])] || avg[SKY], i = (y * L.width + x) * 4;
           img.data[i] = c[0]; img.data[i + 1] = c[1]; img.data[i + 2] = c[2]; img.data[i + 3] = 255;
         }
         g.putImageData(img, 0, 0);
@@ -704,7 +750,8 @@
     }
     function paintAt(x, y, id) {
       set(x, y, id);
-      if (id !== SKY && $('fill').checked) for (let r = y + 1; r < L.height; r++) set(x, r, DIRT);
+      // (only under tiles the right way up: a ceiling or a wall has its ground elsewhere)
+      if (id !== SKY && !formOf(id) && $('fill').checked) for (let r = y + 1; r < L.height; r++) set(x, r, DIRT);
     }
     /** The level's tiles made `next` (redrawing the cells that changed). */
     function apply(next) {
@@ -727,6 +774,7 @@
     const clipBox = (b) => ({ x0: clamp(b.x0, 0, L.width - 1), y0: clamp(b.y0, 0, L.height - 1), x1: clamp(b.x1, 0, L.width - 1), y1: clamp(b.y1, 0, L.height - 1) });
     const region = (b) => L.tiles.slice(b.y0, b.y1 + 1).map((r) => r.slice(b.x0, b.x1 + 1));
     function lift(copy) {
+      if (!copy) cutPaths(box);
       const base = L.tiles.map((r) => r.slice());
       if (!copy) for (let y = box.y0; y <= box.y1; y++) for (let x = box.x0; x <= box.x1; x++) base[y][x] = SKY;
       flt = { tiles: region(box), x: box.x0, y: box.y0, base };
@@ -745,7 +793,7 @@
     function dropFloat() {
       if (!flt) return;
       flt = null;
-      if (box) box = clipBox(box);
+      if (box) { box = clipBox(box); cutPaths(box); }
       save(); drawOver();
     }
     function selCopy(cut) {
@@ -758,7 +806,7 @@
       if (!box) return;
       remember();
       if (flt) { apply(flt.base); flt = null; }
-      else for (let y = box.y0; y <= box.y1; y++) for (let x = box.x0; x <= box.x1; x++) set(x, y, SKY);
+      else { cutPaths(box); for (let y = box.y0; y <= box.y1; y++) for (let x = box.x0; x <= box.x1; x++) set(x, y, SKY); }
       box = null; drawOver(); save();
     }
     function selPaste() {
@@ -770,16 +818,18 @@
       placeFloat(); save();
       say('Pasted: drag it into place, then click outside it or press Enter.');
     }
-    function selFlip() {
+    /** The selected area changed by `fn` (flipped, turned), each tile with it. It floats till dropped. */
+    function selTransform(fn, what) {
       if (!box) { say('Select an area first: drag a box with the Select tool (S).'); return; }
       remember();
-      const t = flt ? flt.tiles : region(box);
-      const kept = t.flat().filter((id) => NO_MIRROR.has(id)).length;
-      if (flt) { flt.tiles = flipTiles(flt.tiles); placeFloat(); }
-      else { flipTiles(t).forEach((row, dy) => row.forEach((id, dx) => set(box.x0 + dx, box.y0 + dy, id))); drawOver(); }
-      save();
-      say(`Flipped left to right${kept ? `; ${kept} kicker tile${kept === 1 ? '' : 's'} (41 to 55) have no mirror and stayed as they were` : ''}.`);
+      if (!flt) lift(false);
+      flt.tiles = fn(flt.tiles);
+      placeFloat(); save();
+      say(`${what}. Drag it into place; click outside it or press Enter to drop it.`);
     }
+    const selFlip = () => selTransform(flipTiles, 'Flipped left to right');
+    const selFlipUp = () => selTransform(flipTilesUp, 'Flipped upside down');
+    const selTurn = (cw = true) => selTransform((t) => turnTiles(t, cw), `Turned a quarter ${cw ? 'clockwise' : 'anticlockwise'}`);
     function selNudge(dx, dy) {
       if (!box) return;
       remember();
@@ -798,6 +848,8 @@
     $('selCut').onclick = () => selCopy(true);
     $('selPaste').onclick = selPaste;
     $('selFlip').onclick = $('fbFlip').onclick = selFlip;
+    $('selFlipUp').onclick = $('fbFlipUp').onclick = selFlipUp;
+    $('selTurn').onclick = $('fbTurn').onclick = () => selTurn(true);
     $('selDel').onclick = $('fbDel').onclick = selClear;
     $('selAll').onclick = selAll;
     $('fbDone').onclick = () => { dropFloat(); say('Dropped.'); };
@@ -838,6 +890,7 @@
       if (dragging?.pan) return;
       const c = cell(e);
       hover = c;
+      pathHover = tool === 'path' && !dragging ? pathHit(c) : null;
       if (dragging?.box) box = clipBox(norm(dragging.a, c));
       else if (dragging?.move) {
         const nx = dragging.fx + c.x - dragging.c0.x, ny = dragging.fy + c.y - dragging.c0.y;
@@ -851,7 +904,7 @@
       }
       const id = L.tiles[c.y]?.[c.x];
       $('where').textContent = id === undefined ? `${L.width} × ${L.height} tiles` : `column ${c.x} · row ${c.y} · ${(c.x * METRES_PER_TILE).toFixed(1)} m · tile ${id}`;
-      scroller.style.cursor = spaceDown ? 'grab' : tool === 'select' && inBox(c) ? 'move' : tool === 'path' ? 'default' : 'crosshair';
+      scroller.style.cursor = spaceDown ? 'grab' : tool === 'select' && inBox(c) ? 'move' : tool === 'path' ? (pathHover || dragging?.path ? 'pointer' : 'copy') : 'crosshair';
       drawOver();
     });
     window.addEventListener('mousemove', (e) => {
@@ -868,11 +921,11 @@
       drawOver();
     });
     scroller.addEventListener('dblclick', (e) => {
-      if (tool !== 'path' || !L.guide) return;
+      if (tool !== 'path') return;
       const h = pathHit(cell(e));
-      if (h?.part === 'pt') { remember(true); L.guide.pts[h.i].auto = true; layGuide(); save(); }
+      if (h?.part === 'pt') { remember(true); activate(h.p); Object.assign(AP().pts[h.i], { auto: true, broken: false }); layGuide(); save(); say('Smooth again.'); }
     });
-    scroller.addEventListener('mouseleave', () => { hover = null; drawOver(); });
+    scroller.addEventListener('mouseleave', () => { hover = null; pathHover = null; drawOver(); });
 
     function setStart(c) {
       L.start = [clamp(Math.round(c.px), TILE / 2, L.width * TILE - TILE / 2), clamp(Math.round(c.py), TILE / 2, L.height * TILE - TILE / 2)];
@@ -891,77 +944,104 @@
       say('No finish line: the stage goes on until you quit.');
     };
 
-    // ---- the Path tool: a curve through points (cubic Bézier), and the tiles that follow it.
-    // L.guide = { pts: [{ x, y, auto, ix, iy, ox, oy }], base }: points left to right in stage pixels,
-    // each with handles (in and out, relative to the point) unless `auto` (smooth, worked out from its
-    // neighbours); `base` is the tiles before the path went in, so the path can be reshaped freely.
-    const HIT = 9;   // screen pixels
-    function handles(i) {
-      const P = L.guide.pts, p = P[i];
+    // ---- the Path tool: curves through points (cubic Béziers), and the tiles that follow them.
+    // L.paths = [{ pts: [{ x, y, auto, ix, iy, ox, oy, broken }] }]: each path's points left to right
+    // in stage pixels, each with handles (in and out, relative to the point) unless `auto` (smooth,
+    // worked out from its neighbours). `broken`: a corner, its handles move on their own.
+    // L.ap is the path being edited (-1 none) and L.pathBase the tiles before it went in, so it can
+    // be reshaped freely (null: the tiles as they are when it's next edited).
+    const HIT = 10;   // screen pixels
+    const AP = () => (L.ap >= 0 ? L.paths[L.ap] : null);
+    function handles(P, i) {
+      const p = P[i];
       if (!p.auto) return { ix: p.ix, iy: p.iy, ox: p.ox, oy: p.oy };
       const a = P[i - 1] || p, b = P[i + 1] || p, k = P[i - 1] && P[i + 1] ? 6 : 3;
       const tx = (b.x - a.x) / k, ty = (b.y - a.y) / k;
       return { ix: -tx, iy: -ty, ox: tx, oy: ty };
     }
-    /** The curve as a list of points, a few pixels apart. */
-    function guideLine() {
-      const P = L.guide.pts, out = [];
+    /** Segment i of a path (points i and i + 1) as its four control points. */
+    function cubic(P, i) {
+      const a = P[i], b = P[i + 1], ha = handles(P, i), hb = handles(P, i + 1);
+      return [[a.x, a.y], [a.x + ha.ox, a.y + ha.oy], [b.x + hb.ix, b.y + hb.iy], [b.x, b.y]];
+    }
+    const bez = (q, t) => { const u = 1 - t; return [0, 1].map((k) => u * u * u * q[0][k] + 3 * u * u * t * q[1][k] + 3 * u * t * t * q[2][k] + t * t * t * q[3][k]); };
+    /** A path as a list of points, a few pixels apart. */
+    function guideLine(P) {
+      const out = [];
       for (let i = 0; i + 1 < P.length; i++) {
-        const a = P[i], b = P[i + 1], ha = handles(i), hb = handles(i + 1);
-        const c1 = [a.x + ha.ox, a.y + ha.oy], c2 = [b.x + hb.ix, b.y + hb.iy];
-        const n = Math.max(8, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 6));
-        for (let k = i ? 1 : 0; k <= n; k++) {
-          const t = k / n, u = 1 - t;
-          out.push([u * u * u * a.x + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t * t * t * b.x,
-            u * u * u * a.y + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t * t * t * b.y]);
-        }
+        const q = cubic(P, i), n = Math.max(8, Math.ceil(Math.hypot(q[3][0] - q[0][0], q[3][1] - q[0][1]) / 6));
+        for (let k = i ? 1 : 0; k <= n; k++) out.push(bez(q, k / n));
       }
       return out;
     }
-    /** Lay the tiles for the curve over the level as it was before the path. */
+    /** Lay the tiles for the path being edited over the level as it was before it. */
     function layGuide() {
-      const g = L.guide;
+      const g = AP();
       if (!g) return;
-      if (!g.base) g.base = L.tiles.map((r) => r.slice());
-      const r = g.pts.length > 1 ? drawPath({ ...L, tiles: g.base }, guideLine(), kit, { smooth: 2 }) : null;
-      apply(r ? r.tiles : g.base.map((row) => row.slice()));
+      if (!L.pathBase) L.pathBase = L.tiles.map((r) => r.slice());
+      const r = g.pts.length > 1 ? drawPath({ ...L, tiles: L.pathBase }, guideLine(g.pts), kit, { smooth: 2 }) : null;
+      apply(r ? r.tiles : L.pathBase.map((row) => row.slice()));
       drawOver();
       say(r ? `${g.pts.length} points · ${r.chain.length} ground pieces over columns ${r.x0} to ${r.x1 - 1}`
         : g.pts.length > 1 ? 'No ground fits that curve: keep it inside the level, running left to right.' : 'Click to add the next point.');
     }
+    /** Edit path k (its tiles are then laid over the level as it is now). */
+    function activate(k) { if (L.ap !== k) { L.ap = k; L.pathBase = null; pathSel = -1; } }
+    /** What's under the pointer: a point or handle of the path being edited, or another path's point. */
     function pathHit(c) {
-      const g = L.guide;
-      if (!g) return null;
       const close = (x, y) => Math.hypot((x - c.px) * Z, (y - c.py) * Z) <= HIT;
-      for (let i = g.pts.length - 1; i >= 0; i--) {
-        const p = g.pts[i], h = handles(i);
-        if (close(p.x, p.y)) return { i, part: 'pt' };
-        if (i > 0 && close(p.x + h.ix, p.y + h.iy)) return { i, part: 'in' };
-        if (i + 1 < g.pts.length && close(p.x + h.ox, p.y + h.oy)) return { i, part: 'out' };
+      const order = L.paths.map((_, k) => k).sort((p, q) => (q === L.ap) - (p === L.ap));
+      for (const k of order) {
+        const P = L.paths[k].pts;
+        for (let i = P.length - 1; i >= 0; i--) {
+          const p = P[i], h = handles(P, i);
+          if (close(p.x, p.y)) return { p: k, i, part: 'pt' };
+          if (k !== L.ap) continue;
+          if (i > 0 && close(p.x + h.ix, p.y + h.iy)) return { p: k, i, part: 'in' };
+          if (i + 1 < P.length && close(p.x + h.ox, p.y + h.oy)) return { p: k, i, part: 'out' };
+        }
       }
       return null;
     }
-    let pathSel = -1, pathPending = false;
+    /** A corner point's handles lined up again (each keeps its length). */
+    function lineUp(p, P, i) {
+      const h = handles(P, i);
+      let dx = h.ox - h.ix, dy = h.oy - h.iy;
+      const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+      const li = Math.hypot(h.ix, h.iy), lo = Math.hypot(h.ox, h.oy);
+      Object.assign(p, { auto: false, broken: false, ix: -dx * li, iy: -dy * li, ox: dx * lo, oy: dy * lo });
+    }
+    let pathSel = -1, pathPending = false, pathHover = null;
     function pathDown(e, c) {
       const h = pathHit(c);
       if (e.button === 2) {
-        if (h?.part === 'pt') { remember(true); L.guide.pts.splice(h.i, 1); pathSel = -1; layGuide(); save(); }
+        if (h?.part === 'pt') { remember(true); activate(h.p); removePoint(h.i); }
         return;
       }
       remember(true);
-      if (h) { pathSel = h.i; dragging = { path: true, ...h }; drawOver(); return; }
-      // a new point, in its place left to right
-      if (!L.guide) L.guide = { pts: [], base: null };
-      const P = L.guide.pts;
+      if (h) {
+        if (h.p !== L.ap) { activate(h.p); say('Editing this path.'); }
+        pathSel = h.i;
+        if (h.part === 'pt' && e.altKey) {
+          const P = AP().pts;
+          lineUp(P[h.i], P, h.i); layGuide(); save();
+          say('Its handles are lined up again: they move together.');
+        }
+        dragging = { path: true, ...h };
+        drawOver(); return;
+      }
+      // a new point, in its place left to right (on a new path if none is being edited)
+      if (!AP()) { L.paths.push({ pts: [] }); activate(L.paths.length - 1); }
+      const P = AP().pts;
       let i = P.findIndex((p) => p.x > c.px);
       if (i < 0) i = P.length;
       P.splice(i, 0, { x: c.px, y: c.py, auto: true });
       pathSel = i;
-      dragging = { path: true, i, part: 'pt' };
+      dragging = { path: true, p: L.ap, i, part: 'pt' };
       layGuide();
     }
     function pathDrag(e, c) {
-      const P = L.guide.pts, d = dragging, p = P[d.i];
+      const P = AP().pts, d = dragging, p = P[d.i];
       if (d.part === 'pt') {
         p.x = c.px; p.y = c.py;
         // keep the points in order left to right
@@ -969,11 +1049,12 @@
         while (d.i + 1 < P.length && P[d.i + 1].x < p.x) { [P[d.i + 1], P[d.i]] = [P[d.i], P[d.i + 1]]; d.i++; }
         pathSel = d.i;
       } else {
-        if (p.auto) Object.assign(p, handles(d.i), { auto: false });
+        if (p.auto) Object.assign(p, handles(P, d.i), { auto: false });
+        if (e.altKey && !p.broken) { p.broken = true; say('A corner: its handles now move on their own. Alt-click the point to line them up again.'); }
         const hx = c.px - p.x, hy = c.py - p.y;
         const [mx, my, ox2, oy2] = d.part === 'in' ? ['ix', 'iy', 'ox', 'oy'] : ['ox', 'oy', 'ix', 'iy'];
         p[mx] = hx; p[my] = hy;
-        if (!e.altKey) {
+        if (!p.broken) {
           // the other handle stays opposite (keeping its length), so the curve stays smooth here
           const len = Math.hypot(p[ox2], p[oy2]) || Math.hypot(hx, hy), l2 = Math.hypot(hx, hy) || 1;
           p[ox2] = -hx / l2 * len; p[oy2] = -hy / l2 * len;
@@ -982,40 +1063,138 @@
       if (!pathPending) { pathPending = true; requestAnimationFrame(() => { pathPending = false; layGuide(); }); }
     }
     function drawGuide() {
-      const g = L.guide, P = g.pts;
-      if (!P.length) return;
+      const editing = tool === 'path';
       ox.lineJoin = ox.lineCap = 'round';
-      if (P.length > 1) {
-        const line = guideLine();
-        for (const [w, col] of [[5, 'rgba(0,0,0,0.45)'], [2.5, '#ff3d8b']]) {
-          ox.strokeStyle = col; ox.lineWidth = w;
-          ox.beginPath(); line.forEach(([x, y], i) => (i ? ox.lineTo(x * Z, y * Z) : ox.moveTo(x * Z, y * Z))); ox.stroke();
+      L.paths.forEach((g, k) => {
+        const P = g.pts, on = k === L.ap;
+        if (P.length > 1) {
+          const line = guideLine(P);
+          for (const [w, col] of on ? [[5, 'rgba(0,0,0,0.45)'], [2.5, '#ff3d8b']] : [[4, 'rgba(0,0,0,0.3)'], [1.8, 'rgba(255,61,139,0.6)']]) {
+            ox.strokeStyle = col; ox.lineWidth = w;
+            ox.beginPath(); line.forEach(([x, y], i) => (i ? ox.lineTo(x * Z, y * Z) : ox.moveTo(x * Z, y * Z))); ox.stroke();
+          }
         }
-      }
-      if (tool !== 'path') return;
-      P.forEach((p, i) => {
-        const h = handles(i);
-        ox.strokeStyle = 'rgba(255,255,255,0.8)'; ox.lineWidth = 1;
-        for (const [hx, hy, show] of [[h.ix, h.iy, i > 0], [h.ox, h.oy, i + 1 < P.length]]) {
-          if (!show) continue;
-          ox.beginPath(); ox.moveTo(p.x * Z, p.y * Z); ox.lineTo((p.x + hx) * Z, (p.y + hy) * Z); ox.stroke();
-          ox.fillStyle = p.auto ? '#bbb' : '#fff';
-          ox.beginPath(); ox.arc((p.x + hx) * Z, (p.y + hy) * Z, 4, 0, Math.PI * 2); ox.fill(); ox.stroke();
-        }
-        ox.fillStyle = i === pathSel ? '#ff3d8b' : '#fff'; ox.strokeStyle = '#000';
-        ox.fillRect(p.x * Z - 5, p.y * Z - 5, 10, 10); ox.strokeRect(p.x * Z - 5, p.y * Z - 5, 10, 10);
+        if (!editing) return;
+        const hot = (i, part) => pathHover && !dragging && pathHover.p === k && pathHover.i === i && pathHover.part === part;
+        P.forEach((p, i) => {
+          if (on) {
+            const h = handles(P, i);
+            for (const [hx, hy, show, part] of [[h.ix, h.iy, i > 0, 'in'], [h.ox, h.oy, i + 1 < P.length, 'out']]) {
+              if (!show) continue;
+              ox.strokeStyle = 'rgba(255,255,255,0.8)'; ox.lineWidth = 1;
+              ox.beginPath(); ox.moveTo(p.x * Z, p.y * Z); ox.lineTo((p.x + hx) * Z, (p.y + hy) * Z); ox.stroke();
+              const r = hot(i, part) ? 7 : 4;
+              if (hot(i, part)) { ox.fillStyle = 'rgba(255,213,74,0.35)'; ox.beginPath(); ox.arc((p.x + hx) * Z, (p.y + hy) * Z, 12, 0, Math.PI * 2); ox.fill(); }
+              ox.fillStyle = hot(i, part) ? '#ffd54a' : p.auto ? '#bbb' : '#fff'; ox.strokeStyle = '#000';
+              ox.beginPath(); ox.arc((p.x + hx) * Z, (p.y + hy) * Z, r, 0, Math.PI * 2); ox.fill(); ox.stroke();
+            }
+          }
+          const big = hot(i, 'pt'), r = big ? 8 : on ? 5 : 4, X = p.x * Z, Y = p.y * Z;
+          if (big) { ox.fillStyle = 'rgba(255,213,74,0.35)'; ox.beginPath(); ox.arc(X, Y, 14, 0, Math.PI * 2); ox.fill(); }
+          ox.fillStyle = big ? '#ffd54a' : on && i === pathSel ? '#ff3d8b' : on ? '#fff' : 'rgba(255,255,255,0.6)';
+          ox.strokeStyle = '#000'; ox.lineWidth = 1;
+          ox.beginPath();
+          if (p.broken) { ox.moveTo(X, Y - r * 1.35); ox.lineTo(X + r * 1.35, Y); ox.lineTo(X, Y + r * 1.35); ox.lineTo(X - r * 1.35, Y); ox.closePath(); }
+          else ox.rect(X - r, Y - r, 2 * r, 2 * r);
+          ox.fill(); ox.stroke();
+        });
       });
+      // where a click would add a point, and the curve it would make
+      if (editing && hover && !pathHover && !dragging && !spaceDown) {
+        const P = AP()?.pts || [], X = hover.px * Z, Y = hover.py * Z;
+        const i = P.findIndex((p) => p.x > hover.px), prev = P[(i < 0 ? P.length : i) - 1], next = i < 0 ? null : P[i];
+        ox.setLineDash([5, 4]); ox.strokeStyle = 'rgba(255,61,139,0.8)'; ox.lineWidth = 1.5;
+        ox.beginPath();
+        if (prev) { ox.moveTo(prev.x * Z, prev.y * Z); ox.lineTo(X, Y); }
+        if (next) { ox.moveTo(X, Y); ox.lineTo(next.x * Z, next.y * Z); }
+        ox.stroke(); ox.setLineDash([]);
+        ox.fillStyle = 'rgba(255,255,255,0.55)'; ox.strokeStyle = '#000';
+        ox.fillRect(X - 5, Y - 5, 10, 10); ox.strokeRect(X - 5, Y - 5, 10, 10);
+        ox.fillStyle = '#000'; ox.font = 'bold 13px system-ui, sans-serif'; ox.textAlign = 'left';
+        ox.fillText(P.length ? '+ point' : '+ new path', X + 9, Y - 8);
+      }
     }
-    function pathDeletePoint() {
-      if (!L.guide?.pts[pathSel]) { say('Click a point first.'); return; }
-      remember(true); L.guide.pts.splice(pathSel, 1); pathSel = -1; layGuide(); save();
+    function removePoint(i) {
+      const g = AP();
+      if (!g?.pts[i]) { say('Click a point first.'); return; }
+      g.pts.splice(i, 1); pathSel = -1;
+      if (!g.pts.length) { apply(L.pathBase || L.tiles); L.paths.splice(L.ap, 1); L.ap = -1; L.pathBase = null; drawOver(); }
+      else layGuide();
+      save();
     }
+    function pathDeletePoint() { if (pathSel < 0) { say('Click a point first.'); return; } remember(true); removePoint(pathSel); }
     $('pathDel').onclick = pathDeletePoint;
-    $('pathNew').onclick = () => {
-      if (!L.guide) { setTool('path'); say('Click to start a path.'); return; }
-      remember(); L.guide = null; pathSel = -1; setTool('path');
-      say('The tiles stay as they are. Click to start a new path.');
+    function newPath() {
+      if (L.ap >= 0) { remember(true); L.ap = -1; L.pathBase = null; pathSel = -1; }
+      setTool('path');
+      say('Click to start a new path. The others keep their tiles; click one of their points to edit it.');
+    }
+    $('pathNew').onclick = newPath;
+    $('pathForget').onclick = () => {
+      if (!AP()) { say('Click a point of the path to forget first.'); return; }
+      remember(); L.paths.splice(L.ap, 1); L.ap = -1; L.pathBase = null; pathSel = -1;
+      drawOver(); save();
+      say("Forgot that path's curve; its tiles stay as they are.");
     };
+
+    /**
+     * Break the paths where they run over the area `b` (tiles), when tiles there were moved,
+     * cleared or flipped: a path's tiles fill its columns from the curve down, so a part of a path
+     * over (or a little under) the area is cut out. What's left of each path is kept, exactly the
+     * same shape, as separate paths. Returns how many paths were broken.
+     */
+    function cutPaths(b) {
+      if (!b || !L.paths.length) return 0;
+      const X0 = b.x0 * TILE, X1 = (b.x1 + 1) * TILE, YB = (b.y1 + 1.5) * TILE;
+      const inside = ([x, y]) => x >= X0 && x < X1 && y < YB;
+      const lerp = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+      const halves = (q, t) => {   // de Casteljau: the curve split at t
+        const a = lerp(q[0], q[1], t), m = lerp(q[1], q[2], t), c = lerp(q[2], q[3], t), d = lerp(a, m, t), e = lerp(m, c, t), f = lerp(d, e, t);
+        return [[q[0], a, d, f], [f, e, c, q[3]]];
+      };
+      const part = (q, t0, t1) => { const left = halves(q, t1)[0]; return t1 > 0 ? halves(left, t0 / t1)[1] : left; };
+      let broke = 0;
+      const out = [];
+      let newAp = -1;
+      L.paths.forEach((g, k) => {
+        const P = g.pts;
+        if (P.length < 2 || !guideLine(P).some(inside)) { if (k === L.ap) newAp = out.length; out.push(g); return; }
+        broke++;
+        const pieces = [];
+        let cur = null;
+        const close = () => { if (cur && cur.length > 1) pieces.push(cur); cur = null; };
+        const anchor = (x, y, ix, iy, src) => ({ x, y, auto: false, ix, iy, ox: 0, oy: 0, ...(src?.broken ? { broken: true } : {}) });
+        for (let i = 0; i + 1 < P.length; i++) {
+          const q = cubic(P, i), N = 96;
+          // the stretches of t outside the area
+          const spans = [];
+          let start = inside(bez(q, 0)) ? null : 0;
+          for (let s = 1; s <= N; s++) {
+            const t = s / N, was = inside(bez(q, (s - 1) / N)), is = inside(bez(q, t));
+            if (was === is) continue;
+            let lo = (s - 1) / N, hi = t;
+            for (let k2 = 0; k2 < 24; k2++) { const mid = (lo + hi) / 2; if (inside(bez(q, mid)) === was) lo = mid; else hi = mid; }
+            const edge = (lo + hi) / 2;
+            if (!is) start = edge; else { spans.push([start, edge]); start = null; }
+          }
+          if (start !== null) spans.push([start, 1]);
+          if (!spans.length) { close(); continue; }
+          for (const [t0, t1] of spans) {
+            const r = part(q, t0, t1);
+            if (t0 === 0 && cur) { const last = cur[cur.length - 1]; last.ox = r[1][0] - r[0][0]; last.oy = r[1][1] - r[0][1]; }
+            else { close(); cur = [anchor(r[0][0], r[0][1], 0, 0, t0 === 0 ? P[i] : null)]; cur[0].ox = r[1][0] - r[0][0]; cur[0].oy = r[1][1] - r[0][1]; }
+            cur.push(anchor(r[3][0], r[3][1], r[2][0] - r[3][0], r[2][1] - r[3][1], t1 === 1 ? P[i + 1] : null));
+            if (t1 < 1) close();
+          }
+        }
+        close();
+        for (const pts of pieces) out.push({ pts });
+      });
+      if (!broke) return 0;
+      L.paths = out; L.ap = newAp; L.pathBase = null; pathSel = -1;
+      say(`The path${broke > 1 ? 's' : ''} through there ${broke > 1 ? 'are' : 'is'} broken where ${broke > 1 ? 'they run' : 'it runs'} over the area, so editing ${broke > 1 ? 'them' : 'it'} won't bring those tiles back.`);
+      return broke;
+    }
 
     // ---- tools
     const TITLES = { paint: 'Paint', select: 'Select', path: 'Path', start: 'Start point', finish: 'Finish line' };
@@ -1058,7 +1237,7 @@
         if (tool === 'path') pathDeletePoint(); else if (tool === 'select') selClear();
         e.preventDefault(); return;
       }
-      if (e.key === 'Escape') { if (tool === 'select') { dropFloat(); box = null; drawOver(); } else if (tool === 'path') { pathSel = -1; drawOver(); } closeMenus(); return; }
+      if (e.key === 'Escape') { if (tool === 'select') { dropFloat(); box = null; drawOver(); } else if (tool === 'path') newPath(); closeMenus(); return; }
       if (e.key === 'Enter') { if (flt) { dropFloat(); say('Dropped.'); } return; }
       if (e.key === '+' || e.key === '=') { setZoom(Z * 1.25); return; }
       if (e.key === '-' || e.key === '_') { setZoom(Z / 1.25); return; }
@@ -1067,6 +1246,12 @@
       const tools = { b: 'paint', p: 'paint', s: 'select', m: 'select', d: 'path', t: 'start', f: 'finish' };
       if (tools[k]) { setTool(tools[k]); return; }
       if (k === 'h') { if (tool === 'select' && box) selFlip(); else flipTile(); return; }
+      if (k === 'v') { if (tool === 'select' && box) selFlipUp(); else $('flipUpTile').onclick(); return; }
+      if (k === 'r') {
+        if (tool === 'select' && box) selTurn(!e.shiftKey);
+        else changeTile((id) => turnId(id, !e.shiftKey), 'turned');
+        return;
+      }
       if (k === 'g') toggle('grid');
       if (k === 'c') toggle('coll');
       if (k === 'n') toggle('nums');
@@ -1089,7 +1274,7 @@
     };
     const stageOf = () => ({ name: L.name, width: L.width, height: L.height, start: L.start, tiles: L.tiles,
       ...(Number.isFinite(L.finish) ? { finish: L.finish } : {}) });
-    const json = () => JSON.stringify({ ...stageOf(), ...(L.guide?.pts.length ? { path: L.guide.pts } : {}) });
+    const json = () => JSON.stringify({ ...stageOf(), ...(L.paths.length ? { paths: L.paths.map((g) => g.pts) } : {}) });
     // Save to Game: into the game's list of stages (src/stages.js: newest first, same name replaced).
     $('toGame').onclick = () => {
       dropFloat();
@@ -1104,14 +1289,20 @@
       } catch { alert('Could not save the stage in this browser (its storage may be full or blocked).'); }
     };
     /** A saved path's points, checked, or null. */
-    function readGuide(pts) {
+    function readPath(pts) {
       const num = (v) => Number.isFinite(v);
       if (!Array.isArray(pts) || !pts.length) return null;
       const ok = pts.filter((p) => p && num(p.x) && num(p.y)).map((p) => (p.auto === false && [p.ix, p.iy, p.ox, p.oy].every(num)
-        ? { x: p.x, y: p.y, auto: false, ix: p.ix, iy: p.iy, ox: p.ox, oy: p.oy } : { x: p.x, y: p.y, auto: true }));
+        ? { x: p.x, y: p.y, auto: false, ix: p.ix, iy: p.iy, ox: p.ox, oy: p.oy, ...(p.broken === true ? { broken: true } : {}) } : { x: p.x, y: p.y, auto: true }));
       ok.sort((p, q) => p.x - q.x);
-      return ok.length ? { pts: ok, base: null } : null;
+      return ok.length ? { pts: ok } : null;
     }
+    /** The saved paths, checked: `paths` (lists of points), or an older file's one `path`. */
+    function readPaths(v) {
+      const lists = Array.isArray(v?.paths) ? v.paths.map((g) => (Array.isArray(g) ? g : g?.pts)) : [v?.path, v?.guide?.pts];
+      return lists.map(readPath).filter(Boolean);
+    }
+    const sameShape = (t, base) => Array.isArray(base) && base.length === t.length && base.every((r, y) => Array.isArray(r) && r.length === t[y].length && r.every((id) => isTileId(id, NT)));
     $('export').onclick = () => {
       closeMenus(); dropFloat();
       const url = URL.createObjectURL(new Blob([json()], { type: 'application/json' }));
@@ -1128,9 +1319,9 @@
       if (!f) return;
       try {
         const v = JSON.parse(await f.text());
-        if (!Array.isArray(v.tiles) || !v.tiles.length || !v.tiles.every((r) => Array.isArray(r) && r.length === v.tiles[0].length && r.every((id) => Number.isInteger(id) && id >= 0 && id < NT))) throw new Error('not a level');
+        if (!Array.isArray(v.tiles) || !v.tiles.length || !v.tiles.every((r) => Array.isArray(r) && r.length === v.tiles[0].length && r.every((id) => isTileId(id, NT)))) throw new Error('not a level');
         dropFloat(); remember();
-        L = { name: v.name || f.name.replace(/\.json$/, ''), width: v.tiles[0].length, height: v.tiles.length, tiles: v.tiles, start: Array.isArray(v.start) ? v.start : [3 * TILE, 3 * TILE], guide: readGuide(v.path) };
+        L = { name: v.name || f.name.replace(/\.json$/, ''), width: v.tiles[0].length, height: v.tiles.length, tiles: v.tiles, start: Array.isArray(v.start) ? v.start : [3 * TILE, 3 * TILE], paths: readPaths(v), ap: -1, pathBase: null };
         if (Number.isFinite(v.finish) && v.finish > 0 && v.finish < L.width * TILE) L.finish = v.finish;
         $('w').value = L.width; $('h').value = L.height; $('name').value = L.name;
         sizeLevel(); fitHeight(); save();
@@ -1142,12 +1333,15 @@
     // ---- start: the last level edited in this browser, or a blank one
     try {
       const v = JSON.parse(localStorage.getItem(KEY));
-      if (v && Array.isArray(v.tiles) && v.tiles.length && v.tiles.every((r) => Array.isArray(r) && r.length === v.tiles[0].length)) {
-        const base = v.guide?.base;
-        const baseOk = Array.isArray(base) && base.length === v.tiles.length && base.every((r, y) => Array.isArray(r) && r.length === v.tiles[y].length);
-        L = { ...v, width: v.tiles[0].length, height: v.tiles.length, guide: readGuide(v.guide?.pts) };
-        if (!Array.isArray(L.start) || !L.start.every(Number.isFinite)) L.start = [3 * TILE, 3 * TILE];
-        if (L.guide && baseOk) L.guide.base = base;
+      if (v && Array.isArray(v.tiles) && v.tiles.length && sameShape(v.tiles, v.tiles)) {
+        const paths = readPaths(v);
+        // the path being edited, and the tiles from before it (an older save kept these as `guide`)
+        let ap = Number.isInteger(v.ap) && v.ap >= 0 && v.ap < paths.length ? v.ap : v.guide && paths.length ? 0 : -1;
+        const base = v.pathBase ?? v.guide?.base;
+        L = { name: v.name, width: v.tiles[0].length, height: v.tiles.length, tiles: v.tiles, start: v.start, paths, ap,
+          pathBase: ap >= 0 && sameShape(v.tiles, base) ? base : null };
+        if (Number.isFinite(v.finish) && v.finish > 0 && v.finish < L.width * TILE) L.finish = v.finish;
+        if (!Array.isArray(L.start) || L.start.length !== 2 || !L.start.every(Number.isFinite)) L.start = [3 * TILE, 3 * TILE];
       }
     } catch { /* none */ }
     if (!L) L = blank(60, 24);

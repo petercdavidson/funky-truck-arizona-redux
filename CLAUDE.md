@@ -61,6 +61,13 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   Save to Game) and reads tiles and levels through `src/assets.js`. Levels are JSON:
   { name, width, height, start, tiles, finish? }, plus `path` (the Path tool's curve points) when
   there is one; the game ignores it. The Pages deploy copies `editor/` (`.github/workflows/pages.yml`).
+- `src/tile-forms.js` (no DOM): tiles turned and flipped, for the editor's walls, ceilings and
+  overhangs: id `base + 256 * form` (form 0 is the sheet tile, so the stages' ids are unchanged),
+  their collision lines (`formCollision`, `formTable`) and the mirror pairs. No new art: a turned
+  tile is a sheet tile turned (`tileImage` in `assets.js`). Only custom stages use them:
+  `Game.tileTable` is the collision table with their entries in custom mode and the table as is
+  everywhere else. The physics is unchanged: `CollisionWorld` was already one-sided lines, so a
+  ceiling or a wall is just lines facing down or sideways.
 - `src/stages.js` (no DOM): custom stages: `validStage`, the saved list (`game.stages`), and
   `Game.startCustom` (`mode: 'custom'`) plays one; `finish` (px) is its finish line, and with none
   it's played like a stunt track (`isStunt`).
