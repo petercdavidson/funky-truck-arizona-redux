@@ -11,7 +11,9 @@
 //   - it stays inside a vertical band, so it never climbs or falls without end;
 //   - joins are weighted by the stage they came from, and the "difficulty" stage drifts from the
 //     early stages towards the later ones as the player gets further;
-//   - it avoids shapes that only lead to dead ends (the last column of each stage).
+//   - it avoids shapes that only lead to dead ends (the last column of each stage);
+//   - it never climbs more than MAX_RISE tiles over RISE_SPAN columns, so there's no wall too
+//     tall and steep to drive up.
 //
 // The course lives in a window of tiles that scrolls: when the truck is far enough along, the
 // oldest columns are dropped, new ones are added, and the game moves everything left.
@@ -21,6 +23,15 @@ export const ENDLESS_HEIGHT = 48;   // rows
 export const ENDLESS_SHIFT = 48;    // columns dropped (and added) each time the window moves
 const DEPTH = 8;                    // tiles per column shape (below that is solid ground, tile 1)
 const BAND = [14, 40];              // rows the ground's top may use
+/**
+ * The steepest climb allowed: at most MAX_RISE tiles up over any RISE_SPAN columns. The stages
+ * have taller, steeper walls than this, but only in later stages, each with a run-up designed for
+ * it; strung together at random they can make a wall nobody can drive up.
+ */
+export const MAX_RISE = 5;
+export const RISE_SPAN = 4;
+/** How many columns ahead the walk checks it can go on without a climb steeper than that. */
+const LOOKAHEAD = 10;
 const FILL = 1, SKY = 0;
 
 /** Longest run of columns used as context when choosing the next one (see pick()). */
@@ -115,6 +126,8 @@ export class EndlessCourse {
     this.dropped = 0;            // columns scrolled off the left
     this.state = null;           // { s: shape index, top: row of its top tile }
     this.history = [];           // the last few states, for context
+    this.tops = [];              // the ground's top row in the last RISE_SPAN columns
+    this.steepAllowed = 0;       // times the limit on climbs had to give way
     // Open with the first columns of Stage One, lifted into the band: a familiar start.
     const l = levels[0];
     const open = 12;
@@ -138,6 +151,11 @@ export class EndlessCourse {
     const s = grammar.shapes.findIndex((sh) => sh.join('.') === key);
     this.state = { s: s >= 0 && grammar.alive[s] ? s : this.anyAlive(), top };
     this.history = [this.state];
+    for (let x = Math.max(0, open - RISE_SPAN); x < open; x++) {
+      let t = 0;
+      while (this.tiles[t][x] === SKY) t++;
+      this.tops.push(t);
+    }
     this.generated = open;
     this.start = [l.start[0], (l.start[1] / 64 + lift) * 64];
     while (this.tiles[0].length < this.width) this.addColumn();
@@ -169,13 +187,24 @@ export class EndlessCourse {
     return this.choose(this.g.joins[0].get(contextKey([this.state])), false);
   }
 
-  /** Pick one of `options`, weighted (see the notes at the top). With `strict`, null if none fit. */
-  choose(options, strict) {
+  /**
+   * Pick one of `options`, weighted (see the notes at the top). With `strict`, null if none fit.
+   * Otherwise, if none fit, the limit on climbs gives way first (some valleys in the stages only
+   * lead out uphill), and only then the band.
+   */
+  choose(options, strict, steepOk = false) {
+    if (!options) return null;
+    const memo = new Map();
     const level = difficultyAt(this.generated);
     const mid = (BAND[0] + BAND[1]) / 2;
     const weights = options.map((j) => {
       const top = this.state.top + j.step;
       if (top < BAND[0] || top > BAND[1] || !this.g.safe[j.to][top - BAND[0]]) return 0;
+      if (!steepOk) {
+        if (this.tops.length && Math.max(...this.tops) - top > MAX_RISE) return 0; // too steep a climb
+        // ...or a way into somewhere (a valley) that can only be left by one
+        if (!this.canGoOn(j.to, [...this.tops.slice(1 - RISE_SPAN), top], LOOKAHEAD, memo)) return 0;
+      }
       let w = Math.sqrt(j.count);
       // closest source stage to the current difficulty
       const near = Math.min(...j.stages.map((st) => Math.abs(st - level)));
@@ -187,6 +216,10 @@ export class EndlessCourse {
     });
     let total = weights.reduce((a, b) => a + b, 0);
     if (total === 0 && strict) return null;
+    if (total === 0 && !steepOk) {
+      this.steepAllowed++;
+      return this.choose(options, false, true);
+    }
     if (total === 0) {
       // Nothing keeps us in the band: take whatever moves towards its middle.
       options.forEach((j, i) => { weights[i] = Math.abs(this.state.top + j.step - mid) < Math.abs(this.state.top - mid) ? 1 : 1e-6; });
@@ -195,6 +228,26 @@ export class EndlessCourse {
     let r = this.random() * total;
     for (let i = 0; i < options.length; i++) { r -= weights[i]; if (r <= 0) return options[i]; }
     return options[options.length - 1];
+  }
+
+  /**
+   * Whether, from shape `s` with the ground's last tops `tops` (the newest last), the walk can go
+   * on for `depth` more columns inside the band without a climb steeper than MAX_RISE.
+   */
+  canGoOn(s, tops, depth, memo) {
+    if (depth === 0) return true;
+    const key = `${s}|${tops.join(',')}|${depth}`;
+    if (memo.has(key)) return memo.get(key);
+    const top = tops[tops.length - 1], highest = Math.max(...tops);
+    const opts = this.g.joins[0].get(contextKey([{ s, top: 0 }])) || [];
+    let ok = false;
+    for (const j of opts) {
+      const t = top + j.step;
+      if (t < BAND[0] || t > BAND[1] || !this.g.safe[j.to][t - BAND[0]] || highest - t > MAX_RISE) continue;
+      if (this.canGoOn(j.to, [...tops.slice(1 - RISE_SPAN), t], depth - 1, memo)) { ok = true; break; }
+    }
+    memo.set(key, ok);
+    return ok;
   }
 
   addColumn() {
@@ -207,6 +260,8 @@ export class EndlessCourse {
       this.tiles[r].push(v);
     }
     this.state = { s: j.to, top };
+    this.tops.push(top);
+    if (this.tops.length > RISE_SPAN) this.tops.shift();
     this.history.push(this.state);
     if (this.history.length > ORDER) this.history.shift();
     this.generated++;

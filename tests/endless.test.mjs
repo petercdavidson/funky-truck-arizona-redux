@@ -107,3 +107,26 @@ test('a simple bot can drive an endless course without the physics going wrong',
   }
   assert.ok(g.distance > 30, `got ${g.distance} tiles`);
 });
+
+test('Endless never builds a climb too tall and steep to drive up, but keeps its hills', async () => {
+  const { MAX_RISE, RISE_SPAN } = await import('../src/endless.js');
+  const g = buildGrammar(data.levels);
+  const topOf = (l, x) => { let r = 0; while (r < l.height && l.tiles[r][x] === 0) r++; return r; };
+  let steepest = 0, hills = 0, cols = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    let s = seed * 7919;
+    const c = new EndlessCourse(g, data.levels, () => (s = (s * 16807) % 2147483647) / 2147483647);
+    const tops = [];
+    for (let n = 0; n < 12; n++) {
+      for (let x = 0; x < (n ? 48 : 128); x++) tops.push(topOf(c.level, n ? 80 + x : x));
+      c.scroll(48);
+    }
+    for (let x = RISE_SPAN; x < tops.length; x++) {
+      steepest = Math.max(steepest, Math.max(...tops.slice(x - RISE_SPAN, x)) - tops[x]);
+      if (tops[x - 4] - tops[x] >= 4) hills++;
+    }
+    cols += tops.length;
+  }
+  assert.ok(steepest <= MAX_RISE, `climbed ${steepest} tiles within ${RISE_SPAN} columns`);
+  assert.ok(hills / cols > 0.04, `still hilly (${(hills / cols * 100).toFixed(1)}% of columns end a real climb)`);
+});
