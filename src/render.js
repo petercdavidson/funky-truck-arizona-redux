@@ -109,7 +109,8 @@ const tallStage = (i) => ({ x: 64 + 80 * (i % 3), y: 80 + 80 * Math.floor(i / 3)
 export const TALL_BUTTONS = {
   title: [
     ...MODES.map(([label, action], i) => ({ rect: r(60, 246 + 43 * i, 240, 35), label, action, ...T_BIG })),
-    ...TITLE_OPTIONS.map(([label, action], i) => ({ rect: r(60, 470 + 35 * i, 240, 28), label, action, ...T_SMALL })),
+    // The options are narrower than the game buttons, so they read as a different kind of thing.
+    ...TITLE_OPTIONS.map(([label, action], i) => ({ rect: r(95, 472 + 34 * i, 170, 28), label, action, ...T_SMALL })),
     { rect: r(110, 638, 140, 26), label: 'How to Play', action: 'help', ...T_SMALL },
   ],
   help: [{ rect: r(80, 500, 200, 38), label: 'Menu', action: 'menu', ...T_BIG }],
@@ -122,7 +123,7 @@ export const TALL_BUTTONS = {
   ],
   practiceSelect: [
     ...Array.from({ length: 9 }, (_, i) => ({ rect: r(tallStage(i).x, tallStage(i).y, 72, 72), action: `stage${i}` })),
-    ...PRACTICE_OPTIONS.map(([label, action], i) => ({ rect: r(60, 340 + 35 * i, 240, 28), label, action, ...T_SMALL })),
+    ...PRACTICE_OPTIONS.map(([label, action], i) => ({ rect: r(95, 340 + 35 * i, 170, 28), label, action, ...T_SMALL })),
     { rect: r(80, 436, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
   ],
   gameOver: gameOverButtons((i) => ({ ...r(60, 200 + 50 * i, 240, 40), ...T_BIG }),
