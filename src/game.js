@@ -577,10 +577,11 @@ const UNDERSIDE = 0.42;
 const RIGHTING_STEPS = 80;
 const ONE_BUTTON_AIR = 4;        // steps off the ground before the one-button controls count as in the air
 /**
- * One-button balance assist: on the ground and tipped more than this many degrees (nose down with
- * the front wheel down, or nose up with the back wheel down), the button also presses the tilt key
- * that turns the truck back towards level, just as Standard's arrow keys would (no harder: the
- * tilt only acts as it does for them, through a wheel on the ground).
+ * One-button balance assist: with both wheels on the ground and tipped more than this many degrees
+ * (nose down, or nose up as on a steep climb), the button also presses the tilt key that turns the
+ * truck back towards level, just as Standard's arrow keys would. On one wheel (a wheelie or a nose
+ * stand) it doesn't: a tilt key on the ground only acts through the wheel it pushes on (back for
+ * tilting back, front for tilting forwards), so there it would do nothing.
  */
 export const BALANCE_ANGLE = 45;
 /** The cab of a truck wrecked on purpose (Esc) takes this much damage a step while it touches the ground (as scraping does). */
@@ -1212,7 +1213,7 @@ export class Game {
   /**
    * The keys the truck sees. With one-button controls there's one button (Space, the up arrow, or
    * holding the touch screen): it drives on the ground and tilts back in the air. Nothing else
-   * drives or tilts. On the ground, tipped past BALANCE_ANGLE, it also tilts back towards level.
+   * drives or tilts. With both wheels down, tipped past BALANCE_ANGLE, it also tilts back towards level.
    */
   driveKeys() {
     const k = this.keys;
@@ -1222,8 +1223,9 @@ export class Game {
     if (air) return { ...k, up: false, down: false, left: one, right: false };
     // On the ground, the balance assist (BALANCE_ANGLE) leans the truck back towards level.
     const t = this.truck, tilt = Math.atan2(t.T[5] - t.T[3], t.T[4] - t.T[2]) * 180 / PI; // clockwise
-    const left = one && tilt > BALANCE_ANGLE && t.frontContact;
-    const right = one && tilt < -BALANCE_ANGLE && t.rearContact;
+    const both = one && t.rearContact && t.frontContact;
+    const left = both && tilt > BALANCE_ANGLE;
+    const right = both && tilt < -BALANCE_ANGLE;
     return { ...k, up: one, down: false, left, right };
   }
 

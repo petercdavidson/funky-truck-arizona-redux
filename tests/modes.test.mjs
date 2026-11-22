@@ -173,7 +173,7 @@ function tipOnto(t, deg, front) {
   }
   t.P = t.T.slice(); t.probePrev = null;
 }
-test('one-button balance assist: tipped steeply on the ground, the button also presses the tilt back towards level', () => {
+test('one-button balance assist: tipped steeply with both wheels down, the button also presses the tilt back towards level', () => {
   const pick = ({ up, down, left, right }) => ({ up, down, left, right });
   // the keys the truck sees, tipped `deg` (clockwise) about a wheel, with the given wheels down
   const keysAt = (deg, rear, front, setup = (g) => { g.keys.one = true; }) => {
@@ -185,19 +185,19 @@ test('one-button balance assist: tipped steeply on the ground, the button also p
   };
   const a = BALANCE_ANGLE, drive = { up: true, down: false, left: false, right: false };
   assert.deepEqual(keysAt(a + 5, true, true), { ...drive, left: true }, 'nose down: drive and tilt back');
-  assert.deepEqual(keysAt(a + 5, false, true), { ...drive, left: true }, 'nose down on the front wheel alone (tilting back then does nothing, as on Standard)');
+  assert.deepEqual(keysAt(a + 5, false, true), drive, 'not nose down on the front wheel alone (tilting back would do nothing)');
   assert.deepEqual(keysAt(-(a + 5), true, true), { ...drive, right: true }, 'nose up (a steep climb): drive and tilt forwards');
-  assert.deepEqual(keysAt(-(a + 5), true, false), { ...drive, right: true }, 'a wheelie (tilting forwards then does nothing, as on Standard)');
-  assert.deepEqual(keysAt(a + 5, true, false), drive, 'nose down needs the front wheel down');
-  assert.deepEqual(keysAt(-(a + 5), false, true), drive, 'nose up needs the back wheel down');
+  assert.deepEqual(keysAt(-(a + 5), true, false), drive, 'not in a wheelie (tilting forwards would do nothing)');
+  assert.deepEqual(keysAt(a + 5, true, false), drive, 'not on the other wheel either');
+  assert.deepEqual(keysAt(-(a + 5), false, true), drive, 'not on the other wheel either');
   assert.deepEqual(keysAt(a - 5, true, true), drive, 'not under the angle');
   assert.deepEqual(keysAt(-(a - 5), true, true), drive, 'not under the angle');
   assert.deepEqual(keysAt(a + 5, true, true, () => {}), { ...drive, up: false }, 'nothing without the button');
   assert.deepEqual(keysAt(a + 5, true, true, (g) => { g.oneButton = false; g.keys.up = true; }), drive, 'not with the standard controls');
   assert.deepEqual(keysAt(a + 5, true, true, (g) => { g.rules = { ...g.rules, classic: true }; g.keys.up = true; }), drive, 'not in Classic');
 
-  // No stronger than Standard: a wheelie on the back wheel alone plays out exactly as holding
-  // the gas and tilt-forwards on the arrow keys.
+  // A wheelie on the back wheel alone plays out exactly as holding the gas and tilt-forwards on
+  // the arrow keys: the tilt key can't act there, so the assist leaves it alone.
   const one = flatGame(), std = flatGame(false);
   tipOnto(one.truck, -55, false); tipOnto(std.truck, -55, false);
   one.keys.one = true; std.keys.up = true; std.keys.right = true;
