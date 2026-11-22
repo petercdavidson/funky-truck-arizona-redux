@@ -214,6 +214,18 @@ test('the crash cam pulls back to keep the wreck\'s pieces in view, and can be s
     if (on) assert.ok(most > 1.1, `pulled back (${most.toFixed(2)})`);
     else assert.equal(most, 1, 'switched off: no pull-back');
   }
+  // Spread too far for the most it zooms out, it stays centred on all the pieces.
+  const y = new Game(data, { random: () => 0.4 });
+  y.startEndless();
+  settle(y, 150);
+  y.selfWreck();
+  settle(y, 100);
+  const W = y.wreck.T, p = y.wreck.wheels[1].p;
+  W[p * 2 + 1] -= 9000; y.wreck.P[p * 2 + 1] -= 9000; // one wheel, a long way up
+  settle(y, 60);
+  const { centre, zoom } = y.crashFrame();
+  assert.equal(zoom, CRASH_CAM.maxZoom);
+  assert.ok(Math.abs(y.camY + y.viewH * y.zoom / 2 - centre[1]) < 60, `centred where every piece would fit (${Math.round(y.camY + y.viewH * y.zoom / 2 - centre[1])})`);
   const c = new Game(data);
   c.crashCam = true;
   c.startCampaign(true);

@@ -554,7 +554,7 @@ export const CAMERA = {
 /**
  * The dynamic crash cam (outside Classic, when switched on): once the truck is wrecked, the camera
  * pulls back to keep every piece in view, centred on them, up to `maxZoom` times the usual view
- * (beyond that it keeps the wheels in view first: see Game.crashFrame). `margin` is room
+ * (beyond that it stays centred on them all). `margin` is room
  * left round the pieces (stage units, at zoom 1), `maxRate` the most the zoom changes in a step
  * (times the zoom), and `easeIn` the steps it takes to take over from the driving camera.
  */
@@ -1065,10 +1065,13 @@ export class Game {
     // (its zoom may change faster the further out it is, so a flying wheel stays in view)
     if (crash) {
       const z0 = this.zoom, cx = this.camX + this.viewW * z0 / 2, cy = this.camY + this.viewH * z0 / 2;
-      this.zoomTo(crash.zoom, CRASH_CAM.maxRate * this.zoom * ease);
-      // Never zoomed in so far that a piece is out of the view as it is now (a wheel that shoots
-      // off pulls the camera out with it at once), and zoom about the view's middle.
-      this.zoom = Math.max(this.zoom, Math.min(CRASH_CAM.maxZoom, this.coverZoom(cx, cy, crash.pts)));
+      // Never zoomed in so far that a piece is out of the view as it is now (the camera trails
+      // the pieces a little; a wheel that shoots off pulls it out at once). The zoom eases towards
+      // whichever is further out, so the two never pull against each other.
+      const cover = Math.min(CRASH_CAM.maxZoom, this.coverZoom(cx, cy));
+      this.zoomTo(Math.max(crash.zoom, cover), CRASH_CAM.maxRate * this.zoom * ease);
+      this.zoom = Math.min(CRASH_CAM.maxZoom, Math.max(this.zoom, cover));
+      // zoom about the view's middle
       this.camX -= this.viewW * (this.zoom - z0) / 2;
       this.camY -= this.viewH * (this.zoom - z0) / 2;
     }
@@ -1095,39 +1098,27 @@ export class Game {
   }
 
   /**
-   * The crash cam's frame: the middle of the wreck's pieces, the zoom that shows them with a
-   * margin, and which points it's keeping in view. If every piece won't fit in CRASH_CAM.maxZoom,
-   * the wheels come first: it frames the wheels and the body, or failing that the wheels alone
-   * (they can roll a long way apart on the stunt tracks), then the body and the nearer wheel,
-   * then the body.
+   * The crash cam's frame: the middle of all the wreck's pieces, and the zoom that shows them all
+   * with a margin, up to CRASH_CAM.maxZoom. Spread further than that, it stays on their middle,
+   * where it would be if it could zoom out further, so it doesn't jump between pieces.
    */
   crashFrame() {
-    const wr = this.wreck, W = wr.T, wheels = wr.wheels.map((w) => w.p);
-    const all = Array.from({ length: W.length / 2 }, (_, i) => i);
-    const frame = (pts) => {
-      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-      for (const p of pts) {
-        x0 = Math.min(x0, W[p * 2]); x1 = Math.max(x1, W[p * 2]); y0 = Math.min(y0, W[p * 2 + 1]); y1 = Math.max(y1, W[p * 2 + 1]);
-      }
-      const m = 2 * CRASH_CAM.margin;
-      const zoom = Math.max(1, (x1 - x0 + m) / this.viewW, (y1 - y0 + m) / this.viewH);
-      return { centre: [(x0 + x1) / 2, (y0 + y1) / 2], zoom, pts };
-    };
-    const [bx, by] = wr.centre;
-    const nearer = [...wheels].sort((a, b) => Math.hypot(W[a * 2] - bx, W[a * 2 + 1] - by) - Math.hypot(W[b * 2] - bx, W[b * 2 + 1] - by))[0];
-    for (const pts of [all, [...wheels, ...wr.body], wheels, [nearer, ...wr.body]]) {
-      const f = frame(pts);
-      if (f.zoom <= CRASH_CAM.maxZoom) return f;
+    const W = this.wreck.T;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < W.length; i += 2) {
+      x0 = Math.min(x0, W[i]); x1 = Math.max(x1, W[i]); y0 = Math.min(y0, W[i + 1]); y1 = Math.max(y1, W[i + 1]);
     }
-    return { centre: wr.centre, zoom: CRASH_CAM.maxZoom, pts: wr.body };
+    const m = 2 * CRASH_CAM.margin;
+    const fit = Math.max(1, (x1 - x0 + m) / this.viewW, (y1 - y0 + m) / this.viewH);
+    return { centre: [(x0 + x1) / 2, (y0 + y1) / 2], zoom: Math.min(CRASH_CAM.maxZoom, fit) };
   }
 
-  /** The zoom that shows the points `pts` of the wreck (with the margin) in a view centred on (cx, cy). */
-  coverZoom(cx, cy, pts) {
+  /** The zoom that shows every piece of the wreck (with the margin) in a view centred on (cx, cy). */
+  coverZoom(cx, cy) {
     const W = this.wreck.T, m = CRASH_CAM.margin;
     let z = 1;
-    for (const p of pts) {
-      z = Math.max(z, (Math.abs(W[p * 2] - cx) + m) / (this.viewW / 2), (Math.abs(W[p * 2 + 1] - cy) + m) / (this.viewH / 2));
+    for (let i = 0; i < W.length; i += 2) {
+      z = Math.max(z, (Math.abs(W[i] - cx) + m) / (this.viewW / 2), (Math.abs(W[i + 1] - cy) + m) / (this.viewH / 2));
     }
     return z;
   }
