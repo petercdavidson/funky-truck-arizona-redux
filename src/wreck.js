@@ -18,7 +18,8 @@
 // drags on the ground rather than carrying the body off. The body grips the ground as a whole,
 // with friction from its whole weight (WRECK.bodyGrip), so it doesn't glide down gentle slopes.
 // A wheel's spin counts: touching the ground or the body, its tyre grips and trades speed between
-// its turning and its travel (a wheel landing while spinning is driven along by it).
+// its turning and its travel (a wheel landing while spinning is driven along by it); two wheels
+// touching grip each other the same way, turning against each other like gears.
 // Collisions are soft, too (an overlap is undone over a few steps).
 
 import { BODY_SHAPES } from './wreck-shapes.js';
@@ -36,7 +37,8 @@ export const WRECK = {
   part: { bounce: 0.3, friction: 0.86, air: 0.998 },     // the body and bars scrape to a halt
   wheel: { bounce: 0.75, friction: 0.993, air: 0.9998 }, // the wheels roll on and bounce, like rubber
   wheelRadius: 22.5,                                      // the wheels hit each other and the body as circles this size
-  bodyShare: 0.3,                                         // how much of a wheel-body overlap the (heavier) body is moved
+  bodyShare: 0.3,
+  groundedShare: 0.9,                                     // the same for a wheel on the ground under the body                                         // how much of a wheel-body overlap the (heavier) body is moved
   easeIn: 140,                                            // steps (2 s) before a wreck can settle
   release: 60,                                            // steps over which an overlap at the wreck stops being allowed
   soft: 0.35,                                             // the share of an overlap undone each pass (3 passes a step)
@@ -288,12 +290,14 @@ export class Wreck {
       const nx = d > 1e-6 ? dx / d : 1, ny = d > 1e-6 ? dy / d : 0, m = o * k / 2;
       move(a, -nx * m, -ny * m);
       move(b, nx * m, ny * m);
-      stop([a], [b], nx, ny, 0.5);
+      // (their sliding over each other is left to their tyres' grip, with their spin, in step())
+      stop([a], [b], nx, ny, 0.5, WRECK.roll);
+      this.wheelsTouch = [nx, ny];
     }
     // wheel against the body's outline (the body, heavier, moves WRECK.bodyShare of it), edge by
     // edge: each edge allows only the overlap it had with that wheel at the wreck, less and less
     // over WRECK.release steps, and never more than it has had since
-    const poly = this.outline(), s = WRECK.bodyShare;
+    const poly = this.outline();
     [a, b].forEach((w, n) => {
       const x = T[w * 2], y = T[w * 2 + 1];
       let contacts = edgeContacts(poly, x, y, R);
@@ -326,6 +330,9 @@ export class Wreck {
       }
       this.wheelOnBody = true;
       this.rubbing[n] = [nx, ny];
+      // (a wheel on the ground, with the body on it, is held there by the ground: the body takes
+      // most of the push, rather than its weight squeezing the wheel out sideways step by step)
+      const s = this.grounded?.[n] && ny > WRECK.onTop ? WRECK.groundedShare : WRECK.bodyShare;
       const m = deepest * k;
       move(w, nx * m * (1 - s), ny * m * (1 - s));
       for (const i of this.body) move(i, -nx * m * s, -ny * m * s);
@@ -366,6 +373,7 @@ export class Wreck {
     // (until they've risen all the way, the ground they hit is lowered by what's still to come)
     const ox = lifting ? this.lift[0] * now : 0, oy = lifting ? this.lift[1] * now : 0;
     this.wheelOnBody = false;
+    this.wheelsTouch = null;
     this.rubbing = [null, null]; // per wheel: the body's normal where the wheel touches it
     this.shift = new Float64Array(T.length);
     this.kick = new Float64Array(T.length);
@@ -485,8 +493,27 @@ export class Wreck {
         P[p * 2] -= dx * (1 - sh); P[p * 2 + 1] -= dy * (1 - sh);
         for (const i of this.body) { P[i * 2] += dx * sh; P[i * 2 + 1] += dy * sh; }
       }
-      w.rot += w.spin;
     });
+    // Wheel against wheel: their tyres grip each other the same way, turning against each other
+    // like gears, so one on top of the other rolls off it rather than sitting there (or spinning
+    // freely on it).
+    if (this.wheelsTouch) {
+      const [nx, ny] = this.wheelsTouch, tx = ny, ty = -nx, [wa, wb] = this.wheels, k = WRECK.spinInertia;
+      const va = (T[wa.p * 2] - P[wa.p * 2]) * tx + (T[wa.p * 2 + 1] - P[wa.p * 2 + 1]) * ty;
+      const vb = (T[wb.p * 2] - P[wb.p * 2]) * tx + (T[wb.p * 2 + 1] - P[wb.p * 2 + 1]) * ty;
+      const ta = -wa.spin * this.circumference / 360, tb = -wb.spin * this.circumference / 360;
+      // (how fast their surfaces slide over each other where they touch; a push j along the
+      // contact speeds b along and a back, and slows both their turning)
+      const slip = (vb - tb) - (va + ta);
+      const lim = WRECK.tyreGrip * this.gravity * Math.max(0.2, Math.abs(ny));
+      const j = Math.max(-lim, Math.min(lim, -slip / (2 * (1 + 1 / k))));
+      P[wb.p * 2] -= tx * j; P[wb.p * 2 + 1] -= ty * j;
+      P[wa.p * 2] += tx * j; P[wa.p * 2 + 1] += ty * j;
+      wa.spin = -(ta - j / k) * 360 / this.circumference;
+      wb.spin = -(tb - j / k) * 360 / this.circumference;
+    }
+    for (const w of this.wheels) w.rot += w.spin;
+    this.grounded = this.wheels.map((w) => !!touched[w.p]);
     this.steps++;
     // Settled: everything slower than WRECK.sleepSpeed, and on the ground, for a while. Then it
     // stops for good (until something moves it), rather than trembling for ever.
