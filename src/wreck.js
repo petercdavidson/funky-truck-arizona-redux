@@ -9,12 +9,14 @@
 // built with a thin offset, so they rest on the ground rather than floating a wheel's height up.
 // The two wheels also hit each other and the body (the bars pass through everything). The body is
 // each body sprite's own outline (BODY_SHAPES, traced from the sprites), not a plain box. The
-// wheels start overlapping the body where they sat in their wheel arches, so that overlap is let
-// be at first and cleared over WRECK.release steps, pushing the wheel outwards (towards the body's
-// nearer end) as well as out of the arch, so it comes out of its wheel well rather than up onto
-// the chassis. A wheel against the body rolls along it rather than gripping it, so upside down a wheel landing
-// on the chassis rolls off unless it settles in a dip such as a wheel arch. Collisions are soft,
-// too (an overlap is undone over a few steps).
+// wheels start overlapping the body where they sat in their wheel arches. Each edge of the body
+// lets a wheel overlap it only as much as it did at the wreck, less and less over WRECK.release
+// steps, and never more than it has since (so a wheel can't sink back in, or slide round its arch
+// to sit deeper). Upright, the wheels are pushed out from under the body as that overlap goes;
+// on its roof, a wheel in an arch that opens upwards hops up and out of it instead. A wheel on top
+// of the body rolls along it; one under or beside it grips it, and one pinned under the body
+// drags on the ground rather than carrying the body off. Collisions are soft, too (an overlap is
+// undone over a few steps).
 
 import { BODY_SHAPES } from './wreck-shapes.js';
 
@@ -38,10 +40,15 @@ export const WRECK = {
   restSpeed: 1,                                           // px a step into the ground (or another piece) below which nothing bounces
   slop: 0.5,                                              // px of overlap between pieces let be (so resting contact doesn't jitter)
   grip: 0.8,                                              // pieces sliding along each other keep this share of it a pass
-  roll: 0.995,                                            // a wheel rolling along the body keeps this share (it rolls, it doesn't scrape)                                            // a wheel rolling along the body keeps this share (it rolls, it doesn't scrape)
+  onTop: 0.5,                                             // a wheel is resting on top of the body if the way out of it points up at least this much
+  roll: 0.995,
+  rollUnder: 0.9,                                        // a wheel under or beside the body keeps this share (it grips more: a body can't skate over it)
   staticSpeed: 0.15,                                      // px a step: a body or bar point on the ground sliding slower than this stops (static friction)
   sleepSpeed: 0.2,                                        // px a step: slower than this everywhere, on the ground, for sleepAfter steps, and the wreck stops
   sleepAfter: 35,
+  popUp: 0.3,                                             // a wheel hops out of its arch if the way out points up at least this much (the y of the direction)
+  popAway: 0.15,                                          // and a little away from the body's middle: this much of that direction added
+  popClear: 4,                                            // px above the arch it hops (its speed is just enough to rise its depth plus this)
   liftEase: 12,                                           // steps over which the body and bars rise clear of any ground the cab had scraped into
 };
 
@@ -57,6 +64,25 @@ export function nearestOnPolygon(poly, x, y) {
     if (d < bd) { bd = d; best = [px, py]; }
   }
   return { x: best[0], y: best[1], d: bd, inside };
+}
+
+/**
+ * Where a circle at (x, y) of radius R overlaps the polygon's edges: one contact per edge it's
+ * within R of (a corner shared by two edges counted once), each with how deep (pen) and which way
+ * out (nx, ny). For a centre inside the polygon, null.
+ */
+export function edgeContacts(poly, x, y, R) {
+  const out = [];
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [ax, ay] = poly[j], [bx, by] = poly[i];
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1e-9;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2));
+    if (t <= 0) continue; // (that corner is the previous edge's end)
+    const px = ax + t * dx, py = ay + t * dy, d = Math.hypot(x - px, y - py);
+    if (d >= R) continue;
+    out.push({ edge: j, pen: R - d, nx: (x - px) / (d || 1e-6), ny: (y - py) / (d || 1e-6) });
+  }
+  return out;
 }
 
 export class Wreck {
@@ -126,7 +152,33 @@ export class Wreck {
     // at first). `allow` is how much is allowed now: it only ever shrinks, so a wheel that has
     // come partly out of the body can't sink back in.
     this.overlap0 = this.overlaps();
-    this.allow = { ww: this.overlap0.ww, wb: this.overlap0.wb.slice() };
+    this.allow = { ww: this.overlap0.ww };
+    // (against the body, per edge: so a wheel can't slide round its arch to sit deeper in it either)
+    const poly0 = this.outline();
+    this.edges0 = this.wheels.map((w) => {
+      const a = new Array(poly0.length).fill(0);
+      for (const c of edgeContacts(poly0, this.T[w.p * 2], this.T[w.p * 2 + 1], WRECK.wheelRadius)) a[c.edge] = c.pen;
+      return a;
+    });
+    this.allowEdges = this.edges0.map((a) => a.slice());
+    // A wheel sitting in its arch with the arch's open side facing up (the truck on its roof or
+    // side) can't fall out of it: it hops out instead, up out of the arch and a little away from
+    // the body, just fast enough to clear it (as if the suspension let it go).
+    this.wheels.forEach((w, n) => {
+      const depth = this.overlap0.wb[n];
+      if (depth <= 0) return;
+      const h = nearestOnPolygon(poly0, this.T[w.p * 2], this.T[w.p * 2 + 1]);
+      if (h.inside) return;
+      let nx = this.T[w.p * 2] - h.x, ny = this.T[w.p * 2 + 1] - h.y;
+      const l = Math.hypot(nx, ny) || 1e-6;
+      nx /= l; ny /= l;
+      if (ny > -WRECK.popUp) return; // (open side not facing up: it falls out by itself)
+      const [cx, cy] = this.centre, away = Math.hypot(this.T[w.p * 2] - cx, this.T[w.p * 2 + 1] - cy) || 1;
+      let dx = nx + (this.T[w.p * 2] - cx) / away * WRECK.popAway, dy = ny + (this.T[w.p * 2 + 1] - cy) / away * WRECK.popAway;
+      const dl = Math.hypot(dx, dy) || 1;
+      const v = Math.sqrt(2 * this.gravityAt(truck) * (depth + WRECK.popClear));
+      this.P[w.p * 2] -= dx / dl * v; this.P[w.p * 2 + 1] -= dy / dl * v;
+    });
     // How far the body and bars need lifting to be clear of the ground (see the comment above),
     // done gradually over WRECK.liftEase steps from where they are, not at once (a jump): until
     // then, the ground they hit is lowered by however much lift is still to come.
@@ -139,8 +191,10 @@ export class Wreck {
       this.P[i * 2] -= this.lift[0]; this.P[i * 2 + 1] -= this.lift[1];
     }
     this.steps = 0;
-    this.gravity = truck.gravity ?? GRAVITY; // (Sandbox can change it)
+    this.gravity = this.gravityAt(truck); // (Sandbox can change it)
   }
+
+  gravityAt(truck) { return truck.gravity ?? GRAVITY; }
 
   /**
    * Move the points `pts` together (now and a step ago, so their speed is kept) until none of
@@ -230,37 +284,49 @@ export class Wreck {
       move(b, nx * m, ny * m);
       stop([a], [b], nx, ny, 0.5);
     }
-    // wheel against the body's outline (the body, heavier, moves WRECK.bodyShare of it)
-    const poly = this.outline();
+    // wheel against the body's outline (the body, heavier, moves WRECK.bodyShare of it), edge by
+    // edge: each edge allows only the overlap it had with that wheel at the wreck, less and less
+    // over WRECK.release steps, and never more than it has had since
+    const poly = this.outline(), s = WRECK.bodyShare;
     [a, b].forEach((w, n) => {
       const x = T[w * 2], y = T[w * 2 + 1];
-      const h = nearestOnPolygon(poly, x, y);
-      const depth = h.inside ? R + h.d : R - h.d;
-      A.wb[n] = Math.min(A.wb[n], O.wb[n] * ease, Math.max(0, depth));
-      const over = depth - A.wb[n] - WRECK.slop;
-      if (over <= 0) return;
-      this.wheelOnBody = true;
-      // out of the body along the line from the nearest edge point (through it, if it's inside)
-      let nx = x - h.x, ny = y - h.y;
-      const l = Math.hypot(nx, ny) || 1e-6;
-      nx /= l; ny /= l;
-      if (h.inside) { nx = -nx; ny = -ny; }
-      // A wheel still coming out of the arch it sat in leaves it outwards, towards the body's nearer
-      // end as well as out of the arch: off the axle, out of the wheel well. (Straight out of the
-      // arch, upside down, is straight up, onto the chassis.)
-      if (this.steps < WRECK.release && O.wb[n] > 0) {
+      let contacts = edgeContacts(poly, x, y, R);
+      const AE = this.allowEdges[n], E0 = this.edges0[n];
+      if (nearestOnPolygon(poly, x, y).inside) {
+        // (its centre got inside: straight out the nearest way, allowing nothing)
+        const h = nearestOnPolygon(poly, x, y);
+        const l = Math.hypot(h.x - x, h.y - y) || 1e-6;
+        contacts = [{ edge: -1, pen: R + h.d, nx: (h.x - x) / l, ny: (h.y - y) / l }];
+      }
+      // (the edges it's too far into make one contact: out the way they all push, by the deepest)
+      let sx = 0, sy = 0, deepest = 0;
+      for (const c of contacts) {
+        let allowed = 0;
+        if (c.edge >= 0) allowed = AE[c.edge] = Math.min(AE[c.edge], E0[c.edge] * ease, c.pen);
+        const over = c.pen - allowed - WRECK.slop;
+        if (over <= 0) continue;
+        sx += c.nx * over; sy += c.ny * over; deepest = Math.max(deepest, over);
+      }
+      if (deepest <= 0) return;
+      let l = Math.hypot(sx, sy) || 1e-6, nx = sx / l, ny = sy / l;
+      // A wheel still coming out of an arch above it (the truck the right way up, more or less) is
+      // pushed out from under the body, towards its nearer end: the wheels roll out from under it
+      // and the body comes down between them, rather than being lifted onto them and rolling off.
+      if (this.steps < WRECK.release && ny > WRECK.popUp && E0.some((v) => v > 0)) {
         const [cx, cy] = this.centre, ang = Wreck.bodyPose(T, this.body, this.shape).ang;
         const ax = Math.cos(ang), ay = Math.sin(ang), side = Math.sign((x - cx) * ax + (y - cy) * ay) || 1;
-        const ox = nx + ax * side, oy = ny + ay * side, ol = Math.hypot(ox, oy) || 1e-6;
-        nx = ox / ol; ny = oy / ol;
+        nx += ax * side; ny += ay * side;
+        l = Math.hypot(nx, ny) || 1e-6; nx /= l; ny /= l;
       }
+      this.wheelOnBody = true;
       this.rubbing[n] = [nx, ny];
-      const m = over * k, s = WRECK.bodyShare;
+      const m = deepest * k;
       move(w, nx * m * (1 - s), ny * m * (1 - s));
       for (const i of this.body) move(i, -nx * m * s, -ny * m * s);
-      // (a wheel rolls along the body: hardly any of their sliding goes. So one on top rolls off a
-      // slope, and one under the body is pushed out from under it rather than levering it over.)
-      stop(this.body, [w], nx, ny, 1 - s, WRECK.roll);
+      // (a wheel resting on top of the body rolls along it: hardly any of their sliding goes, so it
+      // rolls off a slope. One under or beside the body grips it more, as a tyre would, rather than
+      // letting the body skate over it.)
+      stop(this.body, [w], nx, ny, 1 - s, ny < -WRECK.onTop ? WRECK.roll : WRECK.rollUnder);
     });
   }
 
@@ -342,8 +408,11 @@ export class Wreck {
       const vn = vx * h.nx + vy * h.ny;
       let tx = vx - vn * h.nx, ty = vy - vn * h.ny;
       // static friction: a body or bar point barely sliding on the ground stays put
-      if (!wheel && Math.hypot(tx, ty) < WRECK.staticSpeed) { tx = 0; ty = 0; }
-      const m = this.thin[i] ? WRECK.part : WRECK.wheel;
+      // (a wheel with the body on it, pinned between the body and the ground, can't roll freely
+      // under that weight: it drags like the body does, rather than carrying the body off on it)
+      const pinned = wheel && this.wheels.some((w, n) => w.p === i && this.rubbing[n] && this.rubbing[n][1] > WRECK.onTop);
+      if ((!wheel || pinned) && Math.hypot(tx, ty) < WRECK.staticSpeed) { tx = 0; ty = 0; }
+      const m = this.thin[i] || pinned ? WRECK.part : WRECK.wheel;
       // (a slow touch doesn't bounce: resting on the ground, gravity alone would make it hop)
       const out = vn < -WRECK.restSpeed ? -vn * m.bounce : vn < 0 ? 0 : vn;
       P[i * 2] = T[i * 2] - (tx * m.friction + h.nx * out);
