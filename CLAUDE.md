@@ -1,7 +1,7 @@
 # Funky Truck Arizona Redux (web)
 
-Browser monster-truck game hosted on GitHub Pages: https://petercdavidson.github.io/funky-truck-utah/
-Repo: petercdavidson/funky-truck-utah (public). Plain ES modules + 2D canvas. No build step, no
+Browser monster-truck game hosted on GitHub Pages: https://petercdavidson.github.io/funky-truck-arizona-redux/
+Repo: petercdavidson/funky-truck-arizona-redux (public). Plain ES modules + 2D canvas. No build step, no
 npm dependencies. Keep it that way unless there's a strong reason to change.
 
 ## Commands
@@ -132,7 +132,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - Use a branch and pull request per feature. CI runs the tests on PRs, and merging to `main`
   deploys.
 - When sharing a preview of `dev`, give the commit-pinned githack link
-  (`https://raw.githack.com/petercdavidson/funky-truck-utah/<short-sha>/index.html`): the branch
+  (`https://raw.githack.com/petercdavidson/funky-truck-arizona-redux/<short-sha>/index.html`): the branch
   link is cached for a while after a push.
 - Bump `VERSION` in `src/version.js` and `version` in `package.json` (a test checks they match)
   with every push, so the version on the title screen tells you which build you have.
