@@ -95,13 +95,7 @@ export class CrashRun {
    * body placed on its mounts as the Wreck places it) and after (the wreck's own body).
    */
   bodyCentre(T) {
-    if (this.wreck) {
-      // (where the body is drawn, which eases up out of the ground at first: see Wreck.shownPoints)
-      const W = this.wreck.shownPoints(this.wreck.T);
-      let x = 0, y = 0;
-      for (const i of this.wreck.body) { x += W[i * 2]; y += W[i * 2 + 1]; }
-      return [x / this.wreck.body.length, y / this.wreck.body.length];
-    }
+    if (this.wreck) return this.wreck.centre;
     const shape = BODY_SHAPES[this.body], a = Math.atan2(T[9] - T[7], T[8] - T[6]), c = Math.cos(a), s = Math.sin(a);
     let x = 0, y = 0;
     for (const [px, py] of shape) { x += T[6] + px * c - py * s; y += T[7] + px * s + py * c; }

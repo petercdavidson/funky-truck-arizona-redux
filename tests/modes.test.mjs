@@ -387,7 +387,7 @@ test('wreck wheels keep rolling and turning after a crash', () => {
   assert.ok(w.wheels.some((x) => Math.abs(x.spin) > 0.5), 'and turning as it rolls');
 });
 
-test('a wreck that starts with its cab in the ground is lifted clear and never sinks in', () => {
+test('a wreck that starts with its cab in the ground rises clear and never sinks in', () => {
   // Places where the truck used to wreck with part of its body box already inside the ground,
   // which then fell through (the body "lost its hitbox").
   for (const [stage, frames, vy] of [[4, 250, 3], [4, 400, 0], [1, 400, 6], [5, 282, 0], [8, 1059, 4]]) {
@@ -405,8 +405,11 @@ test('a wreck that starts with its cab in the ground is lifted clear and never s
       const h = world.collide(x, y - 80, x, y);
       return h ? y - h.y : 0;
     };
+    // (it rises out over WRECK.liftEase steps, from where it was: no deeper than it started, meanwhile)
+    const lift = Math.hypot(...w.lift);
     for (let s = 0; s < 300; s++) {
-      for (let i = 0; i < w.thin.length; i++) assert.ok(depth(i) < 3, `stage ${stage + 1}: point ${i} is ${depth(i).toFixed(1)} into the ground after ${s} steps`);
+      const allowed = s < WRECK.liftEase ? lift + 3 : 3;
+      for (let i = 0; i < w.thin.length; i++) assert.ok(depth(i) < allowed, `stage ${stage + 1}: point ${i} is ${depth(i).toFixed(1)} into the ground after ${s} steps`);
       w.step();
     }
   }

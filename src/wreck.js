@@ -42,7 +42,7 @@ export const WRECK = {
   staticSpeed: 0.15,                                      // px a step: a body or bar point on the ground sliding slower than this stops (static friction)
   sleepSpeed: 0.2,                                        // px a step: slower than this everywhere, on the ground, for sleepAfter steps, and the wreck stops
   sleepAfter: 35,
-  liftEase: 12,                                           // steps over which a body lifted clear of the ground at the wreck is shown rising into place
+  liftEase: 12,                                           // steps over which the body and bars rise clear of any ground the cab had scraped into
 };
 
 /** The point nearest (x, y) on the polygon `poly` ([[x, y], ...]), and whether (x, y) is inside it. */
@@ -94,14 +94,12 @@ export class Wreck {
     for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) stick(this.body[a], this.body[b]);
     // A truck is wrecked by scraping its cab, so part of the body box often starts inside the
     // ground, where the collision test can't see it (it only stops points crossing a surface from
-    // the front). Lift the whole box clear first, or it sinks into the ground.
+    // the front). So it's lifted clear (with the bars, gradually: see below), or it would sink.
     // The wheel centres and the cab's roof probe are kept clear of the ground by the truck's own
     // collisions, so they are safe places to measure from (the chassis centre is not: it can sit
     // inside a sharp crest with a wheel either side).
     const refs = [[T[2], T[3]], [T[4], T[5]]];
     if (truck.probePrev) refs.push(truck.probePrev.slice());
-    this.lifted = [];      // per point: how far liftClear moved it (x, y), for shownPoints
-    this.liftClear(this.body, refs);
 
     // Wheels, keeping their spin.
     this.wheels = [
@@ -122,13 +120,25 @@ export class Wreck {
       stick(a, b);
       return { a, b, frame: frameIndex, mount: frameIndex === 1 };
     });
-    this.liftClear([...knees, ...this.bars.map((bar) => bar.b)], refs);
     const nb = this.body.length, anchors = [0, Math.floor(nb / 3), Math.floor(nb * 2 / 3)].map((i) => this.body[i]);
     for (const bar of this.bars) if (bar.mount) for (const c of anchors) stick(bar.b, c);
-    // How far the wheels overlap each other and the body to begin with (allowed, at first).
+    // How far the wheels overlap each other and the body to begin with, as the truck was (allowed,
+    // at first). `allow` is how much is allowed now: it only ever shrinks, so a wheel that has
+    // come partly out of the body can't sink back in.
     this.overlap0 = this.overlaps();
+    this.allow = { ww: this.overlap0.ww, wb: this.overlap0.wb.slice() };
+    // How far the body and bars need lifting to be clear of the ground (see the comment above),
+    // done gradually over WRECK.liftEase steps from where they are, not at once (a jump): until
+    // then, the ground they hit is lowered by however much lift is still to come.
+    const parts = this.thin.map((t, i) => (t ? i : -1)).filter((i) => i >= 0);
+    const T0 = this.T.slice();
+    this.liftClear(parts, refs);
+    this.lift = [this.T[parts[0] * 2] - T0[parts[0] * 2], this.T[parts[0] * 2 + 1] - T0[parts[0] * 2 + 1]];
+    for (const i of parts) {
+      this.T[i * 2] -= this.lift[0]; this.T[i * 2 + 1] -= this.lift[1];
+      this.P[i * 2] -= this.lift[0]; this.P[i * 2 + 1] -= this.lift[1];
+    }
     this.steps = 0;
-    for (let i = 0; i < this.T.length; i++) this.lifted[i] ||= 0;
     this.gravity = truck.gravity ?? GRAVITY; // (Sandbox can change it)
   }
 
@@ -153,8 +163,6 @@ export class Wreck {
       if (!best) return;
       for (const i of pts) {
         T[i * 2] += best[0]; T[i * 2 + 1] += best[1];
-        this.lifted[i * 2] = (this.lifted[i * 2] || 0) + best[0];
-        this.lifted[i * 2 + 1] = (this.lifted[i * 2 + 1] || 0) + best[1];
         P[i * 2] += best[0]; P[i * 2 + 1] += best[1];
       }
     }
@@ -213,7 +221,9 @@ export class Wreck {
     };
     // wheel against wheel: equal shares
     const dx = T[b * 2] - T[a * 2], dy = T[b * 2 + 1] - T[a * 2 + 1];
-    const d = Math.hypot(dx, dy), o = 2 * R - d - O.ww * ease - WRECK.slop;
+    const A = this.allow, d = Math.hypot(dx, dy);
+    A.ww = Math.min(A.ww, O.ww * ease, Math.max(0, 2 * R - d));
+    const o = 2 * R - d - A.ww - WRECK.slop;
     if (o > 0) {
       const nx = d > 1e-6 ? dx / d : 1, ny = d > 1e-6 ? dy / d : 0, m = o * k / 2;
       move(a, -nx * m, -ny * m);
@@ -225,7 +235,9 @@ export class Wreck {
     [a, b].forEach((w, n) => {
       const x = T[w * 2], y = T[w * 2 + 1];
       const h = nearestOnPolygon(poly, x, y);
-      const over = (h.inside ? R + h.d : R - h.d) - O.wb[n] * ease - WRECK.slop;
+      const depth = h.inside ? R + h.d : R - h.d;
+      A.wb[n] = Math.min(A.wb[n], O.wb[n] * ease, Math.max(0, depth));
+      const over = depth - A.wb[n] - WRECK.slop;
       if (over <= 0) return;
       this.wheelOnBody = true;
       // out of the body along the line from the nearest edge point (through it, if it's inside)
@@ -253,19 +265,6 @@ export class Wreck {
   }
 
   /** The body's middle, for the camera to follow. */
-  /**
-   * Where to draw the points W (this.T, or an in-between of it): liftClear moved the body (and
-   * bars) up out of the ground at once, and that would be seen as a jump, so they're drawn where
-   * they were, easing up to where they are over WRECK.liftEase steps. Only the drawing: the pieces
-   * themselves are where they are from the start.
-   */
-  shownPoints(W) {
-    const t = Math.min(1, this.steps / WRECK.liftEase);
-    const f = 1 - t * t * (3 - 2 * t); // (smoothstep)
-    if (f <= 0) return W;
-    return W.map((v, i) => v - this.lifted[i] * f);
-  }
-
   get centre() {
     let x = 0, y = 0;
     for (const i of this.body) { x += this.T[i * 2]; y += this.T[i * 2 + 1]; }
@@ -281,6 +280,19 @@ export class Wreck {
       if (!moved) { this.steps++; return; }
       this.asleep = null; this.still = 0;
     }
+    // The body and bars rise a little more out of the ground (moved now and a step ago alike: no speed).
+    const lifting = this.steps < WRECK.liftEase;
+    const liftLeft = (n) => { const t = Math.min(1, n / WRECK.liftEase); return 1 - t * t * (3 - 2 * t); };
+    const now = lifting ? liftLeft(this.steps + 1) : 0;
+    if (lifting) {
+      const up = liftLeft(this.steps) - now, [lx, ly] = this.lift;
+      for (let i = 0; i < this.thin.length; i++) {
+        if (!this.thin[i]) continue;
+        T[i * 2] += lx * up; T[i * 2 + 1] += ly * up; P[i * 2] += lx * up; P[i * 2 + 1] += ly * up;
+      }
+    }
+    // (until they've risen all the way, the ground they hit is lowered by what's still to come)
+    const ox = lifting ? this.lift[0] * now : 0, oy = lifting ? this.lift[1] * now : 0;
     this.wheelOnBody = false;
     this.rubbing = [null, null]; // per wheel: the body's normal where the wheel touches it
     this.shift = new Float64Array(T.length);
@@ -309,9 +321,10 @@ export class Wreck {
       }
       this.collidePieces();
       for (let i = 0; i < this.thin.length; i++) {
-        const w = this.thin[i] ? this.thinWorld : this.wheelWorld;
-        const h = w.collide(from[i * 2], from[i * 2 + 1], T[i * 2], T[i * 2 + 1]);
-        if (h) { T[i * 2] = h.x; T[i * 2 + 1] = h.y; touched[i] = h; }
+        const thin = this.thin[i], w = thin ? this.thinWorld : this.wheelWorld;
+        const sx = thin ? ox : 0, sy = thin ? oy : 0;
+        const h = w.collide(from[i * 2] + sx, from[i * 2 + 1] + sy, T[i * 2] + sx, T[i * 2 + 1] + sy);
+        if (h) { T[i * 2] = h.x - sx; T[i * 2 + 1] = h.y - sy; touched[i] = h; }
       }
     }
     // Whether the body is touching the ground (any side of it) or resting on a wheel, for damage to a truck wrecked on purpose.

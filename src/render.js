@@ -710,7 +710,6 @@ export class Renderer {
 
   /** A wrecked truck's loose pieces. W holds the (interpolated) points of game.wreck. */
   wreck(wreck, W, look) {
-    W = wreck.shownPoints(W); // (the body eases up out of any ground it was lifted clear of)
     const ctx = this.ctx;
     for (const b of wreck.bars) this.bar(W[b.a * 2], W[b.a * 2 + 1], W[b.b * 2], W[b.b * 2 + 1], b.frame);
     const pose = Wreck.bodyPose(W, wreck.body, wreck.shape);
