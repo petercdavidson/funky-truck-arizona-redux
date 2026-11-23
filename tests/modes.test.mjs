@@ -203,17 +203,20 @@ test('a wreck\'s wheels bounce like rubber', () => {
   settle(g);
   g.selfWreck();
   const w = g.wreck, p = w.wheels[0].p, T = w.T, P = w.P;
-  // drop it from above the ground, clear of the other pieces, falling at 8 px a step
-  const x = T[p * 2] + 300, ground = g.world.collide(x, T[p * 2 + 1] - 1000, x, T[p * 2 + 1] + 600);
+  // drop it from above the ground, clear of the other pieces, falling at 8 px a step (the ground
+  // found in short sweeps: a long one onto a slope is pushed out along the slope's whole line)
+  const x = T[p * 2] + 300;
+  let ground = null;
+  for (let y = T[p * 2 + 1] - 1000; !ground; y += 8) ground = g.world.collide(x, y, x, y + 8);
   T[p * 2] = P[p * 2] = x; T[p * 2 + 1] = ground.y - 200; P[p * 2 + 1] = T[p * 2 + 1] - 8;
-  const slope = Math.abs(ground.nx);
-  let down = 0, up = 0;
+  // the speed into the ground before it lands, and back out of it after (along the ground's normal)
+  let into = 0, out = 0;
   for (let i = 0; i < 60; i++) {
     w.step();
-    const vy = T[p * 2 + 1] - P[p * 2 + 1];
-    if (vy > 0 && !up) down = Math.max(down, vy); else if (vy < 0) up = Math.max(up, -vy);
+    const vn = (T[p * 2] - P[p * 2]) * ground.nx + (T[p * 2 + 1] - P[p * 2 + 1]) * ground.ny;
+    if (vn < 0 && !out) into = Math.max(into, -vn); else if (vn > 0) out = Math.max(out, vn);
   }
-  assert.ok(up > down * 0.5, `it bounced back up at ${up.toFixed(1)} of ${down.toFixed(1)} px a step (ground slope ${slope.toFixed(2)})`);
+  assert.ok(out > into * 0.5, `it bounced back off the ground at ${out.toFixed(1)} of ${into.toFixed(1)} px a step`);
 });
 
 test('a wreck settles completely: no trembling, no wheel turning for ever, and it wakes if pushed', () => {

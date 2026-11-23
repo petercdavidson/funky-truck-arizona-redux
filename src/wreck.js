@@ -17,6 +17,8 @@
 // of the body rolls along it; one under or beside it grips it, and one pinned under the body
 // drags on the ground rather than carrying the body off. The body grips the ground as a whole,
 // with friction from its whole weight (WRECK.bodyGrip), so it doesn't glide down gentle slopes.
+// A wheel's spin counts: touching the ground or the body, its tyre grips and trades speed between
+// its turning and its travel (a wheel landing while spinning is driven along by it).
 // Collisions are soft, too (an overlap is undone over a few steps).
 
 import { BODY_SHAPES } from './wreck-shapes.js';
@@ -44,6 +46,8 @@ export const WRECK = {
   onTop: 0.5,                                             // a wheel is resting on top of the body if the way out of it points up at least this much
   bodyGrip: 0.3,                                          // the body on the ground: friction as a share of its weight on it (sliding stops on slopes gentler than about atan of this)
   roll: 0.995,
+  spinInertia: 0.5,                                       // how hard a wheel is to spin up, for its weight (0.5 a solid disc, 1 a hoop)
+  tyreGrip: 1,                                            // a tyre's grip: the most speed it can trade a step, for how hard it's pressed on
   rollUnder: 0.9,                                        // a wheel under or beside the body keeps this share (it grips more: a body can't skate over it)
   staticSpeed: 0.15,                                      // px a step: a body or bar point on the ground sliding slower than this stops (static friction)
   sleepSpeed: 0.2,                                        // px a step: slower than this everywhere, on the ground, for sleepAfter steps, and the wreck stops
@@ -443,19 +447,43 @@ export class Wreck {
         for (const i of this.body) { P[i * 2] += tx / vt * cut; P[i * 2 + 1] += ty / vt * cut; }
       }
     }
-    // Wheels roll on the ground and along the body, and keep spinning in the air.
+    // Wheels and their spin. A wheel keeps spinning in the air. Touching the ground or the body,
+    // its tyre grips: if it's turning faster or slower than it's rolling, the grip trades speed
+    // between the two until they match. So a wheel landing while spinning fast is driven along
+    // (or back, spinning backwards), one landing without spin is slowed a little as it spins up,
+    // and one already rolling as fast as it turns just rolls on. How much the grip can trade in a
+    // step is limited by how hard the wheel presses on what it touches (WRECK.tyreGrip of that).
+    const bodyV = () => {
+      let bx = 0, by = 0;
+      for (const i of this.body) { bx += T[i * 2] - P[i * 2]; by += T[i * 2 + 1] - P[i * 2 + 1]; }
+      return [bx / this.body.length, by / this.body.length];
+    };
+    /** Wheel w touching a surface with normal (nx, ny) (out of it, towards the wheel), sliding over it at (rvx, rvy), pressed on it with `press` (speed): returns the change to the sliding velocity. */
+    const grip = (w, nx, ny, rvx, rvy, press) => {
+      const tx = ny, ty = -nx;                                   // along the surface (the way spin rolls it)
+      const slide = rvx * tx + rvy * ty;                         // how fast it's moving along the surface
+      const turn = -w.spin * this.circumference / 360;           // how fast its turning would roll it
+      const k = WRECK.spinInertia, lim = WRECK.tyreGrip * press;
+      const d = Math.max(-lim, Math.min(lim, (turn - slide) * k / (1 + k)));
+      w.spin = -(turn - d / k) * 360 / this.circumference;       // (what the wheel gains in speed, its turning loses)
+      return [tx * d, ty * d];
+    };
     this.wheels.forEach((w, n) => {
-      const h = touched[w.p];
+      const h = touched[w.p], p = w.p;
       if (h) {
-        const vx = T[w.p * 2] - P[w.p * 2], vy = T[w.p * 2 + 1] - P[w.p * 2 + 1];
-        w.spin = (h.ny * vx - h.nx * vy) / this.circumference * -360;
-      } else if (this.rubbing[n]) {
-        // rolling along the body: it turns with its speed along the body (as on the ground)
-        const [nx, ny] = this.rubbing[n];
-        let bx = 0, by = 0;
-        for (const i of this.body) { bx += T[i * 2] - P[i * 2]; by += T[i * 2 + 1] - P[i * 2 + 1]; }
-        const vx = T[w.p * 2] - P[w.p * 2] - bx / this.body.length, vy = T[w.p * 2 + 1] - P[w.p * 2 + 1] - by / this.body.length;
-        w.spin = (ny * vx - nx * vy) / this.circumference * -360;
+        // on the ground: pressed on it by how hard it came down, or at least its weight
+        const vin = (aimed[p * 2] - from[p * 2] + this.kick[p * 2]) * h.nx + (aimed[p * 2 + 1] - from[p * 2 + 1] + this.kick[p * 2 + 1]) * h.ny;
+        const press = Math.max(this.gravity * Math.max(0, -h.ny), -vin);
+        const [dx, dy] = grip(w, h.nx, h.ny, T[p * 2] - P[p * 2], T[p * 2 + 1] - P[p * 2 + 1], press);
+        P[p * 2] -= dx; P[p * 2 + 1] -= dy;
+      }
+      if (this.rubbing[n]) {
+        // against the body: the same, relative to the body, which takes WRECK.bodyShare of the change
+        const [nx, ny] = this.rubbing[n], [bx, by] = bodyV(), sh = WRECK.bodyShare;
+        const press = this.gravity * Math.max(0.2, -ny);
+        const [dx, dy] = grip(w, nx, ny, T[p * 2] - P[p * 2] - bx, T[p * 2 + 1] - P[p * 2 + 1] - by, press);
+        P[p * 2] -= dx * (1 - sh); P[p * 2 + 1] -= dy * (1 - sh);
+        for (const i of this.body) { P[i * 2] += dx * sh; P[i * 2 + 1] += dy * sh; }
       }
       w.rot += w.spin;
     });
