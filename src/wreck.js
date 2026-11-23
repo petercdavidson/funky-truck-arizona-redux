@@ -42,7 +42,7 @@ export const WRECK = {
   slop: 0.5,                                              // px of overlap between pieces let be (so resting contact doesn't jitter)
   grip: 0.8,                                              // pieces sliding along each other keep this share of it a pass
   onTop: 0.5,                                             // a wheel is resting on top of the body if the way out of it points up at least this much
-  bodyGrip: 0.7,                                          // the body on the ground: friction as a share of its weight on it (sliding stops on slopes gentler than about atan of this)
+  bodyGrip: 0.3,                                          // the body on the ground: friction as a share of its weight on it (sliding stops on slopes gentler than about atan of this)
   roll: 0.995,
   rollUnder: 0.9,                                        // a wheel under or beside the body keeps this share (it grips more: a body can't skate over it)
   staticSpeed: 0.15,                                      // px a step: a body or bar point on the ground sliding slower than this stops (static friction)
