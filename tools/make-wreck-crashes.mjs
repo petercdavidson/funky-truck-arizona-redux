@@ -1,6 +1,6 @@
 // make-wreck-crashes.mjs — finds real crashes for the Wreck Lab (tools/wreck-lab.html): bots drive
 // the nine stages in Practice with damage on, using the real game, and each time one wrecks its
-// truck, the crash is kept: the stage, the last two seconds of driving (poses, to replay), and the
+// truck, the crash is kept: the stage, the last five seconds of driving (poses, to replay), and the
 // truck's exact state at the wreck (to start the Wreck from). Writes tools/wreck-crashes.json.
 //
 //   node tools/make-wreck-crashes.mjs [crashes per stage, default 4]
@@ -11,11 +11,11 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Game } from '../src/game.js';
-import { rng } from './wreck-lab-sim.mjs';
+import { rng, packPoses } from './wreck-lab-sim.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
 const PER_STAGE = Number(process.argv[2]) || 4;
-const LEAD = 140;          // steps of driving kept before the wreck (2 s)
+const LEAD = 350;          // steps of driving kept before the wreck (5 s)
 const MAX_STEPS = 70 * 150;
 const ATTEMPTS = 400;
 
@@ -112,6 +112,6 @@ for (let level = 0; level < data.levels.length; level++) {
   console.log(`Stage ${level + 1}: ${found.map((c) => `${c.lie} ${c.kmh} km/h`).join(', ') || 'none'}`);
   crashes.push(...found);
 }
-crashes.forEach((c, i) => { c.id = i; c.truck.T = c.truck.T.map(r3); c.truck.P = c.truck.P.map(r3); });
+crashes.forEach((c, i) => { c.id = i; c.truck.T = c.truck.T.map(r3); c.truck.P = c.truck.P.map(r3); c.poses = packPoses(c.poses); });
 writeFileSync(new URL('./wreck-crashes.json', import.meta.url), JSON.stringify(crashes));
 console.log(`${crashes.length} crashes written to tools/wreck-crashes.json`);

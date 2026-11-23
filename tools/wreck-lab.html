@@ -5,21 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Wreck Lab</title>
 <style>
-  :root { color-scheme: dark; }
+  :root { color-scheme: dark; --a: #ffb347; --b: #6ec6ff; }
   body { margin: 0; background: #1d1a18; color: #eee; font: 14px system-ui, sans-serif; }
-  header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
-    padding: 10px 16px; background: #2a2421; border-bottom: 1px solid #3c332e; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+    padding: 8px 16px; background: #2a2421; border-bottom: 1px solid #3c332e; }
   header h1 { font-size: 16px; margin: 0 6px 0 0; }
   label { display: inline-flex; gap: 6px; align-items: center; }
-  select, button { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid #5a4c44; background: #3a312c; color: #eee; }
+  select, button, input[type=number] { font: inherit; padding: 3px 8px; border-radius: 6px; border: 1px solid #5a4c44; background: #3a312c; color: #eee; }
+  input[type=number] { width: 4.2em; }
   button { cursor: pointer; }
-  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; padding: 12px 16px; }
-  .cell { background: #2a2421; border-radius: 8px; overflow: hidden; }
+  #pair { display: flex; flex-wrap: wrap; gap: 4px 18px; align-items: center; padding: 8px 16px 0; font-size: 13px; }
+  #pair .tag { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+  #grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px 16px 12px; margin: 0 auto; box-sizing: border-box; }
+  @media (max-width: 640px) { #grid { grid-template-columns: repeat(2, 1fr); } }
+  .cell { background: #2a2421; border-radius: 6px; overflow: hidden; border-top: 3px solid var(--a); }
+  .cell.b { border-top-color: var(--b); }
   .cell canvas { display: block; width: 100%; aspect-ratio: 3 / 2; background: #8fb8d8; touch-action: manipulation; }
-  .cap { display: flex; justify-content: space-between; gap: 8px; padding: 6px 10px; font-size: 12px; color: #cbb; }
+  .cap { display: flex; justify-content: space-between; gap: 6px; padding: 3px 8px; font-size: 11px; color: #cbb; white-space: nowrap; overflow: hidden; }
   .cap b { color: #fff; font-weight: 600; }
   .warn { color: #ffb37a; }
-  #stats { padding: 0 16px; margin-top: 12px; font: 12px ui-monospace, Menlo, monospace; white-space: pre; overflow-x: auto; color: #ddd; }
+  #stats { padding: 0 16px; margin-top: 8px; font: 12px ui-monospace, Menlo, monospace; white-space: pre; overflow-x: auto; color: #ddd; }
   #loading { padding: 20px 16px; }
 </style>
 </head>
@@ -28,16 +33,19 @@
   <h1>Wreck Lab</h1>
   <label>Stage <select id="stage"></select></label>
   <label>Lying <select id="lie"><option value="all">Any way</option><option value="on its roof">On its roof</option><option value="on its nose">On its nose</option><option value="on its tail">On its tail</option></select></label>
-  <label>Body <select id="body"></select></label>
+  <label>Before <input type="number" id="lead" min="0" max="5" step="0.1" value="2.0"> s</label>
+  <label>After <input type="number" id="after" min="0.5" max="20" step="0.1" value="4.0"> s</label>
   <label>Speed <select id="speed"><option value="1">1×</option><option value="0.5">½×</option><option value="0.25">¼×</option></select></label>
-  <label><input type="checkbox" id="lead" checked> Lead-up</label>
+  <label><input type="checkbox" id="hold"> Repeat these two</label>
   <label><input type="checkbox" id="boxes"> Hitboxes</label>
+  <button id="prev">◀ Prev</button>
   <button id="replay">Replay</button>
+  <button id="next">Next ▶</button>
   <button id="tally">Tally</button>
-  <span id="count" class="cap"></span>
 </header>
 <div id="loading">Loading…</div>
 <div id="stats"></div>
+<div id="pair"></div>
 <div id="grid"></div>
 <script type="module" src="wreck-lab.js"></script>
 </body>

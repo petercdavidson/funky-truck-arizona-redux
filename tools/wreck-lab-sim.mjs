@@ -41,20 +41,66 @@ export function rng(seed) {
   };
 }
 
-/** One crash with one body. step() moves it on; `wreck` is set once it's wrecked; `done` once it has settled. */
+/**
+ * The lead-up's poses, packed small for the JSON: each number in tenths, as the change from the
+ * pose before (the first pose as is). A pose is [T (10 numbers), rear wheel turn, front wheel turn].
+ */
+export function packPoses(poses) {
+  const out = [];
+  let prev = new Array(12).fill(0);
+  for (const p of poses) {
+    const q = p.map((v) => Math.round(v * 10));
+    out.push(...q.map((v, i) => v - prev[i]));
+    prev = q;
+  }
+  return out;
+}
+
+export function unpackPoses(packed) {
+  const poses = [];
+  let prev = new Array(12).fill(0);
+  for (let i = 0; i < packed.length; i += 12) {
+    const q = prev.map((v, k) => v + packed[i + k]);
+    poses.push(q.map((v) => v / 10));
+    prev = q;
+  }
+  return poses;
+}
+
+/**
+ * One crash with one body. step() moves it on; `wreck` is set once it's wrecked; `done` once
+ * `after` seconds have passed since (or, with no `after`, once the wreck has settled). `lead` is
+ * how many seconds of driving before the crash to replay first (up to the five recorded).
+ */
 export class CrashRun {
-  constructor(data, crash, body, { leadUp = true } = {}) {
+  constructor(data, crash, body, { lead = 2, after = null } = {}) {
     this.crash = crash;
     this.body = body;
+    this.after = after;
     this.w = worldsFor(data, crash.stage);
-    this.pose = leadUp ? 0 : crash.poses.length;
+    // (ending with the truck as it was at the wreck itself)
+    const k = crash.truck;
+    this.poses = crash.unpacked ||= [...unpackPoses(crash.poses), [...k.T, k.rearWheelRot, k.frontWheelRot]];
+    this.pose = Math.max(0, this.poses.length - Math.round(lead * 70));
     this.wreck = null;
     this.done = false;
-    if (!leadUp) this.wreckNow();
+    if (this.pose >= this.poses.length) this.wreckNow();
   }
 
   /** The truck's pose while the lead-up plays: [T (10 numbers), rear wheel turn, front wheel turn]. */
-  get truckPose() { return this.crash.poses[Math.min(this.pose, this.crash.poses.length - 1)]; }
+  get truckPose() { return this.poses[Math.min(this.pose, this.poses.length - 1)]; }
+
+  /**
+   * The middle of the body: what the camera follows, before the wreck (from a truck pose's T, its
+   * body placed on its mounts as the Wreck places it) and after (the wreck's own body).
+   */
+  bodyCentre(T) {
+    if (this.wreck) { const c = this.wreck.centre; return [c[0] + this.camShift[0], c[1] + this.camShift[1]]; }
+    const shape = BODY_SHAPES[this.body], a = Math.atan2(T[9] - T[7], T[8] - T[6]), c = Math.cos(a), s = Math.sin(a);
+    let x = 0, y = 0;
+    for (const [px, py] of shape) { x += T[6] + px * c - py * s; y += T[7] + px * s + py * c; }
+    return [x / shape.length, y / shape.length];
+  }
 
   wreckNow() {
     const s = this.crash.truck, t = new Truck();
@@ -64,19 +110,25 @@ export class CrashRun {
     t.probePrev = s.probePrev ? s.probePrev.slice() : null;
     t.gravity = s.gravity;
     t.updateBodyRot();
+    this.wreck = null;
+    const was = this.bodyCentre(t.T);
     this.wreck = new Wreck(t, this.w.wheel, this.w.thin, this.body);
+    // (the Wreck lifts the body clear of any ground its cab had scraped into: keep the camera's
+    // point where it was, so the view doesn't jump)
+    const c = this.wreck.centre;
+    this.camShift = [was[0] - c[0], was[1] - c[1]];
   }
 
   step() {
     if (this.wreck) {
       this.wreck.step();
-      if (this.wreck.asleep || this.wreck.steps > 70 * 10) this.done = true;
-    } else if (++this.pose >= this.crash.poses.length) this.wreckNow();
+      if (this.after != null ? this.wreck.steps >= this.after * 70 : this.wreck.asleep || this.wreck.steps > 70 * 10) this.done = true;
+    } else if (++this.pose >= this.poses.length) this.wreckNow();
   }
 
   /** Which wheels are resting on top of the body (not on the ground): [rear, front] booleans. */
   wheelsOnTop() {
-    const W = this.wreck, T = W.T, poly = W.wheelOutline(), R = WRECK.wheelRadius;
+    const W = this.wreck, T = W.T, poly = W.outline(), R = WRECK.wheelRadius;
     return W.wheels.map(({ p }) => {
       const x = T[p * 2], y = T[p * 2 + 1], h = nearestOnPolygon(poly, x, y);
       const onGround = !!W.wheelWorld.collide(x, y - 1, x, y + 5);
@@ -98,7 +150,7 @@ export function tally(data, crashes) {
   return crashes.map((crash) => {
     const on = [], settle = [];
     for (let body = 0; body < BODIES; body++) {
-      const r = new CrashRun(data, crash, body, { leadUp: false }).finish();
+      const r = new CrashRun(data, crash, body, { lead: 0 }).finish();
       on.push(r.wheelsOnTop().filter(Boolean).length);
       settle.push(r.wreck.steps / 70);
     }

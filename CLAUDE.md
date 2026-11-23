@@ -30,11 +30,10 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   sound files.
 - `src/wreck.js` (no DOM): the ragdoll wreck, a wrecked truck's loose pieces. Its body collides as
   that body's own outline, `src/wreck-shapes.js`, made from the sprites by `tools/make-wreck-shapes.mjs`
-  (rerun it if the body art changes). The loose wheels hit the same outline with its underside flattened
-  at the wheel-arch tops, and roll along it.
-- Wreck Lab (`tools/wreck-lab.html`, served from the repo): real crashes, replayed (the last 2 s of
-  driving) and then wrecked live by `src/wreck.js` with any body, looping, with hitboxes and slow
-  motion. The crashes (`tools/wreck-crashes.json`) are found by bots driving the nine stages in
+  (rerun it if the body art changes). The loose wheels hit the same outline and roll along it.
+- Wreck Lab (`tools/wreck-lab.html`, served from the repo): real crashes, two at a time, each with
+  all six bodies: the driving before (up to 5 s, as set) replayed, then wrecked live by
+  `src/wreck.js` for as long as set, then the next two. Hitboxes and slow motion. The crashes (`tools/wreck-crashes.json`) are found by bots driving the nine stages in
   Practice with damage on: `node tools/make-wreck-crashes.mjs [per stage]` (rerun it if the truck's
   physics or the stages change; wreck changes don't need it). `tools/wreck-lab-sim.mjs` (no DOM)
   runs them and tallies the outcomes headless: `node tools/wreck-lab-sim.mjs`. Work on wreck physics

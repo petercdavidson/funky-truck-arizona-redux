@@ -10,8 +10,9 @@
 // The two wheels also hit each other and the body (the bars pass through everything). The body is
 // each body sprite's own outline (BODY_SHAPES, traced from the sprites), not a plain box. The
 // wheels start overlapping the body where they sat in their wheel arches, so that overlap is let
-// be at first and cleared over WRECK.release steps (a quick jolt off the axle, not a slow float).
-// A wheel against the body rolls along it rather than gripping it, so upside down a wheel landing
+// be at first and cleared over WRECK.release steps, pushing the wheel outwards (towards the body's
+// nearer end) as well as out of the arch, so it comes out of its wheel well rather than up onto
+// the chassis. A wheel against the body rolls along it rather than gripping it, so upside down a wheel landing
 // on the chassis rolls off unless it settles in a dip such as a wheel arch. Collisions are soft,
 // too (an overlap is undone over a few steps).
 
@@ -32,7 +33,7 @@ export const WRECK = {
   wheelRadius: 22.5,                                      // the wheels hit each other and the body as circles this size
   bodyShare: 0.3,                                         // how much of a wheel-body overlap the (heavier) body is moved
   easeIn: 140,                                            // steps (2 s) before a wreck can settle
-  release: 30,                                            // steps over which an overlap at the wreck stops being allowed
+  release: 60,                                            // steps over which an overlap at the wreck stops being allowed
   soft: 0.35,                                             // the share of an overlap undone each pass (3 passes a step)
   restSpeed: 1,                                           // px a step into the ground (or another piece) below which nothing bounces
   slop: 0.5,                                              // px of overlap between pieces let be (so resting contact doesn't jitter)
@@ -81,12 +82,6 @@ export class Wreck {
 
     // Body: its outline's points, placed from the body mounts now and a step ago.
     this.shape = BODY_SHAPES[bodyType] || BODY_BOX;
-    // What the wheels hit: the outline with its underside flattened at the top of the wheel arches.
-    // Under there is the chassis, where the wheels and suspension live, so a wheel can sit in its
-    // arch; the cab, the bed and the ends are solid.
-    const half = this.shape.length / 2, crown = Math.min(...this.shape.slice(half).map((p) => p[1]));
-    // (every point, so a bumper corner lower than that doesn't stick out past it as a lip)
-    this.wheelShape = this.shape.map(([x, y]) => [x, Math.min(y, crown)]);
     const frame = (A, ax, ay, bx, by) => {
       const ang = Math.atan2(by - ay, bx - ax), c = Math.cos(ang), s = Math.sin(ang);
       return this.shape.map(([x, y]) => [ax + x * c - y * s, ay + x * s + y * c]);
@@ -163,15 +158,9 @@ export class Wreck {
   /** The body's outline, as points in the world. */
   outline() { return this.body.map((i) => [this.T[i * 2], this.T[i * 2 + 1]]); }
 
-  /** What the wheels hit (the outline with a flat underside, see wheelShape), as points in the world. */
-  wheelOutline() {
-    const { x, y, ang } = Wreck.bodyPose(this.T, this.body, this.shape), c = Math.cos(ang), s = Math.sin(ang);
-    return this.wheelShape.map(([px, py]) => [x + px * c - py * s, y + px * s + py * c]);
-  }
-
   /** How far the wheels overlap each other ({ ww }) and the body ({ wb: [rear, front] }) now. */
   overlaps() {
-    const T = this.T, R = WRECK.wheelRadius, [a, b] = this.wheels.map((w) => w.p), poly = this.wheelOutline();
+    const T = this.T, R = WRECK.wheelRadius, [a, b] = this.wheels.map((w) => w.p), poly = this.outline();
     const ww = Math.max(0, 2 * R - Math.hypot(T[b * 2] - T[a * 2], T[b * 2 + 1] - T[a * 2 + 1]));
     const wb = [a, b].map((w) => {
       const h = nearestOnPolygon(poly, T[w * 2], T[w * 2 + 1]);
@@ -227,7 +216,7 @@ export class Wreck {
       stop([a], [b], nx, ny, 0.5);
     }
     // wheel against the body's outline (the body, heavier, moves WRECK.bodyShare of it)
-    const poly = this.wheelOutline();
+    const poly = this.outline();
     [a, b].forEach((w, n) => {
       const x = T[w * 2], y = T[w * 2 + 1];
       const h = nearestOnPolygon(poly, x, y);
@@ -239,6 +228,15 @@ export class Wreck {
       const l = Math.hypot(nx, ny) || 1e-6;
       nx /= l; ny /= l;
       if (h.inside) { nx = -nx; ny = -ny; }
+      // A wheel still coming out of the arch it sat in leaves it outwards, towards the body's nearer
+      // end as well as out of the arch: off the axle, out of the wheel well. (Straight out of the
+      // arch, upside down, is straight up, onto the chassis.)
+      if (this.steps < WRECK.release && O.wb[n] > 0) {
+        const [cx, cy] = this.centre, ang = Wreck.bodyPose(T, this.body, this.shape).ang;
+        const ax = Math.cos(ang), ay = Math.sin(ang), side = Math.sign((x - cx) * ax + (y - cy) * ay) || 1;
+        const ox = nx + ax * side, oy = ny + ay * side, ol = Math.hypot(ox, oy) || 1e-6;
+        nx = ox / ol; ny = oy / ol;
+      }
       this.rubbing[n] = [nx, ny];
       const m = over * k, s = WRECK.bodyShare;
       move(w, nx * m * (1 - s), ny * m * (1 - s));

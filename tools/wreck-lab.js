@@ -1,13 +1,14 @@
 // wreck-lab.js — the Wreck Lab page: real crashes (bots driving the nine stages, see
-// tools/make-wreck-crashes.mjs) replayed, then wrecked live with the game's own Wreck, sprites and
-// tiles, looping. Not part of the game.
+// tools/make-wreck-crashes.mjs), two at a time, each with all six bodies: the driving before the
+// crash is replayed, then the wreck runs live with the game's own Wreck, sprites and tiles. When
+// all twelve have run for the time asked, it moves on to the next two. Not part of the game.
 
 import { loadAssets, tileImage } from '../src/assets.js';
 import { Renderer } from '../src/render.js';
 import { WRECK } from '../src/wreck.js';
 import { BODIES, CrashRun, tally } from './wreck-lab-sim.mjs';
 
-const TILE = 64, VIEW_W = 300, VIEW_H = 200, HZ = 70;
+const TILE = 64, VIEW_W = 300, VIEW_H = 200, HZ = 70, CAM = 0.2;
 const $ = (id) => document.getElementById(id);
 
 const [assets, crashes] = await Promise.all([
@@ -18,62 +19,75 @@ const data = assets.levels;
 $('loading').remove();
 
 // remembered choices
-const FIELDS = ['stage', 'lie', 'body', 'speed', 'lead', 'boxes'];
-const saved = (() => { try { return JSON.parse(localStorage.getItem('funkytruck.wreckLab2')) || {}; } catch { return {}; } })();
+const FIELDS = ['stage', 'lie', 'lead', 'after', 'speed', 'hold', 'boxes'];
+const KEY = 'funkytruck.wreckLab3';
+const saved = (() => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } })();
 const save = () => {
-  const o = {};
+  const o = { at };
   for (const f of FIELDS) o[f] = $(f).type === 'checkbox' ? $(f).checked : $(f).value;
-  try { localStorage.setItem('funkytruck.wreckLab2', JSON.stringify(o)); } catch { /* fine */ }
+  try { localStorage.setItem(KEY, JSON.stringify(o)); } catch { /* fine */ }
 };
 $('stage').innerHTML = '<option value="all">All stages</option>' + data.levels.map((_, i) => `<option value="${i}">Stage ${i + 1}</option>`).join('');
-$('body').innerHTML = '<option value="cycle">Each in turn</option>' + [...Array(BODIES).keys()].map((i) => `<option value="${i}">Body ${i + 1}</option>`).join('');
 for (const f of FIELDS) {
   if (saved[f] === undefined) continue;
   if ($(f).type === 'checkbox') $(f).checked = saved[f]; else $(f).value = saved[f];
   if ($(f).value === '') $(f).selectedIndex = 0;
 }
+let at = Number(saved.at) || 0; // the first of the two crashes showing, in the chosen list
 
-let cells = [];
-const seen = new IntersectionObserver((entries) => { for (const e of entries) e.target.cell.visible = e.isIntersecting; });
+/** A number box's value in seconds, to a tenth, kept in range. */
+function seconds(id) {
+  const el = $(id), v = Math.round(Math.min(Number(el.max), Math.max(Number(el.min), Number(el.value) || 0)) * 10) / 10;
+  el.value = v.toFixed(1);
+  return v;
+}
 
 function chosen() {
   return crashes.filter((c) => ($('stage').value === 'all' || c.stage === Number($('stage').value))
     && ($('lie').value === 'all' || c.lie === $('lie').value));
 }
 
-function build() {
-  save();
-  const grid = $('grid');
-  seen.disconnect();
-  grid.innerHTML = '';
-  cells = [];
-  const list = chosen();
-  $('count').textContent = `${list.length} crash${list.length === 1 ? '' : 'es'}`;
-  for (const crash of list) {
-    const el = document.createElement('div');
-    el.className = 'cell';
-    el.innerHTML = `<canvas></canvas><div class="cap"><span><b>#${crash.id} Stage ${crash.stage + 1}</b> · ${crash.lie}, ${crash.kmh} km/h · <span class="bd"></span></span><span class="out"></span></div>`;
-    grid.append(el);
-    const canvas = el.querySelector('canvas');
-    const cell = { crash, canvas, el, out: el.querySelector('.out'), bd: el.querySelector('.bd'), r: new Renderer(canvas, assets), body: -1, visible: true };
-    el.cell = cell;
-    seen.observe(el);
-    canvas.addEventListener('click', () => start(cell));
-    start(cell);
-    cells.push(cell);
-  }
-  sizeCanvases();
+// Twelve cells, made once: the first six show crash A with bodies 1-6, the last six crash B.
+const cells = [];
+for (let i = 0; i < 12; i++) {
+  const el = document.createElement('div');
+  el.className = 'cell' + (i >= 6 ? ' b' : '');
+  el.innerHTML = '<canvas></canvas><div class="cap"><span class="who"></span><span class="out"></span></div>';
+  $('grid').append(el);
+  const canvas = el.querySelector('canvas');
+  cells.push({ el, canvas, who: el.querySelector('.who'), out: el.querySelector('.out'), r: new Renderer(canvas, assets), body: i % BODIES, side: i < 6 ? 0 : 1 });
 }
 
-function start(cell) {
-  const b = $('body').value;
-  cell.body = b === 'cycle' ? (cell.body + 1 + BODIES) % BODIES : Number(b);
-  cell.run = new CrashRun(data, cell.crash, cell.body, { leadUp: $('lead').checked });
-  cell.prev = snapshot(cell.run);
-  cell.wait = 0;
-  cell.cam = null;
-  cell.bd.textContent = `Body ${cell.body + 1}`;
-  cell.out.textContent = cell.run.wreck ? 'wrecked…' : '';
+let pair = [];
+let waiting = 0;
+const describe = (c) => `<b>#${c.id} Stage ${c.stage + 1}</b> · ${c.lie}, ${c.kmh} km/h`;
+
+/** Show the two crashes from `at` in the chosen list (wrapping round). */
+function show() {
+  const list = chosen();
+  if (!list.length) { $('pair').textContent = 'No crashes match.'; pair = []; return; }
+  at = ((at % list.length) + list.length) % list.length;
+  pair = [list[at], list[(at + 1) % list.length]];
+  if (list.length === 1) pair = [list[0], list[0]];
+  $('pair').innerHTML = pair.map((c, i) => `<span><span class="tag" style="background: var(--${i ? 'b' : 'a'})"></span>${describe(c)}</span>`).join('')
+    + `<span style="color:#998">${at + 1}–${Math.min(at + 2, list.length)} of ${list.length}</span>`;
+  save();
+  restart();
+}
+
+function restart() {
+  const lead = seconds('lead'), after = seconds('after');
+  waiting = 0;
+  for (const cell of cells) {
+    const crash = pair[cell.side];
+    cell.el.style.visibility = crash ? '' : 'hidden';
+    if (!crash) continue;
+    cell.run = new CrashRun(data, crash, cell.body, { lead, after });
+    cell.prev = snapshot(cell.run);
+    cell.cam = null;
+    cell.who.innerHTML = `<b>#${crash.id}</b> · Body ${cell.body + 1}`;
+    cell.out.textContent = cell.run.wreck ? 'wrecked…' : '';
+  }
 }
 
 /** What's drawn: the truck's or the wreck's points and wheel turns. */
@@ -83,15 +97,25 @@ function snapshot(run) {
   return { T: p.slice(0, 10), rot: [p[10], p[11]] };
 }
 
-function sizeCanvases() {
-  const dpr = window.devicePixelRatio || 1;
+/** Size the twelve to fit the window, 4 across and 3 down (2 across on a phone, scrolling). */
+function layout() {
+  const grid = $('grid'), dpr = window.devicePixelRatio || 1;
+  const narrow = innerWidth <= 640;
+  if (narrow) grid.style.width = '';
+  else {
+    const top = grid.getBoundingClientRect().top + scrollY, capH = 20, gap = 8;
+    const byHeight = ((innerHeight - top - 12 - 2 * gap) / 3 - capH - 3) * VIEW_W / VIEW_H;
+    const byWidth = (innerWidth - 32 - 3 * gap) / 4;
+    const w = Math.max(160, Math.min(byWidth, byHeight));
+    grid.style.width = `${4 * w + 3 * gap + 32}px`;
+  }
   for (const c of cells) {
     const w = c.canvas.clientWidth;
     c.canvas.width = Math.round(w * dpr);
     c.canvas.height = Math.round(w * dpr * VIEW_H / VIEW_W);
   }
 }
-addEventListener('resize', sizeCanvases);
+addEventListener('resize', layout);
 
 const lerp = (a, b, k) => a + (b - a) * k;
 
@@ -101,11 +125,11 @@ function draw(cell, k) {
   const same = !!prev.W === !!cur.W;
   const pts = (cur.W || cur.T).map((v, i) => (same ? lerp((prev.W || prev.T)[i], v, k) : v));
   const rot = cur.rot.map((v, i) => (same ? lerp(prev.rot[i], v, k) : v));
-  // camera: follows the truck, then the wreck's body
-  const focus = run.wreck ? run.wreck.centre : [pts[0], pts[1]];
+  // camera: follows the middle of the body, the same way before the wreck and after
+  const focus = run.bodyCentre(run.wreck ? null : pts);
   if (!cell.cam) cell.cam = focus.slice();
-  cell.cam[0] += (focus[0] - cell.cam[0]) * 0.2;
-  cell.cam[1] += (focus[1] - cell.cam[1]) * 0.2;
+  cell.cam[0] += (focus[0] - cell.cam[0]) * CAM;
+  cell.cam[1] += (focus[1] - cell.cam[1]) * CAM;
   const s = canvas.width / VIEW_W;
   const camX = cell.cam[0] - VIEW_W / 2, camY = cell.cam[1] - VIEW_H * 0.55;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -147,14 +171,6 @@ function hitboxes(ctx, W, pts) {
   W.body.forEach((i, n) => (n ? ctx.lineTo(pts[i * 2], pts[i * 2 + 1]) : ctx.moveTo(pts[i * 2], pts[i * 2 + 1])));
   ctx.closePath();
   ctx.stroke();
-  // what the wheels hit (the outline with its underside flat)
-  ctx.strokeStyle = '#f80';
-  ctx.setLineDash([3, 2]);
-  ctx.beginPath();
-  W.wheelOutline().forEach(([x, y], n) => (n ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-  ctx.closePath();
-  ctx.stroke();
-  ctx.setLineDash([]);
   ctx.strokeStyle = '#0ff';
   for (const w of W.wheels) {
     ctx.beginPath();
@@ -165,9 +181,8 @@ function hitboxes(ctx, W, pts) {
 
 function outcome(cell) {
   const top = cell.run.wheelsOnTop().filter(Boolean).length;
-  const txt = top === 0 ? 'both wheels off' : top === 1 ? 'one wheel on top' : 'both wheels on top';
-  const slow = cell.run.wreck.steps > HZ * 10 ? ' · never settled' : '';
-  cell.out.innerHTML = top === 2 || slow ? `<span class="warn">${txt}${slow}</span>` : txt;
+  const txt = top === 0 ? 'both off' : top === 1 ? 'one on top' : 'both on top';
+  cell.out.innerHTML = top === 2 ? `<span class="warn">${txt}</span>` : txt;
 }
 
 let last = performance.now(), acc = 0;
@@ -176,31 +191,41 @@ function frame(now) {
   last = now;
   const steps = Math.floor(acc);
   acc -= steps;
-  for (const cell of cells) {
-    if (!cell.visible) continue;
+  if (pair.length) {
     for (let i = 0; i < steps; i++) {
-      cell.prev = snapshot(cell.run);
-      if (!cell.run.done) {
+      for (const cell of cells) {
+        cell.prev = snapshot(cell.run);
+        if (cell.run.done) continue;
         const was = !!cell.run.wreck;
         cell.run.step();
         if (cell.run.done) outcome(cell);
         else if (!was && cell.run.wreck) cell.out.textContent = 'wrecked…';
-      } else if (++cell.wait > HZ * 1.5) { start(cell); break; }
+      }
+      // all twelve done: a moment's pause, then the next two (or these again)
+      if (cells.every((c) => c.run.done) && ++waiting > HZ) {
+        if ($('hold').checked) restart(); else { at += 2; show(); }
+        break;
+      }
     }
-    draw(cell, acc);
+    for (const cell of cells) draw(cell, acc);
   }
   requestAnimationFrame(frame);
 }
 
-for (const id of ['stage', 'lie']) $(id).addEventListener('change', build);
-for (const id of ['speed', 'boxes', 'body', 'lead']) $(id).addEventListener('change', save);
-$('replay').addEventListener('click', () => cells.forEach((c) => start(c)));
+for (const id of ['stage', 'lie']) $(id).addEventListener('change', () => { at = 0; show(); });
+for (const id of ['lead', 'after']) $(id).addEventListener('change', () => { seconds(id); save(); restart(); });
+for (const id of ['speed', 'hold', 'boxes']) $(id).addEventListener('change', save);
+$('replay').addEventListener('click', restart);
+$('next').addEventListener('click', () => { at += 2; show(); });
+$('prev').addEventListener('click', () => { at -= 2; show(); });
+for (const c of cells) c.canvas.addEventListener('click', restart);
 $('tally').addEventListener('click', () => {
+  if ($('stats').textContent) { $('stats').textContent = ''; layout(); return; }
   $('stats').textContent = 'Running…';
   setTimeout(() => {
     const rows = tally(data, chosen());
     const count = [0, 0, 0];
-    const lines = ['Wheels left on top, per body 1-6 (. none, 1 one, 2 both), and the longest it took to settle'];
+    const lines = ['Wheels left on top, per body 1-6 (. none, 1 one, 2 both), and the longest it took to settle (Tally again to hide)'];
     for (const { crash: c, on, settle } of rows) {
       on.forEach((n) => count[n]++);
       const max = Math.max(...settle);
@@ -212,5 +237,6 @@ $('tally').addEventListener('click', () => {
   }, 20);
 });
 
-build();
+show();
+layout();
 requestAnimationFrame(frame);

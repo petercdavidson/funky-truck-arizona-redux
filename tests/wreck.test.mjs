@@ -16,7 +16,7 @@ test('the crashes cover every stage, with trucks on their roofs among them', () 
 test('no real crash leaves both wheels sitting on top of the body, with any body', () => {
   for (const crash of crashes) {
     for (let body = 0; body < BODIES; body++) {
-      const r = new CrashRun(data, crash, body, { leadUp: false }).finish();
+      const r = new CrashRun(data, crash, body, { lead: 0 }).finish();
       assert.ok(r.wheelsOnTop().filter(Boolean).length < 2, `crash #${crash.id} (stage ${crash.stage + 1}, ${crash.lie}), body ${body + 1}`);
     }
   }
@@ -25,7 +25,7 @@ test('no real crash leaves both wheels sitting on top of the body, with any body
 test('on its roof, the wheels hit the body: once the overlap at the wreck has cleared, none sinks into it', () => {
   for (const crash of crashes.filter((c) => c.lie === 'on its roof')) {
     for (let body = 0; body < BODIES; body++) {
-      const W = new CrashRun(data, crash, body, { leadUp: false }).wreck;
+      const W = new CrashRun(data, crash, body, { lead: 0 }).wreck;
       let sunk = 0;
       for (let i = 0; i < 280; i++) {
         W.step();
