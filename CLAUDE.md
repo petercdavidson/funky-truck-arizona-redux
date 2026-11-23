@@ -31,6 +31,11 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `src/wreck.js` (no DOM): the ragdoll wreck, a wrecked truck's loose pieces. Its body collides as
   that body's own outline, `src/wreck-shapes.js`, made from the sprites by `tools/make-wreck-shapes.mjs`
   (rerun it if the body art changes).
+- Wreck Lab (`tools/wreck-lab.html`, served from the repo): every truck body wrecked in a set of
+  scenes on real stage ground (on its roof, sliding, over-rotated flips, at speed...), looping,
+  with hitboxes and slow motion. The scenes are in `tools/wreck-lab-sim.mjs` (no DOM), which also
+  tallies outcomes headless: `node tools/wreck-lab-sim.mjs [runs] [scene]`. Work on wreck physics
+  there rather than in the game. `tests/wreck.test.mjs` runs its scenes.
 - `src/battle.js` (no DOM): Sandbox's cars: rival cars (`Enemy`s with `s = 1`, kind `racer`, in
   `battle.racers`) and enemy cars (`s = -1`, in `battle.enemies`), truck-on-truck collisions,
   missiles, explosions, your boost and jump. Enemies are ordinary `Truck`s simulated in a mirrored

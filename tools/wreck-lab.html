@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wreck Lab</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #1d1a18; color: #eee; font: 14px system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center;
+    padding: 10px 16px; background: #2a2421; border-bottom: 1px solid #3c332e; }
+  header h1 { font-size: 16px; margin: 0 6px 0 0; }
+  label { display: inline-flex; gap: 6px; align-items: center; }
+  select, button { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid #5a4c44; background: #3a312c; color: #eee; }
+  button { cursor: pointer; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; padding: 12px 16px; }
+  .cell { background: #2a2421; border-radius: 8px; overflow: hidden; }
+  .cell canvas { display: block; width: 100%; aspect-ratio: 3 / 2; background: #8fb8d8; touch-action: manipulation; }
+  .cap { display: flex; justify-content: space-between; gap: 8px; padding: 6px 10px; font-size: 12px; color: #cbb; }
+  .cap b { color: #fff; font-weight: 600; }
+  .warn { color: #ffb37a; }
+  #stats { padding: 0 16px 16px; font: 12px ui-monospace, Menlo, monospace; white-space: pre; overflow-x: auto; color: #ddd; }
+  #loading { padding: 20px 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Wreck Lab</h1>
+  <label>Scene <select id="scene"></select></label>
+  <label>Body <select id="body"></select></label>
+  <label>Speed <select id="speed"><option value="1">1×</option><option value="0.5">½×</option><option value="0.25">¼×</option></select></label>
+  <label><input type="checkbox" id="vary" checked> Vary each replay</label>
+  <label><input type="checkbox" id="boxes"> Hitboxes</label>
+  <button id="replay">Replay</button>
+  <button id="tally">Tally 30 runs</button>
+</header>
+<div id="loading">Loading…</div>
+<div id="grid"></div>
+<div id="stats"></div>
+<script type="module" src="wreck-lab.js"></script>
+</body>
+</html>
