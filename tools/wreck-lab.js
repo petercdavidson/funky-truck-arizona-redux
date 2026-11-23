@@ -47,11 +47,21 @@ function chosen() {
     && ($('lie').value === 'all' || c.lie === $('lie').value));
 }
 
-// Twelve cells, made once: the first six show crash A with bodies 1-6, the last six crash B.
-const cells = [];
+// Twelve cells, made once: six showing crash A with bodies 1-6 (on a desktop, the left two columns,
+// three down), six crash B (the right two), each under its heading.
+const cells = [], heads = [];
 for (let i = 0; i < 12; i++) {
+  if (i % 6 === 0) {
+    const h = document.createElement('div');
+    h.className = 'head' + (i ? ' b' : '');
+    $('grid').append(h);
+    heads.push(h);
+  }
   const el = document.createElement('div');
-  el.className = 'cell' + (i >= 6 ? ' b' : '');
+  el.className = 'cell';
+  const j = i % 6;
+  el.style.gridRow = String(2 + Math.floor(j / 2));
+  el.style.gridColumn = String((i < 6 ? 1 : 4) + (j % 2));
   el.innerHTML = '<canvas></canvas><div class="cap"><span class="who"></span><span class="out"></span></div>';
   $('grid').append(el);
   const canvas = el.querySelector('canvas');
@@ -65,12 +75,12 @@ const describe = (c) => `<b>#${c.id} Stage ${c.stage + 1}</b> · ${c.lie}, ${c.k
 /** Show the two crashes from `at` in the chosen list (wrapping round). */
 function show() {
   const list = chosen();
-  if (!list.length) { $('pair').textContent = 'No crashes match.'; pair = []; return; }
+  if (!list.length) { heads[0].textContent = 'No crashes match.'; heads[1].textContent = ''; $('where').textContent = ''; pair = []; return; }
   at = ((at % list.length) + list.length) % list.length;
   pair = [list[at], list[(at + 1) % list.length]];
   if (list.length === 1) pair = [list[0], list[0]];
-  $('pair').innerHTML = pair.map((c, i) => `<span><span class="tag" style="background: var(--${i ? 'b' : 'a'})"></span>${describe(c)}</span>`).join('')
-    + `<span style="color:#998">${at + 1}–${Math.min(at + 2, list.length)} of ${list.length}</span>`;
+  pair.forEach((c, i) => { heads[i].innerHTML = describe(c); });
+  $('where').textContent = `${at + 1}–${Math.min(at + 2, list.length)} of ${list.length}`;
   save();
   restart();
 }
@@ -103,11 +113,11 @@ function layout() {
   const narrow = innerWidth <= 640;
   if (narrow) grid.style.width = '';
   else {
-    const top = grid.getBoundingClientRect().top + scrollY, capH = 20, gap = 8;
-    const byHeight = ((innerHeight - top - 12 - 2 * gap) / 3 - capH - 3) * VIEW_W / VIEW_H;
-    const byWidth = (innerWidth - 32 - 3 * gap) / 4;
+    const top = grid.getBoundingClientRect().top + scrollY, capH = 20, gap = 8, headH = 30, mid = 6 + gap;
+    const byHeight = ((innerHeight - top - 20 - headH - 3 * gap) / 3 - capH) * VIEW_W / VIEW_H;
+    const byWidth = (innerWidth - 32 - 3 * gap - mid) / 4;
     const w = Math.max(160, Math.min(byWidth, byHeight));
-    grid.style.width = `${4 * w + 3 * gap + 32}px`;
+    grid.style.width = `${4 * w + 3 * gap + mid + 32}px`;
   }
   for (const c of cells) {
     const w = c.canvas.clientWidth;

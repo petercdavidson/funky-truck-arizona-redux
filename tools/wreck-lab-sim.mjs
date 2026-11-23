@@ -95,7 +95,13 @@ export class CrashRun {
    * body placed on its mounts as the Wreck places it) and after (the wreck's own body).
    */
   bodyCentre(T) {
-    if (this.wreck) { const c = this.wreck.centre; return [c[0] + this.camShift[0], c[1] + this.camShift[1]]; }
+    if (this.wreck) {
+      // (where the body is drawn, which eases up out of the ground at first: see Wreck.shownPoints)
+      const W = this.wreck.shownPoints(this.wreck.T);
+      let x = 0, y = 0;
+      for (const i of this.wreck.body) { x += W[i * 2]; y += W[i * 2 + 1]; }
+      return [x / this.wreck.body.length, y / this.wreck.body.length];
+    }
     const shape = BODY_SHAPES[this.body], a = Math.atan2(T[9] - T[7], T[8] - T[6]), c = Math.cos(a), s = Math.sin(a);
     let x = 0, y = 0;
     for (const [px, py] of shape) { x += T[6] + px * c - py * s; y += T[7] + px * s + py * c; }
@@ -110,13 +116,7 @@ export class CrashRun {
     t.probePrev = s.probePrev ? s.probePrev.slice() : null;
     t.gravity = s.gravity;
     t.updateBodyRot();
-    this.wreck = null;
-    const was = this.bodyCentre(t.T);
     this.wreck = new Wreck(t, this.w.wheel, this.w.thin, this.body);
-    // (the Wreck lifts the body clear of any ground its cab had scraped into: keep the camera's
-    // point where it was, so the view doesn't jump)
-    const c = this.wreck.centre;
-    this.camShift = [was[0] - c[0], was[1] - c[1]];
   }
 
   step() {

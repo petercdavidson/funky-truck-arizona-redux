@@ -42,6 +42,7 @@ export const WRECK = {
   staticSpeed: 0.15,                                      // px a step: a body or bar point on the ground sliding slower than this stops (static friction)
   sleepSpeed: 0.2,                                        // px a step: slower than this everywhere, on the ground, for sleepAfter steps, and the wreck stops
   sleepAfter: 35,
+  liftEase: 12,                                           // steps over which a body lifted clear of the ground at the wreck is shown rising into place
 };
 
 /** The point nearest (x, y) on the polygon `poly` ([[x, y], ...]), and whether (x, y) is inside it. */
@@ -99,6 +100,7 @@ export class Wreck {
     // inside a sharp crest with a wheel either side).
     const refs = [[T[2], T[3]], [T[4], T[5]]];
     if (truck.probePrev) refs.push(truck.probePrev.slice());
+    this.lifted = [];      // per point: how far liftClear moved it (x, y), for shownPoints
     this.liftClear(this.body, refs);
 
     // Wheels, keeping their spin.
@@ -126,6 +128,7 @@ export class Wreck {
     // How far the wheels overlap each other and the body to begin with (allowed, at first).
     this.overlap0 = this.overlaps();
     this.steps = 0;
+    for (let i = 0; i < this.T.length; i++) this.lifted[i] ||= 0;
     this.gravity = truck.gravity ?? GRAVITY; // (Sandbox can change it)
   }
 
@@ -150,6 +153,8 @@ export class Wreck {
       if (!best) return;
       for (const i of pts) {
         T[i * 2] += best[0]; T[i * 2 + 1] += best[1];
+        this.lifted[i * 2] = (this.lifted[i * 2] || 0) + best[0];
+        this.lifted[i * 2 + 1] = (this.lifted[i * 2 + 1] || 0) + best[1];
         P[i * 2] += best[0]; P[i * 2 + 1] += best[1];
       }
     }
@@ -248,6 +253,19 @@ export class Wreck {
   }
 
   /** The body's middle, for the camera to follow. */
+  /**
+   * Where to draw the points W (this.T, or an in-between of it): liftClear moved the body (and
+   * bars) up out of the ground at once, and that would be seen as a jump, so they're drawn where
+   * they were, easing up to where they are over WRECK.liftEase steps. Only the drawing: the pieces
+   * themselves are where they are from the start.
+   */
+  shownPoints(W) {
+    const t = Math.min(1, this.steps / WRECK.liftEase);
+    const f = 1 - t * t * (3 - 2 * t); // (smoothstep)
+    if (f <= 0) return W;
+    return W.map((v, i) => v - this.lifted[i] * f);
+  }
+
   get centre() {
     let x = 0, y = 0;
     for (const i of this.body) { x += this.T[i * 2]; y += this.T[i * 2 + 1]; }
