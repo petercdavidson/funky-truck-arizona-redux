@@ -30,7 +30,8 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   sound files.
 - `src/wreck.js` (no DOM): the ragdoll wreck, a wrecked truck's loose pieces. Its body collides as
   that body's own outline, `src/wreck-shapes.js`, made from the sprites by `tools/make-wreck-shapes.mjs`
-  (rerun it if the body art changes).
+  (rerun it if the body art changes). The loose wheels hit the same outline with its underside flattened
+  at the wheel-arch tops, and roll along it.
 - Wreck Lab (`tools/wreck-lab.html`, served from the repo): every truck body wrecked in a set of
   scenes on real stage ground (on its roof, sliding, over-rotated flips, at speed...), looping,
   with hitboxes and slow motion. The scenes are in `tools/wreck-lab-sim.mjs` (no DOM), which also

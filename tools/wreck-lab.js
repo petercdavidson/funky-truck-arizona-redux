@@ -131,6 +131,14 @@ function hitboxes(ctx, W, pts) {
   W.body.forEach((i, n) => (n ? ctx.lineTo(pts[i * 2], pts[i * 2 + 1]) : ctx.moveTo(pts[i * 2], pts[i * 2 + 1])));
   ctx.closePath();
   ctx.stroke();
+  // what the wheels hit (the outline with its underside flat)
+  ctx.strokeStyle = '#f80';
+  ctx.setLineDash([3, 2]);
+  ctx.beginPath();
+  W.wheelOutline().forEach(([x, y], n) => (n ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  ctx.closePath();
+  ctx.stroke();
+  ctx.setLineDash([]);
   ctx.strokeStyle = '#0ff';
   for (const w of W.wheels) {
     ctx.beginPath();

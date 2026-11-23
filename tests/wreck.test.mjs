@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { LabRun, SCENES, BODIES, ROOF } from '../tools/wreck-lab-sim.mjs';
+import { WRECK } from '../src/wreck.js';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
 
@@ -24,20 +25,22 @@ test('a truck wrecked on its roof never leaves both wheels sitting on top of it'
   }
 });
 
-test('upside down, a wheel still in its arch drops off past the body rather than rising out of it', () => {
+test('upside down, the wheels hit the body: they jolt off their arches quickly, then never sink into it', () => {
   for (let body = 0; body < BODIES; body++) {
-    const r = new LabRun(data, SCENES.find((s) => s.id === 'roof-drop'), body, 0);
-    while (!r.wreck) r.step();
-    const W = r.wreck, rise = [0, 0], landed = [false, false];
-    for (let i = 0; i < 140; i++) {
-      W.step();
-      W.wheels.forEach((w, n) => {
-        const x = W.T[w.p * 2], y = W.T[w.p * 2 + 1];
-        // (until it first reaches the ground: then it may bounce)
-        if (W.wheelWorld.collide(x, y - 1, x, y + 2)) landed[n] = true;
-        if (W.ghost.wb[n] && !landed[n]) rise[n] = Math.max(rise[n], W.P[w.p * 2 + 1] - y);
-      });
+    for (let seed = 0; seed <= 4; seed++) {
+      const r = new LabRun(data, SCENES.find((s) => s.id === 'roof-drop'), body, seed);
+      while (!r.wreck && !r.done) r.step();
+      if (!r.wreck) continue;
+      const W = r.wreck;
+      let up = 0, sunk = 0;
+      for (let i = 0; i < 280; i++) {
+        W.step();
+        for (const w of W.wheels) up = Math.max(up, W.P[w.p * 2 + 1] - W.T[w.p * 2 + 1]);
+        // (once the overlap at the wreck has had time to clear)
+        if (i > WRECK.release + 5) sunk = Math.max(sunk, ...W.overlaps().wb);
+      }
+      assert.ok(sunk < 4, `body ${body}, seed ${seed}: a wheel sank ${sunk.toFixed(1)} px into the body`);
+      assert.ok(up < 3, `body ${body}, seed ${seed}: a wheel went up at ${up.toFixed(2)} px a step`);
     }
-    assert.ok(Math.max(...rise) < 0.3, `body ${body}: a wheel rose out of the body at ${Math.max(...rise).toFixed(2)} px a step`);
   }
 });

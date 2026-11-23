@@ -141,8 +141,6 @@ test('a wreck\'s wheels hit each other and the body instead of passing through',
   const mid = (k) => box.reduce((sum, i) => sum + T[i * 2 + k], 0) / box.length;
   const ax = mid(0), ay = mid(1);
   for (const [p, x, y] of [[a, ax, ay], [b, ax + 10, ay]]) { T[p * 2] = w.P[p * 2] = x; T[p * 2 + 1] = w.P[p * 2 + 1] = y; }
-  // (as once they've come apart since the wreck: until then, a wheel still in its arch passes the body)
-  w.ghost = { ww: false, wb: [false, false] };
   let worst = 0;
   for (let i = 0; i < 70; i++) {
     w.step();

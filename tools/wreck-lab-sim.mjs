@@ -165,7 +165,7 @@ export class LabRun {
 
   /** Which wheels are resting on top of the body: [rear, front] booleans. */
   wheelsOnTop() {
-    const W = this.wreck, T = W.T, poly = W.outline(), R = WRECK.wheelRadius;
+    const W = this.wreck, T = W.T, poly = W.wheelOutline(), R = WRECK.wheelRadius;
     return W.wheels.map(({ p }) => {
       const x = T[p * 2], y = T[p * 2 + 1], h = nearestOnPolygon(poly, x, y);
       const onGround = !!W.wheelWorld.collide(x, y - 1, x, y + 5);
