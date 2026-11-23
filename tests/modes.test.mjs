@@ -167,9 +167,12 @@ test('a truck wrecked at rest comes apart gently: nothing is flung off', () => {
     g.selfWreck();
     const w = g.wreck;
     let up = 0, sideways = 0;
+    // (the body and wheels: the bars flop about, pass through everything and are drawn inside the body)
+    const pieces = [...w.body, ...w.wheels.map((x) => x.p)];
     for (let i = 0; i < 280; i++) {
       w.step();
-      for (let p = 0; p < w.T.length; p += 2) {
+      for (const q of pieces) {
+        const p = q * 2;
         up = Math.max(up, w.P[p + 1] - w.T[p + 1]);
         sideways = Math.max(sideways, Math.abs(w.T[p] - w.P[p]));
       }

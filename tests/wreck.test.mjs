@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { CrashRun, BODIES } from '../tools/wreck-lab-sim.mjs';
-import { WRECK } from '../src/wreck.js';
+import { WRECK, Wreck } from '../src/wreck.js';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
 const crashes = JSON.parse(readFileSync(new URL('../tools/wreck-crashes.json', import.meta.url)));
@@ -62,6 +62,22 @@ test('on its roof, the wheels hit the body: once the overlap at the wreck has cl
         if (i > WRECK.release + 5) sunk = Math.max(sunk, ...W.overlaps().wb);
       }
       assert.ok(sunk < 4, `crash #${crash.id}, body ${body + 1}: a wheel sank ${sunk.toFixed(1)} px into the body`);
+    }
+  }
+});
+
+test('the bars are never drawn poking out of the body\'s front, back or top', () => {
+  for (const crash of crashes) {
+    const W = new CrashRun(data, crash, crash.id % BODIES, { lead: 0 }).wreck;
+    for (let s = 0; s < 280; s++) {
+      W.step();
+      const B = W.shownBars(W.T), { x, y, ang } = Wreck.bodyPose(W.T, W.body, W.shape), c = Math.cos(ang), sn = Math.sin(ang);
+      for (const i of W.barEnds) {
+        const dx = B[i * 2] - x, dy = B[i * 2 + 1] - y, bx = dx * c + dy * sn, by = -dx * sn + dy * c;
+        assert.ok(bx >= W.lengthOf[0] - 0.01 && bx <= W.lengthOf[1] + 0.01, `crash #${crash.id}: a bar out of the body's end`);
+        const roof = Math.min(...W.roofLine.map((q) => q[1]));
+        assert.ok(by >= roof, `crash #${crash.id}: a bar out of the body's top`);
+      }
     }
   }
 });
