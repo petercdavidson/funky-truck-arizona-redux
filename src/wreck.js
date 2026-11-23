@@ -15,8 +15,9 @@
 // to sit deeper). Upright, the wheels are pushed out from under the body as that overlap goes;
 // on its roof, a wheel in an arch that opens upwards hops up and out of it instead. A wheel on top
 // of the body rolls along it; one under or beside it grips it, and one pinned under the body
-// drags on the ground rather than carrying the body off. Collisions are soft, too (an overlap is
-// undone over a few steps).
+// drags on the ground rather than carrying the body off. The body grips the ground as a whole,
+// with friction from its whole weight (WRECK.bodyGrip), so it doesn't glide down gentle slopes.
+// Collisions are soft, too (an overlap is undone over a few steps).
 
 import { BODY_SHAPES } from './wreck-shapes.js';
 
@@ -41,6 +42,7 @@ export const WRECK = {
   slop: 0.5,                                              // px of overlap between pieces let be (so resting contact doesn't jitter)
   grip: 0.8,                                              // pieces sliding along each other keep this share of it a pass
   onTop: 0.5,                                             // a wheel is resting on top of the body if the way out of it points up at least this much
+  bodyGrip: 0.7,                                          // the body on the ground: friction as a share of its weight on it (sliding stops on slopes gentler than about atan of this)
   roll: 0.995,
   rollUnder: 0.9,                                        // a wheel under or beside the body keeps this share (it grips more: a body can't skate over it)
   staticSpeed: 0.15,                                      // px a step: a body or bar point on the ground sliding slower than this stops (static friction)
@@ -417,6 +419,29 @@ export class Wreck {
       const out = vn < -WRECK.restSpeed ? -vn * m.bounce : vn < 0 ? 0 : vn;
       P[i * 2] = T[i * 2] - (tx * m.friction + h.nx * out);
       P[i * 2 + 1] = T[i * 2 + 1] - (ty * m.friction + h.ny * out);
+    }
+    // The body on the ground: friction on the body as a whole, from its whole weight on the ground
+    // (and how hard it hit it), not just at the points that happen to touch. It takes away up to
+    // WRECK.bodyGrip of that from its sliding, and stops it if that's all there is.
+    const down = this.body.filter((i) => touched[i]);
+    if (down.length) {
+      let nx = 0, ny = 0, hit = 0;
+      for (const i of down) {
+        nx += touched[i].nx; ny += touched[i].ny;
+        const vin = (aimed[i * 2] - from[i * 2]) * touched[i].nx + (aimed[i * 2 + 1] - from[i * 2 + 1]) * touched[i].ny;
+        hit = Math.max(hit, -vin);
+      }
+      const nl = Math.hypot(nx, ny) || 1;
+      nx /= nl; ny /= nl;
+      let vx = 0, vy = 0;
+      for (const i of this.body) { vx += T[i * 2] - P[i * 2]; vy += T[i * 2 + 1] - P[i * 2 + 1]; }
+      vx /= this.body.length; vy /= this.body.length;
+      const vn = vx * nx + vy * ny, tx = vx - vn * nx, ty = vy - vn * ny, vt = Math.hypot(tx, ty);
+      const weight = this.gravity * Math.max(0, -ny); // (its weight's push into the ground: g cos(slope))
+      const cut = Math.min(vt, WRECK.bodyGrip * (weight + Math.max(0, hit - this.gravity)));
+      if (vt > 1e-9 && cut > 0) {
+        for (const i of this.body) { P[i * 2] += tx / vt * cut; P[i * 2 + 1] += ty / vt * cut; }
+      }
     }
     // Wheels roll on the ground and along the body, and keep spinning in the air.
     this.wheels.forEach((w, n) => {
