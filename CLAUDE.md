@@ -32,11 +32,13 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   that body's own outline, `src/wreck-shapes.js`, made from the sprites by `tools/make-wreck-shapes.mjs`
   (rerun it if the body art changes). The loose wheels hit the same outline with its underside flattened
   at the wheel-arch tops, and roll along it.
-- Wreck Lab (`tools/wreck-lab.html`, served from the repo): every truck body wrecked in a set of
-  scenes on real stage ground (on its roof, sliding, over-rotated flips, at speed...), looping,
-  with hitboxes and slow motion. The scenes are in `tools/wreck-lab-sim.mjs` (no DOM), which also
-  tallies outcomes headless: `node tools/wreck-lab-sim.mjs [runs] [scene]`. Work on wreck physics
-  there rather than in the game. `tests/wreck.test.mjs` runs its scenes.
+- Wreck Lab (`tools/wreck-lab.html`, served from the repo): real crashes, replayed (the last 2 s of
+  driving) and then wrecked live by `src/wreck.js` with any body, looping, with hitboxes and slow
+  motion. The crashes (`tools/wreck-crashes.json`) are found by bots driving the nine stages in
+  Practice with damage on: `node tools/make-wreck-crashes.mjs [per stage]` (rerun it if the truck's
+  physics or the stages change; wreck changes don't need it). `tools/wreck-lab-sim.mjs` (no DOM)
+  runs them and tallies the outcomes headless: `node tools/wreck-lab-sim.mjs`. Work on wreck physics
+  there rather than in the game. `tests/wreck.test.mjs` runs the crashes.
 - `src/battle.js` (no DOM): Sandbox's cars: rival cars (`Enemy`s with `s = 1`, kind `racer`, in
   `battle.racers`) and enemy cars (`s = -1`, in `battle.enemies`), truck-on-truck collisions,
   missiles, explosions, your boost and jump. Enemies are ordinary `Truck`s simulated in a mirrored

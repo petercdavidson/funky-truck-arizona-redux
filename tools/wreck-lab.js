@@ -1,70 +1,86 @@
-// wreck-lab.js — the Wreck Lab page: every scene (tools/wreck-lab-sim.mjs) with every truck body,
-// drawn with the game's own sprites and tiles, looping. Not part of the game.
+// wreck-lab.js — the Wreck Lab page: real crashes (bots driving the nine stages, see
+// tools/make-wreck-crashes.mjs) replayed, then wrecked live with the game's own Wreck, sprites and
+// tiles, looping. Not part of the game.
 
 import { loadAssets, tileImage } from '../src/assets.js';
 import { Renderer } from '../src/render.js';
 import { WRECK } from '../src/wreck.js';
-import { SCENES, BODIES, LabRun, ROOF, tally } from './wreck-lab-sim.mjs';
+import { BODIES, CrashRun, tally } from './wreck-lab-sim.mjs';
 
 const TILE = 64, VIEW_W = 300, VIEW_H = 200, HZ = 70;
 const $ = (id) => document.getElementById(id);
-const BODY_NAMES = ['Body 1', 'Body 2', 'Body 3', 'Body 4', 'Body 5', 'Body 6'];
 
-const assets = await loadAssets('../assets/');
+const [assets, crashes] = await Promise.all([
+  loadAssets('../assets/'),
+  fetch('wreck-crashes.json').then((r) => r.json()),
+]);
 const data = assets.levels;
 $('loading').remove();
 
 // remembered choices
-const saved = (() => { try { return JSON.parse(localStorage.getItem('funkytruck.wreckLab')) || {}; } catch { return {}; } })();
-const save = () => { try { localStorage.setItem('funkytruck.wreckLab', JSON.stringify({ scene: $('scene').value, body: $('body').value, speed: $('speed').value, vary: $('vary').checked, boxes: $('boxes').checked })); } catch { /* fine */ } };
-
-$('scene').innerHTML = '<option value="all">All scenes</option>' + SCENES.map((s) => `<option value="${s.id}">${s.name}</option>`).join('');
-$('body').innerHTML = '<option value="all">All bodies</option>' + BODY_NAMES.slice(0, BODIES).map((n, i) => `<option value="${i}">${n}</option>`).join('');
-if (saved.scene) $('scene').value = saved.scene; else $('scene').value = 'roof-drop';
-if (saved.body) $('body').value = saved.body;
-if (saved.speed) $('speed').value = saved.speed;
-if (saved.vary !== undefined) $('vary').checked = saved.vary;
-if (saved.boxes !== undefined) $('boxes').checked = saved.boxes;
-if (!$('scene').value) $('scene').value = 'roof-drop';
-if (!$('body').value) $('body').value = 'all';
+const FIELDS = ['stage', 'lie', 'body', 'speed', 'lead', 'boxes'];
+const saved = (() => { try { return JSON.parse(localStorage.getItem('funkytruck.wreckLab2')) || {}; } catch { return {}; } })();
+const save = () => {
+  const o = {};
+  for (const f of FIELDS) o[f] = $(f).type === 'checkbox' ? $(f).checked : $(f).value;
+  try { localStorage.setItem('funkytruck.wreckLab2', JSON.stringify(o)); } catch { /* fine */ }
+};
+$('stage').innerHTML = '<option value="all">All stages</option>' + data.levels.map((_, i) => `<option value="${i}">Stage ${i + 1}</option>`).join('');
+$('body').innerHTML = '<option value="cycle">Each in turn</option>' + [...Array(BODIES).keys()].map((i) => `<option value="${i}">Body ${i + 1}</option>`).join('');
+for (const f of FIELDS) {
+  if (saved[f] === undefined) continue;
+  if ($(f).type === 'checkbox') $(f).checked = saved[f]; else $(f).value = saved[f];
+  if ($(f).value === '') $(f).selectedIndex = 0;
+}
 
 let cells = [];
+const seen = new IntersectionObserver((entries) => { for (const e of entries) e.target.cell.visible = e.isIntersecting; });
+
+function chosen() {
+  return crashes.filter((c) => ($('stage').value === 'all' || c.stage === Number($('stage').value))
+    && ($('lie').value === 'all' || c.lie === $('lie').value));
+}
 
 function build() {
   save();
-  const scenes = $('scene').value === 'all' ? SCENES : SCENES.filter((s) => s.id === $('scene').value);
-  const bodies = $('body').value === 'all' ? [...Array(BODIES).keys()] : [Number($('body').value)];
   const grid = $('grid');
+  seen.disconnect();
   grid.innerHTML = '';
   cells = [];
-  for (const scene of scenes) for (const body of bodies) {
+  const list = chosen();
+  $('count').textContent = `${list.length} crash${list.length === 1 ? '' : 'es'}`;
+  for (const crash of list) {
     const el = document.createElement('div');
     el.className = 'cell';
-    el.innerHTML = `<canvas></canvas><div class="cap"><span><b>${scene.name}</b> · ${BODY_NAMES[body]}</span><span class="out"></span></div>`;
+    el.innerHTML = `<canvas></canvas><div class="cap"><span><b>#${crash.id} Stage ${crash.stage + 1}</b> · ${crash.lie}, ${crash.kmh} km/h · <span class="bd"></span></span><span class="out"></span></div>`;
     grid.append(el);
     const canvas = el.querySelector('canvas');
-    const cell = { scene, body, canvas, out: el.querySelector('.out'), r: new Renderer(canvas, assets), seed: 0, wait: 0 };
-    canvas.addEventListener('click', () => start(cell, true));
-    start(cell, false);
+    const cell = { crash, canvas, el, out: el.querySelector('.out'), bd: el.querySelector('.bd'), r: new Renderer(canvas, assets), body: -1, visible: true };
+    el.cell = cell;
+    seen.observe(el);
+    canvas.addEventListener('click', () => start(cell));
+    start(cell);
     cells.push(cell);
   }
   sizeCanvases();
 }
 
-function start(cell, next) {
-  if (next || $('vary').checked) cell.seed = $('vary').checked ? Math.floor(Math.random() * 1e9) + 1 : 0;
-  cell.run = new LabRun(data, cell.scene, cell.body, cell.seed);
+function start(cell) {
+  const b = $('body').value;
+  cell.body = b === 'cycle' ? (cell.body + 1 + BODIES) % BODIES : Number(b);
+  cell.run = new CrashRun(data, cell.crash, cell.body, { leadUp: $('lead').checked });
   cell.prev = snapshot(cell.run);
   cell.wait = 0;
   cell.cam = null;
-  cell.out.textContent = '';
+  cell.bd.textContent = `Body ${cell.body + 1}`;
+  cell.out.textContent = cell.run.wreck ? 'wrecked…' : '';
 }
 
 /** What's drawn: the truck's or the wreck's points and wheel turns. */
 function snapshot(run) {
   if (run.wreck) return { W: run.wreck.T.slice(), rot: run.wreck.wheels.map((w) => w.rot) };
-  const t = run.truck;
-  return { T: t.T.slice(), rot: [t.rearWheelRot, t.frontWheelRot] };
+  const p = run.truckPose;
+  return { T: p.slice(0, 10), rot: [p[10], p[11]] };
 }
 
 function sizeCanvases() {
@@ -85,11 +101,11 @@ function draw(cell, k) {
   const same = !!prev.W === !!cur.W;
   const pts = (cur.W || cur.T).map((v, i) => (same ? lerp((prev.W || prev.T)[i], v, k) : v));
   const rot = cur.rot.map((v, i) => (same ? lerp(prev.rot[i], v, k) : v));
-  // camera: follows the truck or the wreck's body, gently
+  // camera: follows the truck, then the wreck's body
   const focus = run.wreck ? run.wreck.centre : [pts[0], pts[1]];
   if (!cell.cam) cell.cam = focus.slice();
-  cell.cam[0] += (focus[0] - cell.cam[0]) * 0.15;
-  cell.cam[1] += (focus[1] - cell.cam[1]) * 0.15;
+  cell.cam[0] += (focus[0] - cell.cam[0]) * 0.2;
+  cell.cam[1] += (focus[1] - cell.cam[1]) * 0.2;
   const s = canvas.width / VIEW_W;
   const camX = cell.cam[0] - VIEW_W / 2, camY = cell.cam[1] - VIEW_H * 0.55;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -103,7 +119,7 @@ function draw(cell, k) {
     while (last >= 0 && L.tiles[last][gx] === 0) last--;
     for (let gy = Math.floor(camY / TILE); gy <= Math.floor((camY + VIEW_H) / TILE); gy++) {
       if (gy < 0) continue;
-      const id = gy > last ? (last >= 0 && L.tiles[last][gx] === 1 ? 1 : 0) : L.tiles[gy][gx];
+      const id = gy > last ? (last >= 0 && L.tiles[last][gx] === 1 ? 1 : 0) : gy < L.height ? L.tiles[gy][gx] : 0;
       if (!id) continue;
       const x0 = Math.round((gx * TILE - camX) * s), y0 = Math.round((gy * TILE - camY) * s);
       const x1 = Math.round(((gx + 1) * TILE - camX) * s), y1 = Math.round(((gy + 1) * TILE - camY) * s);
@@ -114,10 +130,10 @@ function draw(cell, k) {
   const look = { body: cell.body, tyre: 0, hub: 0, paint: cell.body };
   if (run.wreck) {
     const W = run.wreck;
-    const saved = W.wheels.map((w) => w.rot);
+    const keep = W.wheels.map((w) => w.rot);
     W.wheels.forEach((w, i) => { w.rot = rot[i]; });
     r.wreck(W, pts, look);
-    W.wheels.forEach((w, i) => { w.rot = saved[i]; });
+    W.wheels.forEach((w, i) => { w.rot = keep[i]; });
     if ($('boxes').checked) hitboxes(ctx, W, pts);
   } else {
     r.truck(pts, rot[0], rot[1], look);
@@ -148,22 +164,20 @@ function hitboxes(ctx, W, pts) {
 }
 
 function outcome(cell) {
-  const run = cell.run;
-  if (run.missed) { cell.out.innerHTML = '<span class="warn">landed on its wheels</span>'; return; }
-  const top = run.wheelsOnTop().filter(Boolean).length;
-  const roof = ROOF.has(cell.scene.id);
+  const top = cell.run.wheelsOnTop().filter(Boolean).length;
   const txt = top === 0 ? 'both wheels off' : top === 1 ? 'one wheel on top' : 'both wheels on top';
-  cell.out.innerHTML = roof && top === 2 ? `<span class="warn">${txt}</span>` : txt;
+  const slow = cell.run.wreck.steps > HZ * 10 ? ' · never settled' : '';
+  cell.out.innerHTML = top === 2 || slow ? `<span class="warn">${txt}${slow}</span>` : txt;
 }
 
 let last = performance.now(), acc = 0;
 function frame(now) {
-  const speed = Number($('speed').value);
-  acc += Math.min(0.1, (now - last) / 1000) * speed * HZ;
+  acc += Math.min(0.1, (now - last) / 1000) * Number($('speed').value) * HZ;
   last = now;
-  let steps = Math.floor(acc);
+  const steps = Math.floor(acc);
   acc -= steps;
   for (const cell of cells) {
+    if (!cell.visible) continue;
     for (let i = 0; i < steps; i++) {
       cell.prev = snapshot(cell.run);
       if (!cell.run.done) {
@@ -171,26 +185,29 @@ function frame(now) {
         cell.run.step();
         if (cell.run.done) outcome(cell);
         else if (!was && cell.run.wreck) cell.out.textContent = 'wrecked…';
-      } else if (++cell.wait > HZ * 1.5) { start(cell, false); break; }
+      } else if (++cell.wait > HZ * 1.5) { start(cell); break; }
     }
     draw(cell, acc);
   }
   requestAnimationFrame(frame);
 }
 
-for (const id of ['scene', 'body']) $(id).addEventListener('change', build);
-for (const id of ['speed', 'vary', 'boxes']) $(id).addEventListener('change', save);
-$('replay').addEventListener('click', () => cells.forEach((c) => start(c, true)));
+for (const id of ['stage', 'lie']) $(id).addEventListener('change', build);
+for (const id of ['speed', 'boxes', 'body', 'lead']) $(id).addEventListener('change', save);
+$('replay').addEventListener('click', () => cells.forEach((c) => start(c)));
 $('tally').addEventListener('click', () => {
   $('stats').textContent = 'Running…';
   setTimeout(() => {
-    const scenes = $('scene').value === 'all' ? SCENES : SCENES.filter((s) => s.id === $('scene').value);
-    const rows = tally(data, 30, scenes);
-    const lines = ['Wheels left on top of the body after 30 varied runs: both / one / none'];
-    for (const s of scenes) {
-      const list = rows.filter((r) => r.scene === s.id);
-      lines.push(`${s.name.padEnd(30)} ${list.map((r) => `${r.both}/${r.one}/${r.none}`.padEnd(10)).join('')}`);
+    const rows = tally(data, chosen());
+    const count = [0, 0, 0];
+    const lines = ['Wheels left on top, per body 1-6 (. none, 1 one, 2 both), and the longest it took to settle'];
+    for (const { crash: c, on, settle } of rows) {
+      on.forEach((n) => count[n]++);
+      const max = Math.max(...settle);
+      lines.push(`#${String(c.id).padStart(2)} Stage ${c.stage + 1}  ${c.lie.padEnd(12)} ${String(c.kmh).padStart(3)} km/h   ${on.map((n) => n || '.').join(' ')}   ${max >= 10 ? 'never settles' : `${max.toFixed(1)} s`}`);
     }
+    const all = count[0] + count[1] + count[2] || 1;
+    lines.push(`All: both on top ${Math.round(count[2] / all * 100)}%, one ${Math.round(count[1] / all * 100)}%, none ${Math.round(count[0] / all * 100)}%`);
     $('stats').textContent = lines.join('\n');
   }, 20);
 });

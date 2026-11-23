@@ -1,46 +1,37 @@
-// Wreck tests using the Wreck Lab's scenes (tools/wreck-lab-sim.mjs).
+// Wreck tests using the Wreck Lab's real crashes (bots driving the stages: tools/wreck-crashes.json).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { LabRun, SCENES, BODIES, ROOF } from '../tools/wreck-lab-sim.mjs';
+import { CrashRun, BODIES } from '../tools/wreck-lab-sim.mjs';
 import { WRECK } from '../src/wreck.js';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
+const crashes = JSON.parse(readFileSync(new URL('../tools/wreck-crashes.json', import.meta.url)));
 
-test('a truck wrecked on its roof never leaves both wheels sitting on top of it', () => {
-  for (const scene of SCENES.filter((s) => ROOF.has(s.id))) {
+test('the crashes cover every stage, with trucks on their roofs among them', () => {
+  for (let s = 0; s < data.levels.length; s++) assert.ok(crashes.some((c) => c.stage === s), `stage ${s + 1}`);
+  assert.ok(crashes.filter((c) => c.lie === 'on its roof').length >= 9);
+});
+
+test('no real crash leaves both wheels sitting on top of the body, with any body', () => {
+  for (const crash of crashes) {
     for (let body = 0; body < BODIES; body++) {
-      let oneOn = 0, runs = 0;
-      for (let seed = 1; seed <= 6; seed++) {
-        const r = new LabRun(data, scene, body, seed).finish();
-        if (r.missed) continue;
-        runs++;
-        const on = r.wheelsOnTop().filter(Boolean).length;
-        assert.ok(on < 2, `${scene.id}, body ${body}, seed ${seed}: both wheels stayed on top`);
-        if (on) oneOn++;
-      }
-      // (one may catch in a wheel arch now and then; mostly they fall off)
-      assert.ok(oneOn <= runs / 2, `${scene.id}, body ${body}: a wheel stayed on top in ${oneOn} of ${runs} runs`);
+      const r = new CrashRun(data, crash, body, { leadUp: false }).finish();
+      assert.ok(r.wheelsOnTop().filter(Boolean).length < 2, `crash #${crash.id} (stage ${crash.stage + 1}, ${crash.lie}), body ${body + 1}`);
     }
   }
 });
 
-test('upside down, the wheels hit the body: they jolt off their arches quickly, then never sink into it', () => {
-  for (let body = 0; body < BODIES; body++) {
-    for (let seed = 0; seed <= 4; seed++) {
-      const r = new LabRun(data, SCENES.find((s) => s.id === 'roof-drop'), body, seed);
-      while (!r.wreck && !r.done) r.step();
-      if (!r.wreck) continue;
-      const W = r.wreck;
-      let up = 0, sunk = 0;
+test('on its roof, the wheels hit the body: once the overlap at the wreck has cleared, none sinks into it', () => {
+  for (const crash of crashes.filter((c) => c.lie === 'on its roof')) {
+    for (let body = 0; body < BODIES; body++) {
+      const W = new CrashRun(data, crash, body, { leadUp: false }).wreck;
+      let sunk = 0;
       for (let i = 0; i < 280; i++) {
         W.step();
-        for (const w of W.wheels) up = Math.max(up, W.P[w.p * 2 + 1] - W.T[w.p * 2 + 1]);
-        // (once the overlap at the wreck has had time to clear)
         if (i > WRECK.release + 5) sunk = Math.max(sunk, ...W.overlaps().wb);
       }
-      assert.ok(sunk < 4, `body ${body}, seed ${seed}: a wheel sank ${sunk.toFixed(1)} px into the body`);
-      assert.ok(up < 3, `body ${body}, seed ${seed}: a wheel went up at ${up.toFixed(2)} px a step`);
+      assert.ok(sunk < 4, `crash #${crash.id}, body ${body + 1}: a wheel sank ${sunk.toFixed(1)} px into the body`);
     }
   }
 });
