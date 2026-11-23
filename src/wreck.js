@@ -21,8 +21,7 @@
 // its turning and its travel (a wheel landing while spinning is driven along by it); two wheels
 // touching grip each other the same way, turning against each other like gears, and bounce off
 // each other a little (the one on top taking all of it when the other is on the ground). A tyre's
-// grip on the body is as strong as the weight pressing them together allows. The bars' loose ends
-// are drawn inside or under the body, never poking out of its front, back or top.
+// grip on the body is as strong as the weight pressing them together allows.
 // Collisions are soft, too (an overlap is undone over a few steps).
 
 import { BODY_SHAPES } from './wreck-shapes.js';
@@ -52,7 +51,6 @@ export const WRECK = {
   bodyGrip: 0.3,                                          // the body on the ground: friction as a share of its weight on it (sliding stops on slopes gentler than about atan of this)
   roll: 0.995,
   pinnedGrip: 0.9,                                        // a wheel on the ground under the body: the share of their sliding over each other kept a pass
-  barInset: 5,                                            // px inside the body's ends and below its roof the bars' loose ends are kept
   tyreBounce: 0.45,                                       // two wheels meeting bounce apart with this share of how fast they met
   tyreRest: 0.25,                                         // px a step they must meet at to bounce at all (lower than the ground's: a little bounce even gently)
   spinInertia: 0.5,                                       // how hard a wheel is to spin up, for its weight (0.5 a solid disc, 1 a hoop)
@@ -162,12 +160,6 @@ export class Wreck {
     });
     const nb = this.body.length, anchors = [0, Math.floor(nb / 3), Math.floor(nb * 2 / 3)].map((i) => this.body[i]);
     for (const bar of this.bars) if (bar.mount) for (const c of anchors) stick(bar.b, c);
-    // The bars' loose ends (knees and the ends where the wheels were), drawn inside the body's
-    // length and below its roof (see shownBars).
-    this.barEnds = [...knees, ...this.bars.filter((bar) => !bar.mount).map((bar) => bar.b)];
-    const half = this.shape.length / 2, top = this.shape.slice(0, half), xs = this.shape.map((q) => q[0]);
-    this.roofLine = top;
-    this.lengthOf = [Math.min(...xs) + WRECK.barInset, Math.max(...xs) - WRECK.barInset];
     // How far the wheels overlap each other and the body to begin with, as the truck was (allowed,
     // at first). `allow` is how much is allowed now: it only ever shrinks, so a wheel that has
     // come partly out of the body can't sink back in.
@@ -364,35 +356,6 @@ export class Wreck {
       const pinned = this.grounded?.[n] && ny > WRECK.onTop;
       this.rubHit[n] = Math.max(this.rubHit[n], stop(this.body, [w], nx, ny, 1 - s, pinned ? WRECK.pinnedGrip : WRECK.roll));
     });
-  }
-
-  /**
-   * The points W (this.T, or an in-between of it) as the bars are drawn: their loose ends (barEnds)
-   * kept inside the body's length and below its roof, anywhere inside or under the body, so a bar
-   * is never seen poking out of its front, back or top. (Only the drawing: the bars pass through
-   * everything anyway.)
-   */
-  shownBars(W) {
-    const { x, y, ang } = Wreck.bodyPose(W, this.body, this.shape), c = Math.cos(ang), s = Math.sin(ang);
-    const [x0, x1] = this.lengthOf, top = this.roofLine;
-    const roofAt = (bx) => {
-      if (bx <= top[0][0]) return top[0][1];
-      for (let k = 1; k < top.length; k++) {
-        const [ax, ay] = top[k - 1], [cx, cy] = top[k];
-        if (bx <= cx) return ay + (cy - ay) * (bx - ax) / ((cx - ax) || 1);
-      }
-      return top[top.length - 1][1];
-    };
-    let out = W;
-    for (const i of this.barEnds) {
-      const dx = W[i * 2] - x, dy = W[i * 2 + 1] - y;
-      const bx = dx * c + dy * s, by = -dx * s + dy * c; // (in the body's frame: x along it, y down from its roof)
-      const cx = Math.max(x0, Math.min(x1, bx)), cy = Math.max(by, roofAt(cx) + WRECK.barInset);
-      if (cx === bx && cy === by) continue;
-      if (out === W) out = W.slice();
-      out[i * 2] = x + cx * c - cy * s; out[i * 2 + 1] = y + cx * s + cy * c;
-    }
-    return out;
   }
 
   /** The body's middle, for the camera to follow. */
