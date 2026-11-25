@@ -27,26 +27,49 @@ function launch(g, speed = 10) {
   return { top, cam, onScreen };
 }
 
-test('Classic keeps the ceiling and the camera at the top; Play lets the truck fly above it', () => {
+test('Classic and Time Trial\'s stages keep the ceiling, and the camera stops at it; the stunt tracks, custom stages and Sandbox have none', () => {
   const g = new Game(data);
-  g.startCampaign(true);
-  settle(g);
-  const classic = launch(g);
-  assert.ok(classic.top > 0, `Classic: stopped by the ceiling (${classic.top.toFixed(1)})`);
-  assert.ok(classic.cam >= 0);
-  g.dynamicCamera = false; // the plain camera, which keeps the truck in the middle
-  g.startCampaign();
+  for (const start of [() => g.startCampaign({ tricks: false }), () => g.startCampaign({ tricks: true }), () => g.startCampaign({ retro: true }), () => g.startTrial(0)]) {
+    start();
+    settle(g);
+    const run = launch(g);
+    assert.ok(run.top > 0, `${g.mode}: stopped by the ceiling (${run.top.toFixed(1)})`);
+    assert.ok(run.cam >= 0, 'the camera never shows above it');
+  }
+  // (a custom stage: no ceiling; the plain camera, which keeps the truck in the middle)
+  g.dynamicCamera = false;
+  g.startCustom(-1, { ...data.levels[0], name: 'Mine', finish: 100 * TILE });
+  assert.equal(g.rules.ceiling, undefined);
   settle(g);
   const play = launch(g);
-  assert.ok(play.top < -100, `Play: flew above the top of the stage (${play.top.toFixed(1)})`);
+  assert.ok(play.top < -100, `a custom stage: flew above the top of the stage (${play.top.toFixed(1)})`);
   assert.ok(play.cam < 0, 'the camera rose to follow');
   // The original camera only kept a truck above the stage 110 down from the top edge; now it follows.
   assert.ok(play.onScreen > 160 && play.onScreen < 300, `and kept the truck well inside the view (${play.onScreen.toFixed(0)} down)`);
+  g.sandbox.course = 1;
+  g.startSandbox();
+  assert.equal(g.rules.ceiling, undefined, 'nor Sandbox\'s stages');
+  g.startEndless();
+  assert.equal(g.rules.ceiling, undefined, 'nor Endless');
+});
+
+test('the camera stops at the ceiling, but follows the truck below the bottom of the stage', () => {
+  const g = new Game(data);
+  g.dynamicCamera = false;
+  g.startCampaign();
+  settle(g);
+  g.camY = 99999; g.updateCamera();
+  assert.ok(g.camY > g.maxCamY, 'below the bottom: the dirt carries on');
+  g.camY = -5000; g.updateCamera();
+  assert.equal(g.camY, 0);
+  g.startCampaign({ retro: true });
+  g.camY = 99999; g.updateCamera();
+  assert.equal(g.camY, g.maxCamY, '2006 Mode stays inside the stage, as the original did');
 });
 
 test('Classic scores a landed flip at once, as the original did, and has no trick chain', () => {
   const g = new Game(data);
-  g.startCampaign(true);
+  g.startCampaign({ tricks: false });
   settle(g);
   const t = g.truck;
   for (let i = 1; i < 10; i += 2) { t.T[i] -= 30; t.P[i] = t.T[i]; }
@@ -62,7 +85,7 @@ test('Classic scores a landed flip at once, as the original did, and has no tric
   assert.equal(g.tricks.done, 0);
 });
 
-test('Play and Classic keep separate best scores; damage-free Practice saves none', () => {
+test('Classic and Classic with tricks keep separate best scores (2006 Mode is Classic); damage-free Practice saves none', () => {
   const store = memoryStore();
   const g = new Game(data, { store });
   const wreckWith = (score) => { g.damage = 1000; g.score = score; for (let i = 0; i < 400 && g.screen === 'playing'; i++) g.step(); };
@@ -70,9 +93,12 @@ test('Play and Classic keep separate best scores; damage-free Practice saves non
   assert.ok(store.get('bestPlay') >= 5000);
   assert.equal(store.get('bestScore'), null);
   const play = store.get('bestPlay');
-  g.startCampaign(true); wreckWith(3000);
+  g.startCampaign({ tricks: false }); wreckWith(3000);
   assert.ok(store.get('bestScore') >= 3000);
-  assert.equal(store.get('bestPlay'), play, 'a Classic run leaves the Play best alone');
+  assert.equal(store.get('bestPlay'), play, 'a Classic run leaves the tricks best alone');
+  g.startCampaign({ tricks: true, retro: true }); wreckWith(4000);
+  assert.ok(store.get('bestScore') >= 4000, '2006 Mode (tricks always off) counts as Classic');
+  assert.equal(store.get('bestPlay'), play);
   g.toggle('practiceDamage');
   g.startPractice(0);
   assert.equal(g.rules.damage, false);
@@ -83,25 +109,52 @@ test('Play and Classic keep separate best scores; damage-free Practice saves non
   const again = new Game(data, { store });
   assert.equal(again.practiceDamage, false);
   assert.equal(again.bestPlay, g.bestPlay);
-  store.set('bestPlay', -4); store.set('practiceClassic', 'yes');
+  store.set('bestPlay', -4); store.set('trialRetro', 'yes'); store.set('classicTricks', 3);
   const bad = new Game(data, { store });
   assert.equal(bad.bestPlay, 0);
-  assert.equal(bad.practiceClassic, false);
+  assert.equal(bad.trialRetro, false);
+  assert.equal(bad.classicTricks, true);
 });
 
-test('Practice can be played by Classic rules', () => {
-  const g = new Game(data);
-  g.toggle('practiceClassic');
-  g.startPractice(2);
-  assert.equal(g.rules.classic, true);
-  assert.equal(g.rules.damage, true);
-  g.restart();
-  assert.equal(g.rules.classic, true);
-});
-
-test('outside Classic a wreck comes apart into pieces that fall and settle on the ground', () => {
-  const g = new Game(data, { random: () => 0.5 });
+test('Classic\'s switches: Tricks, and 2006 Mode (which always has tricks off), kept and used on restart', () => {
+  const store = memoryStore();
+  const g = new Game(data, { store });
+  assert.equal(g.classicTricks, true);
+  assert.equal(g.classicRetro, false);
   g.startCampaign();
+  assert.deepEqual(g.rules, { damage: true, ceiling: true, scrapeAll: true, flipBonus: false, tricks: true, retro: false });
+  g.toggle('classicTricks');
+  g.startCampaign();
+  assert.deepEqual(g.rules, { damage: true, ceiling: true, scrapeAll: true, flipBonus: true, tricks: false, retro: false });
+  g.toggle('classicTricks'); g.toggle('classicRetro');
+  g.startCampaign();
+  assert.equal(g.rules.retro, true);
+  assert.equal(g.rules.flipBonus, true, '2006 Mode: the original scoring, tricks or not');
+  g.restart();
+  assert.equal(g.rules.retro, true);
+  const again = new Game(data, { store });
+  assert.equal(again.classicRetro, true);
+  assert.equal(again.classicTricks, true);
+  assert.equal(g.quitScreen, 'classicSelect');
+});
+
+test('2006 Mode: the original camera and view, no speedometer reading, no altimeter', () => {
+  const g = new Game(data);
+  g.fillViewW = 900; g.fillViewH = 448;
+  g.startCampaign({ retro: true });
+  assert.equal(g.viewW, 576);
+  assert.equal(g.dynamicCameraActive, false);
+  settle(g, 300);
+  assert.equal(g.zoom, 1);
+  assert.equal(g.altitude, null);
+  g.startCampaign({ retro: false });
+  assert.equal(g.viewW, 900, 'the new view fills the window');
+  assert.equal(g.dynamicCameraActive, true);
+});
+
+test('outside 2006 Mode a wreck comes apart into pieces that fall and settle on the ground', () => {
+  const g = new Game(data, { random: () => 0.5 });
+  g.startTrial(0);
   settle(g);
   g.damage = 1000;
   g.step();
@@ -121,11 +174,41 @@ test('outside Classic a wreck comes apart into pieces that fall and settle on th
   for (let i = 0; i < w.T.length; i++) moving = Math.max(moving, Math.abs(w.T[i] - w.P[i]));
   assert.ok(moving < 0.5, `the pieces came to rest (${moving.toFixed(2)})`);
 
+  const k = new Game(data);
+  k.startCampaign({ tricks: false });
+  settle(k);
+  k.damage = 1000; k.step();
+  assert.ok(k.wreck, 'Classic comes apart too');
+  let n = 0;
+  for (; n < 400 && k.screen === 'playing'; n++) k.step();
+  assert.ok(n > 200, `but keeps the original's 3 s before the game-over box (${n} steps), as the time bonus left is added then`);
+
   const c = new Game(data);
-  c.startCampaign(true);
+  c.startCampaign({ retro: true });
   settle(c);
   c.damage = 1000; c.step();
-  assert.equal(c.wreck, null, 'Classic wrecks stay in one piece');
+  assert.equal(c.wreck, null, '2006 Mode wrecks stay in one piece');
+});
+
+test('Classic, tricks off: a wrecked truck drives on unseen behind its pieces, and a flip it lands still scores', () => {
+  const g = new Game(data);
+  g.startCampaign({ tricks: false });
+  settle(g);
+  const t = g.truck;
+  for (let i = 1; i < 10; i += 2) { t.T[i] -= 30; t.P[i] = t.T[i]; }
+  t.probePrev = null;
+  g.damage = 1000;
+  g.step();
+  assert.ok(g.wreck && g.hiddenTruck);
+  t.flipAccum = 300;   // as if it had turned right over on the way up
+  const before = g.score;
+  for (let i = 0; i < 60 && g.flipBonusTimer === 0; i++) g.step();
+  assert.ok(g.score - before >= 190, 'the flip paid, as in the original');
+  // With tricks on, a wreck ends the tricks.
+  g.startCampaign({ tricks: true });
+  settle(g);
+  g.damage = 1000; g.step();
+  assert.equal(g.hiddenTruck, false);
 });
 
 test('a wreck\'s wheels hit each other and the body instead of passing through', () => {
@@ -265,10 +348,12 @@ test('one-button controls: the button drives on the ground and tilts back in the
   for (let i = 0; i < 15; i++) g.step();
   assert.ok(t.bodyRot < r0 - 10, `tilted back (${r0.toFixed(1)} -> ${t.bodyRot.toFixed(1)})`);
 
-  const c = new Game(data);
-  c.oneButton = true;
-  c.startCampaign(true);
-  assert.equal(c.oneButtonActive, false, 'Classic uses the original controls');
+  for (const retro of [false, true]) {
+    const c = new Game(data);
+    c.oneButton = true;
+    c.startCampaign({ tricks: false, retro });
+    assert.equal(c.oneButtonActive, true, `Classic${retro ? ' in 2006 Mode' : ''} can use them too`);
+  }
 });
 
 /** A long flat track, as a Practice stunt track. */
@@ -313,7 +398,6 @@ test('one-button balance assist: tipped steeply with both wheels down, the butto
   assert.deepEqual(keysAt(-(a - 5), true, true), drive, 'not under the angle');
   assert.deepEqual(keysAt(a + 5, true, true, () => {}), { ...drive, up: false }, 'nothing without the button');
   assert.deepEqual(keysAt(a + 5, true, true, (g) => { g.oneButton = false; g.keys.up = true; }), drive, 'not with the standard controls');
-  assert.deepEqual(keysAt(a + 5, true, true, (g) => { g.rules = { ...g.rules, classic: true }; g.keys.up = true; }), drive, 'not in Classic');
 
   // A wheelie on the back wheel alone plays out exactly as holding the gas and tilt-forwards on
   // the arrow keys: the tilt key can't act there, so the assist leaves it alone.
@@ -363,7 +447,7 @@ test('outside Classic the camera follows a big jump up and back down; Classic st
   for (const classic of [false, true]) {
     const g = new Game(data);
     g.dynamicCamera = false; // the plain camera, so the truck should sit at the middle
-    g.startCampaign(classic);
+    g.startCampaign({ tricks: !classic });
     settle(g);
     const t = g.truck;
     for (let i = 1; i < 10; i += 2) t.P[i] = t.T[i] + 16; // a huge jump, about 1000 px up
@@ -443,7 +527,7 @@ test('a body comes in its own colour; paint is chosen for the body in hand, and 
   }
 });
 
-test('outside Classic the camera pulls back high in the air, keeps the truck in view, and closes in again', () => {
+test('outside 2006 Mode the camera pulls back high in the air, keeps the truck in view, and closes in again', () => {
   const g = new Game(data);
   g.startCampaign();
   settle(g, 200);
@@ -470,11 +554,11 @@ test('outside Classic the camera pulls back high in the air, keeps the truck in 
   for (let i = 0; i < 250; i++) { off.step(); assert.equal(off.zoom, 1, 'switched off, the camera stays close in'); }
 
   const c = new Game(data);
-  c.startCampaign(true);
+  c.startCampaign({ retro: true });
   settle(c);
   const ct = c.truck;
   for (let i = 1; i < 10; i += 2) ct.P[i] = ct.T[i] + 11;
-  for (let i = 0; i < 200; i++) { c.step(); assert.equal(c.zoom, 1, 'Classic keeps the original camera'); }
+  for (let i = 0; i < 200; i++) { c.step(); assert.equal(c.zoom, 1, '2006 Mode keeps the original camera'); }
 });
 
 test('the camera pulls back a little when the truck is going fast', () => {
@@ -520,7 +604,8 @@ test('the dynamic camera is steady: it rarely changes direction and never lurche
 });
 
 test('in a tall window the camera starts steady, and settles back after a resize part-way through', () => {
-  for (const stage of [0, 3, 5]) {
+  // (stages low down in their level: on those near the top, the camera stops at the ceiling)
+  for (const stage of [0, 2, 4]) {
     for (const resized of [false, true]) {
       const g = new Game(data);
       g.viewH = resized ? 448 : 1100; // the renderer keeps this up to date, even on the menus
@@ -540,22 +625,24 @@ test('in a tall window the camera starts steady, and settles back after a resize
   }
 });
 
-test('the pause screen names the run, and offers the controls switch outside Classic', async () => {
+test('the pause screen names the run', async () => {
   const { runName, BUTTONS } = await import('../src/render.js');
   const actions = (g) => BUTTONS.paused.filter((b) => b.show(g)).map((b) => b.action);
   const g = new Game(data, { random: () => 0.4 });
   g.startCampaign();
-  assert.equal(runName(g), 'Standard  ·  Stage One');
+  assert.equal(runName(g), 'Classic with Tricks  ·  Stage One');
   assert.deepEqual(actions(g), ['resume', 'menu', 'pauseOptions']);
-  g.startCampaign(true);
+  g.startCampaign({ tricks: false });
   assert.equal(runName(g), 'Classic  ·  Stage One');
   assert.deepEqual(actions(g), ['resume', 'menu', 'pauseOptions']);
+  g.startCampaign({ tricks: true, retro: true });
+  assert.equal(runName(g), 'Classic  ·  2006 Mode  ·  Stage One');
   g.practiceDamage = false;
   g.startPractice(3);
   assert.equal(runName(g), 'Practice  ·  Stage Four  (no damage)');
-  g.practiceClassic = true; g.practiceDamage = true;
+  g.trialRetro = true; g.practiceDamage = true;
   g.startPractice(8);
-  assert.equal(runName(g), 'Practice  ·  Stage Nine  (Classic rules)');
+  assert.equal(runName(g), 'Practice  ·  Stage Nine  (2006 Mode)');
   g.startEndless();
   assert.equal(runName(g), 'Endless  ·  0 m');
   assert.deepEqual(actions(g), ['resume', 'endRun', 'menu', 'pauseOptions']);
@@ -606,21 +693,29 @@ test('the tall menu layouts keep every button on the page, apart from the others
   assert.equal(hitButton('modes', trial.x + 5, trial.y + 5, g, true).action, 'trial');
 });
 
-test('the chassis bottoming out on a hard landing is no scrape outside Classic; Classic still counts it', () => {
-  for (const classic of [false, true]) {
+test('the chassis bottoming out on a hard landing: damage in Classic and on Time Trial\'s stages, as the original; no scrape elsewhere; never a bail', () => {
+  const runs = [
+    ['Classic', true, (g) => g.startCampaign({ tricks: false })],
+    ['Classic with tricks', true, (g) => g.startCampaign({ tricks: true })],
+    ['Time Trial', true, (g) => g.startTrial(0)],
+    ['a custom stage', false, (g) => { g.customDamage = true; g.startCustom(-1, { ...data.levels[0], name: 'Mine', finish: 100 * TILE }); }],
+  ];
+  for (const [name, original, start] of runs) {
     const g = new Game(data);
-    g.startCampaign(classic);
+    start(g);
     settle(g, 150);
     const t = g.truck;
+    if (g.rules.tricks !== false && !g.rules.flipBonus) g.tricks.add('Backflip', 360);   // a chain under way
     for (let i = 1; i < 10; i += 2) t.P[i] = t.T[i] - 16; // slammed down onto flat ground
     let touched = 0, scraping = 0;
     for (let i = 0; i < 60; i++) { g.step(); if (t.probeHit) touched++; if (g.scraping) scraping++; }
-    assert.ok(touched > 0, 'the body did touch the ground');
-    if (classic) assert.ok(g.damage > 0, 'Classic: damage, as the original');
+    assert.ok(touched > 0, `${name}: the body did touch the ground`);
+    if (original) assert.ok(g.damage > 0, `${name}: damage, as the original`);
     else {
-      assert.equal(g.damage, 0, 'no damage');
-      assert.equal(scraping, 0, 'no scrape (so no sound and no bail)');
+      assert.equal(g.damage, 0, `${name}: no damage`);
+      assert.equal(scraping, 0, `${name}: no scrape (so no sound)`);
     }
+    assert.ok(!g.tricks.banked?.bailed, `${name}: no bail`);
   }
   // On its roof is still a scrape everywhere.
   const g = new Game(data);
@@ -757,7 +852,7 @@ test('reversing, the dynamic camera eases back a little to show where the truck 
   const frameX = (dynamic, classic = false) => {
     const g = new Game(data);
     g.dynamicCamera = dynamic;
-    g.startCampaign(classic);
+    g.startCampaign({ retro: classic });
     g.keys.up = true; // away from the start, where the camera can't go any further left
     settle(g, 250);
     g.keys.up = false;
@@ -772,12 +867,12 @@ test('reversing, the dynamic camera eases back a little to show where the truck 
   assert.ok(dyn.back > 0.5 && dyn.back <= 1, `eased back (${dyn.back.toFixed(2)})`);
   assert.ok(dyn.after > dyn.before + 40 && dyn.after < dyn.before + CAMERA.lookBack + 30,
     `the truck sits further right on screen, but not much (${dyn.before.toFixed(0)} -> ${dyn.after.toFixed(0)})`);
-  for (const [name, r] of [['camera off', frameX(false)], ['Classic', frameX(true, true)]]) {
+  for (const [name, r] of [['camera off', frameX(false)], ['2006 Mode', frameX(true, true)]]) {
     assert.equal(r.back, 0, `${name}: no look back`);
   }
 });
 
-test('the view never shows less than Classic, and a wide one centres the usual frame', () => {
+test('the view never shows less than the original, and a wide one centres the usual frame', () => {
   const g = new Game(data);
   g.viewW = 1000; g.viewH = 448;
   g.dynamicCamera = false;
@@ -790,7 +885,7 @@ test('the view never shows less than Classic, and a wide one centres the usual f
   assert.ok(Math.abs(x - (150 + (1000 - 576) / 2)) < 30, `the truck sits ${x.toFixed(0)} from the left of a 1000-wide view`);
   const c = new Game(data);
   c.viewW = 1000; c.viewH = 900;
-  c.startCampaign(true);
+  c.startCampaign({ retro: true });
   assert.equal(c.viewW, 576); assert.equal(c.viewH, 448);
 });
 
@@ -925,7 +1020,7 @@ test('one-button controls: the up arrow is the button, and the other arrows do n
 test('every screen\'s buttons can be shown for every kind of run', async () => {
   const { BUTTONS, TALL_BUTTONS, reachedLine } = await import('../src/render.js');
   const g = new Game(data);
-  const runs = [() => g.startCampaign(), () => g.startCampaign(true), () => g.startEndless(), () => g.startPractice(2)];
+  const runs = [() => g.startCampaign(), () => g.startCampaign({ tricks: false }), () => g.startEndless(), () => g.startPractice(2)];
   for (const start of runs) {
     start();
     g.wrecked = true;

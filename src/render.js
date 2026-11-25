@@ -16,14 +16,14 @@ import { formatSpeed, formatDistance, formatHeight, speedoShare } from './units.
 
 const DEG = Math.PI / 180;
 const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'sandboxTweaks', 'gameOver']);
-const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'help', 'garage', 'trialSelect', 'sandbox', 'stageEditor', 'stageLoad']);
+const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'help', 'garage', 'classicSelect', 'trialSelect', 'sandbox', 'stageEditor', 'stageLoad']);
 const AHEAD = '#8ff0a4', BEHIND = '#ffb0a0'; // Time Trial gaps: ahead of / behind your best
 const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
 const BOX_FILL = 'rgba(140,97,79,0.96)', BOX_EDGE = 'rgba(255,255,255,0.6)'; // the game-over box and the mode picker
 const MILESTONE_GOLD = '#ffe27a';
 /**
- * How the backdrop moves up and down outside Classic: the share of the camera's height above the
+ * How the backdrop moves up and down outside 2006 Mode: the share of the camera's height above the
  * start it moves down (stage units), easing smoothly towards the most it moves up (up) or down
  * (down) rather than stopping dead at them.
  */
@@ -51,28 +51,28 @@ function controlsAbout(g, r) {
   if (g.oneButton) return r?.touchMode ? 'Hold anywhere on the screen to drive, and to tilt back in the air' : 'Space (or the up arrow) drives, and tilts back in the air';
   return r?.touchMode ? 'Pedals on the right drive and reverse; the left buttons tilt' : 'The arrow keys drive and tilt';
 }
-const notClassic = (g) => !g.rules.classic;
+const notRetro = (g) => !g.rules.retro;
 
 /**
  * The Options screen: [label, action, what it does, applies(game)]. The pause menu's Options
- * shows only those that apply to the run (the controls and cameras aren't Classic's).
+ * shows only those that apply to the run (the cameras and units aren't 2006 Mode's).
  */
 const OPTIONS = [
   [(g) => `♪ Sound: ${onOff(g.soundOn)}`, 'sound', () => 'Engine, landings, tricks and crashes'],
-  [(g, r) => `Controls: ${controlsName(g, r)}`, 'oneButton', controlsAbout, notClassic],
-  [(g) => `Dynamic Camera: ${onOff(g.dynamicCamera)}`, 'dynamicCamera', () => 'Pulls back to show more when you go fast or fly high', notClassic],
-  [(g) => `Dynamic Crash Cam: ${onOff(g.crashCam)}`, 'crashCam', () => 'Pulls back to keep every piece of a wrecked truck in view', notClassic],
-  [(g) => `Units: ${g.imperial ? 'Imperial' : 'Metric'}`, 'imperial', (g) => (g.imperial ? 'Speeds in mph, heights in feet and miles' : 'Speeds in km/h, heights in metres and kilometres'), notClassic],
+  [(g, r) => `Controls: ${controlsName(g, r)}`, 'oneButton', controlsAbout],
+  [(g) => `Dynamic Camera: ${onOff(g.dynamicCamera)}`, 'dynamicCamera', () => 'Pulls back to show more when you go fast or fly high', notRetro],
+  [(g) => `Dynamic Crash Cam: ${onOff(g.crashCam)}`, 'crashCam', () => 'Pulls back to keep every piece of a wrecked truck in view', notRetro],
+  [(g) => `Units: ${g.imperial ? 'Imperial' : 'Metric'}`, 'imperial', (g) => (g.imperial ? 'Speeds in mph, heights in feet and miles' : 'Speeds in km/h, heights in metres and kilometres'), notRetro],
   [(g) => `Show Frame Rate: ${onOff(g.showFps)}`, 'showFps', () => 'Frames per second, in the bottom left corner'],
 ];
 const optionRow = (i, tall) => (tall ? r(50, 90 + 78 * i, 260, 40) : r(178, 66 + 54 * i, 220, 26));
 const optionAbout = (action) => OPTIONS.find((o) => o[1] === action)?.[2];
 
-/** The pause menu's Options: the options that apply, by Classic rules or not, then Back. */
+/** The pause menu's Options: the options that apply, in 2006 Mode or not, then Back. */
 function pauseOptionButtons(tall, extra = {}) {
-  return [true, false].flatMap((classic) => {
-    const when = (g) => !!g.rules?.classic === classic;
-    const list = OPTIONS.filter((o) => !o[3] || o[3]({ rules: { classic } }));
+  return [true, false].flatMap((retro) => {
+    const when = (g) => !!g.rules?.retro === retro;
+    const list = OPTIONS.filter((o) => !o[3] || o[3]({ rules: { retro } }));
     return [
       ...list.map(([label, action], i) => ({ rect: optionRow(i, tall), label, action, show: when, ...extra })),
       { rect: tall ? r(80, 560, 200, 38) : r(229, 400, 120, 25), label: 'Back', action: 'pauseBack', show: when, ...extra },
@@ -100,8 +100,7 @@ const TITLE_SHADOW = '#7d5545';
 const MENU = [['Play', 'play'], ['Change Truck', 'garage'], ['High Scores', 'stats'], ['Options', 'options'], ['How to Play', 'help']];
 /** The game modes, in the mode picker: [label, action, what it is]. */
 export const MODES = [
-  ['Standard', 'standard', 'The nine stages, with tricks and all the new extras'],
-  ['Classic', 'classic', 'The original game, exactly as it was'],
+  ['Classic', 'classicSelect', 'The nine stages as the original game had them, with or without tricks'],
   ['Endless', 'endless', 'A course that goes on for ever: how far can you get?'],
   ['Time Trial', 'trial', 'Any stage against the clock and your ghost, and the stunt tracks'],
   ['Sandbox', 'sandbox', 'Any track, with the physics as you like'],
@@ -114,7 +113,7 @@ const modesBack = (tall) => (tall ? r(80, 96 + 66 * MODES.length + 20, 200, 36) 
 const stageAt = (g, i) => g.stages?.[(g.stagePage || 0) * STAGES_PER_PAGE + i];
 const CUSTOM_OPTIONS = [
   [(g) => `Damage: ${onOff(g.customDamage)}`, 'customDamage'],
-  [(g) => `Classic: ${onOff(g.customClassic)}`, 'customClassic'],
+  [(g) => `2006 Mode: ${onOff(g.customRetro)}`, 'customRetro'],
 ];
 /** The Load Stage screen's buttons. */
 function stageLoadButtons(tall) {
@@ -154,13 +153,30 @@ const stuntCard = (i) => r(112 + 100 * i, 290, 92, 50);
 const tallStuntCard = (i) => r(20 + 110 * i, 372, 100, 62);
 /** Time Trial's switches: [label, action]. */
 const TRIAL_OPTIONS = [
-  [(g) => `Tricks: ${onOff(g.trialTricks && !g.practiceClassic)}`, 'trialTricks'],
+  [(g) => `Tricks: ${onOff(g.trialTricks && !g.trialRetro)}`, 'trialTricks'],
   [(g) => `Damage: ${onOff(g.practiceDamage)}`, 'practiceDamage'],
-  [(g) => `Classic: ${onOff(g.practiceClassic)}`, 'practiceClassic'],
+  [(g) => `2006 Mode: ${onOff(g.trialRetro)}`, 'trialRetro'],
   [(g) => `Ghost: ${onOff(g.ghostOn)}`, 'ghostOn'],
 ];
 /** Why a Time Trial run's time won't count, if it won't (for the screen and the game-over box). */
-const trialNote = (g) => (!g.practiceDamage ? 'Damage off: times aren\'t records' : g.practiceClassic ? 'Classic rules: times aren\'t records' : 'Times count with damage on');
+const trialNote = (g) => (!g.practiceDamage ? 'Damage off: times aren\'t records' : 'Times count with damage on');
+/** Classic's switches: [label, action]. 2006 Mode always has tricks off. */
+const CLASSIC_OPTIONS = [
+  [(g) => `Tricks: ${onOff(g.classicTricks && !g.classicRetro)}`, 'classicTricks'],
+  [(g) => `2006 Mode: ${onOff(g.classicRetro)}`, 'classicRetro'],
+];
+/** What Classic's switches, as set, make of it. */
+const classicAbout = (g) => (g.classicRetro ? 'The original game as it looked in 2006: 576x448 at 30 fps, no tricks'
+  : g.classicTricks ? 'The original game, with tricks scored in chains' : 'The original game, with the new look and extras');
+/** Classic's screen: Start, its two switches and Back (from the mode picker). */
+function classicButtons(tall) {
+  return [
+    { rect: tall ? r(60, 300, 240, 48) : r(208, 236, 160, 34), label: 'Start', action: 'classic', size: tall ? 17 : 14 },
+    ...CLASSIC_OPTIONS.map(([label, action], i) => (tall ? { rect: r(60, 372 + 44 * i, 240, 34), label, action, size: 13 }
+      : { rect: r(198, 286 + 30 * i, 180, 24), label, action, small: true })),
+    { rect: tall ? r(80, 520, 200, 38) : r(228, 400, 120, 25), label: 'Back', action: 'play', ...(tall ? T_BIG : {}) },
+  ];
+}
 /** How many stunt tracks Time Trial's screen has room for. */
 const STUNTS = 3;
 /** The garage's note that the truck's look is only a look. */
@@ -173,10 +189,8 @@ const COSMETIC = 'Looks only: every truck drives exactly the same';
 function pauseButtons(place) {
   const kinds = [
     ['endless', (g) => g.mode === 'endless'],
-    ['classic', (g) => g.mode === 'campaign' && g.rules.classic],
-    ['play', (g) => g.mode === 'campaign' && !g.rules.classic],
-    ['practiceClassic', (g) => g.mode === 'practice' && g.rules.classic],
-    ['practice', (g) => g.mode === 'practice' && !g.rules.classic],
+    ['campaign', (g) => g.mode === 'campaign'],
+    ['practice', (g) => g.mode === 'practice'],
     ['trial', (g) => g.mode === 'trial'],
     ['sandbox', (g) => g.mode === 'sandbox'],
     ['custom', (g) => g.mode === 'custom'],
@@ -185,11 +199,11 @@ function pauseButtons(place) {
     { label: 'Resume', action: 'resume' },
     kind === 'endless' && { label: 'End Run', action: 'endRun' },
     // Practice and Time Trial can start the run again (the stunt tracks have no end)
-    (kind.startsWith('practice') || ['trial', 'sandbox', 'custom'].includes(kind)) && { label: 'Restart', action: 'again' },
+    ['practice', 'trial', 'sandbox', 'custom'].includes(kind) && { label: 'Restart', action: 'again' },
     // Sandbox's settings, during the run
     kind === 'sandbox' && { label: 'Tweaks', action: 'tweaks' },
     // Quitting Practice or Time Trial goes back to its list of stages, and Sandbox to its settings
-    { label: (g) => (g.mode === 'sandbox' ? 'Sandbox Menu' : g.quitScreen === 'title' ? 'Quit to Menu' : 'Quit to Stages'), action: 'menu' },
+    { label: (g) => (g.mode === 'sandbox' ? 'Sandbox Menu' : g.quitScreen === 'trialSelect' || g.quitScreen === 'stageLoad' ? 'Quit to Stages' : 'Quit to Menu'), action: 'menu' },
     { label: 'Options', action: 'pauseOptions' },
     // Sandbox's Quit goes all the way back to the title (Sandbox Menu above is its settings)
     kind === 'sandbox' && { label: 'Quit to Menu', action: 'quitTitle' },
@@ -292,6 +306,7 @@ export const BUTTONS = {
       { rect: r(344, 226 + 34 * i, 32, 32), action: `${part}+1` },
     ]),
   ],
+  classicSelect: classicButtons(false),
   trialSelect: [
     ...Array.from({ length: 9 }, (_, i) => ({ rect: trialCard(i), action: `trial${i}` })),
     { rect: TRIAL_ALL_CARD, action: `trial${TRIAL_ALL}` },
@@ -309,7 +324,7 @@ export const BUTTONS = {
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 680, modes: 680, stats: 760, options: 620, pauseOptions: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 680, sandboxTweaks: 640, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
+export const TALL_H = { title: 680, modes: 680, classicSelect: 600, stats: 760, options: 620, pauseOptions: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 680, sandboxTweaks: 640, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
@@ -335,6 +350,7 @@ export const TALL_BUTTONS = {
       { rect: r(282, 268 + 56 * i, 48, 48), action: `${part}+1` },
     ]),
   ],
+  classicSelect: classicButtons(true),
   trialSelect: [
     ...Array.from({ length: 9 }, (_, i) => ({ rect: tallTrialCard(i), action: `trial${i}` })),
     { rect: TALL_TRIAL_ALL_CARD, action: `trial${TRIAL_ALL}` },
@@ -364,22 +380,17 @@ export function buttonsFor(screen, tall = false) {
 export function runName(game) {
   if (game.mode === 'endless') return `Endless  ·  ${game.metres} m`;
   if (game.mode === 'sandbox') return `Sandbox  ·  ${game.onCourse ? `Endless  ·  ${game.metres} m` : game.sandboxCustom ? game.customLevel.name : game.stageName(game.level)}`;
-  if (game.mode === 'trial') {
-    const rules = [game.rules.classic && 'Classic rules', !game.rules.damage && 'no damage', game.rules.tricks === false && !game.rules.classic && 'no tricks'].filter(Boolean);
-    return `Time Trial  ·  ${trialName(game, game.track)}${rules.length ? `  (${rules.join(', ')})` : ''}`;
-  }
-  if (game.mode === 'custom') {
-    const rules = [game.rules.classic && 'Classic rules', !game.rules.damage && 'no damage'].filter(Boolean);
-    return `${game.customLevel.name}${rules.length ? `  (${rules.join(', ')})` : ''}`;
-  }
+  const R = game.rules, retro = R.retro && '2006 Mode', noDamage = !R.damage && 'no damage';
+  const with_ = (name, rules) => (rules.filter(Boolean).length ? `${name}  (${rules.filter(Boolean).join(', ')})` : name);
+  if (game.mode === 'trial') return with_(`Time Trial  ·  ${trialName(game, game.track)}`, [retro, noDamage, R.tricks === false && !R.retro && 'no tricks']);
+  if (game.mode === 'custom') return with_(game.customLevel.name, [retro, noDamage]);
   const stage = game.stageName(game.level);
-  if (game.mode === 'campaign') return `${game.rules.classic ? 'Classic' : 'Standard'}  ·  ${stage}`;
-  const rules = [game.rules.classic && 'Classic rules', !game.rules.damage && 'no damage'].filter(Boolean);
-  return `Practice  ·  ${stage}${rules.length ? `  (${rules.join(', ')})` : ''}`;
+  if (game.mode === 'campaign') return `${classicName(game)}  ·  ${stage}`;
+  return with_(`Practice  ·  ${stage}`, [retro, noDamage]);
 }
 
 /**
- * For the game-over box: where the run got to. A wreck in Play or Classic says how far through the
+ * For the game-over box: where the run got to. A wreck in Classic says how far through the
  * nine stages it got; Practice names its stage. Endless already shows its distance.
  */
 export function reachedLine(game) {
@@ -390,6 +401,11 @@ export function reachedLine(game) {
   const allNine = game.mode === 'campaign' || (game.mode === 'trial' && game.track === TRIAL_ALL);
   if (allNine) return game.wrecked ? `Got to stage ${game.level + 1} of ${n}` : `All ${n} stages`;
   return stage;
+}
+
+/** What a Classic run is called: Classic, Classic with Tricks, or Classic in 2006 Mode. */
+export function classicName(game) {
+  return game.rules.retro ? 'Classic  ·  2006 Mode' : game.rules.flipBonus ? 'Classic' : 'Classic with Tricks';
 }
 
 /** A Time Trial track's name: a stage's, or All Nine. */
@@ -425,8 +441,8 @@ export function statsColumns(game) {
   const T = S.tricks;
   return [[
     ['Best Scores'],
-    ['Standard', or(game.bestPlay, n)],
     ['Classic', or(game.best, n)],
+    ['Classic with Tricks', or(game.bestPlay, n)],
     ['Endless', or(game.bestEndless, (v) => `${n(v)} m`)],
     ['Time Trial (All Nine)', game.trialBests[TRIAL_ALL] ? formatTime(game.trialBests[TRIAL_ALL]) : none],
     ['Records'],
@@ -490,8 +506,9 @@ export class Renderer {
   }
 
   /**
-   * Work out how the view fits the canvas. Driving in Classic shows the original 576x448 stage,
-   * letterboxed. Everything else fills the window: it never shows less than Classic's 576x448,
+   * Work out how the view fits the canvas. Driving in 2006 Mode shows the original 576x448 stage,
+   * letterboxed (`retro`: drawn at 576x448 and scaled up, see draw). Everything else fills the
+   * window: it never shows less than the original's 576x448,
    * and shows more one way to match the window's shape (more sky and ground in a tall window,
    * more to each side in a wide one). Menus are drawn on a page centred in that view: the original
    * 576x448 stage, or in a view at least as tall as it is wide, the screen's tall layout (TALL_W
@@ -500,7 +517,8 @@ export class Renderer {
   layout(game) {
     const W = this.canvas.width, H = this.canvas.height;
     const screen = game ? game.screen : 'title';
-    const letterbox = !!game && game.rules.classic && FILL_SCREENS.has(screen);
+    const letterbox = !!game && !!game.rules.retro && FILL_SCREENS.has(screen);
+    this.retro = letterbox;
     const fill = Math.min(W / STAGE_W, H / STAGE_H);
     this.scale = fill;
     if (!letterbox) {
@@ -517,7 +535,7 @@ export class Renderer {
     this.page = this.tall ? { w: TALL_W, h: TALL_H[screen] } : { w: STAGE_W, h: STAGE_H };
     // The page is as big as fits.
     this.menuK = Math.min(this.viewW / this.page.w, this.viewH / this.page.h);
-    // The camera always knows the filled view's size (Classic uses 576x448 regardless), so a
+    // The camera always knows the filled view's size (2006 Mode uses 576x448 regardless), so a
     // stage started from a menu begins with its camera in the right place.
     // (A canvas with no size, while the window is hidden or resizing, would make them NaN, and the
     // camera would never recover.)
@@ -802,7 +820,7 @@ export class Renderer {
    * drew (it halved the frame rate on a big Retina screen), so it is scaled once, into a canvas
    * the size of the screen, and that is copied unscaled each frame.
    *
-   * Outside Classic it moves as you go. Sideways only on a course with an end, and only when the
+   * Outside 2006 Mode it moves as you go. Sideways only on a course with an end, and only when the
    * picture is wider than the view (a tall screen): it shows its left side at the start of the
    * course and its right side at the end, never repeating. And down as the camera rises above where
    * the stage starts (`BACKDROP`), so the mountains sink away below a truck flying high, easing
@@ -826,7 +844,7 @@ export class Renderer {
     // where the picture goes when it doesn't move: centred in the view
     const room = (STAGE_W * k - this.viewW) * sc; // how much wider than the view the picture is
     let x = this.offX - room / 2, y = this.offY + (this.viewH - STAGE_H * k) / 2 * sc;
-    const moving = game && v && !game.rules.classic && FILL_SCREENS.has(game.screen);
+    const moving = game && v && !game.rules.retro && FILL_SCREENS.has(game.screen);
     if (moving) {
       const z = v.zoom || 1, B = BACKDROP;
       const span = game.levelData.width * TILE - this.viewW * z;
@@ -849,7 +867,7 @@ export class Renderer {
   world(game, v) {
     const ctx = this.ctx;
     this.backdrop(game, v);
-    const zoom = game.rules.classic ? 1 : v.zoom || 1;
+    const zoom = game.rules.retro ? 1 : v.zoom || 1;
     this.tiles(game.levelData, v.camX, v.camY, zoom, game.mode === 'custom' || !!game.sandboxCustom);
     ctx.save();
     ctx.beginPath();
@@ -878,7 +896,7 @@ export class Renderer {
     if (game.battle) battleFront(this, game, v);
     if (game.mode === 'sandbox' && sandboxValue(game.sandbox, 'hitboxes')) this.hitboxes(game, v);
     ctx.restore();
-    if (!game.rules.classic && !game.wreck) this.flipCount(game, v, zoom);
+    if (!game.rules.flipBonus && !game.wreck) this.flipCount(game, v, zoom);
     this.hud(game);
   }
 
@@ -980,8 +998,8 @@ export class Renderer {
     const R = this.hudW - 10;
     let y = 7.5;
     if (game.rules.damage) { this.meter('damage', game.damage / 1000, y); y += 34; }
-    // Outside Classic: the speedometer (the bar's scale squeezes high speeds: units.js).
-    if (!game.rules.classic) this.meter('speed', speedoShare(game.speedKmh), y, formatSpeed(game.speedKmh, game.imperial));
+    // Outside 2006 Mode: the speedometer (the bar's scale squeezes high speeds: units.js).
+    if (!game.rules.retro) this.meter('speed', speedoShare(game.speedKmh), y, formatSpeed(game.speedKmh, game.imperial));
     // ...and the altimeter, while the ground under the truck is out of sight below.
     if (game.altitude != null && game.screen === 'playing') {
       const ya = y + (this.hudW < 420 ? 50 : 36);
@@ -999,13 +1017,13 @@ export class Renderer {
     // Sandbox: the time since you first landed
     if (game.mode === 'sandbox') { this.text(formatTime(game.clock), R, y2, { ...hud, color: 'rgba(255,255,255,0.9)' }); y2 += 12; }
     const chain = game.tricks.chain;
-    if (game.rules.classic) {
+    if (game.rules.flipBonus) {
       if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, R, y2, { ...hud, color: 'rgba(255,255,255,0.9)' });
     } else if (chain.length && game.screen !== 'gameOver') {
       const m = game.tricks.multiplier;
       this.text(`+${game.tricks.chainPoints}${m > 1 ? `  x${m}` : ''}`, R, y2, { ...hud, color: 'rgba(255,255,255,0.6)' });
     } else if (game.flipBonusTimer > 0) this.text(`+${game.flipBonus}`, R, y2, { ...hud, color: 'rgba(255,255,255,0.9)' });
-    if (!game.rules.classic) this.trickNames(game);
+    if (!game.rules.flipBonus) this.trickNames(game);
     if (game.onCourse) this.milestone(game);
     if (game.tickerTimer > 0 && game.screen !== 'gameOver') {
       this.text(game.ticker, this.hudW / 2, 82 + this.hudDrop, { size: 15, font: HUD_FONT, weight: '800' });
@@ -1022,7 +1040,7 @@ export class Renderer {
     const best = game.trialBests[game.track];
     if (best) this.text(`best ${formatTime(best)}`, R, 62, { ...hud, size: 11, color: 'rgba(255,255,255,0.85)' });
     // with tricks on, their score (and a chain being built) under it
-    if (game.rules.tricks !== false && !game.rules.classic) {
+    if (game.rules.tricks !== false && !game.rules.flipBonus) {
       let y = best ? 76 : 62;
       if (game.score > 0) { this.text(`${game.score.toLocaleString('en-US')} pts`, R, y, { ...hud, size: 11, color: 'rgba(255,255,255,0.85)' }); y += 13; }
       const chain = game.tricks.chain;
@@ -1399,6 +1417,24 @@ export class Renderer {
   }
 
   /** The Stage Editor screen: load a stage to play, or open the editor (in a new tab). */
+  /** Classic's screen: what the switches make of it, its two best scores, Start and the switches. */
+  classicSelect(game) {
+    const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
+    const about = { weight: '600', color: 'rgba(255,255,255,0.85)' };
+    this.text('Classic', cx, 40, { size: tall ? 30 : 26, weight: '900' });
+    this.wrapText(classicAbout(game), cx, tall ? 96 : 84, tall ? 320 : 440, { ...about, size: tall ? 15 : 14 }, 19);
+    // The two best scores; the one this run would count for in gold.
+    const withTricks = game.classicTricks && !game.classicRetro;
+    const rows = [['Best', game.best, !withTricks], ['Best with tricks', game.bestPlay, withTricks]];
+    const x0 = tall ? 50 : 168, x1 = tall ? 310 : 408, y0 = tall ? 180 : 150, rowH = tall ? 30 : 26, size = tall ? 16 : 14;
+    rows.forEach(([label, best, on], i) => {
+      const color = on ? MILESTONE_GOLD : 'rgba(255,255,255,0.75)';
+      this.text(label, x0, y0 + rowH * i, { size, weight: '700', align: 'left', color });
+      this.text(best > 0 ? best.toLocaleString('en-US') : '—', x1, y0 + rowH * i, { size, weight: '800', align: 'right', color });
+    });
+    this.buttons('classicSelect', game);
+  }
+
   stageEditor(game) {
     const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
     const about = { weight: '600', color: 'rgba(255,255,255,0.85)' };
@@ -1465,7 +1501,7 @@ export class Renderer {
       if (!r) lines = ['Did not finish', best ? `Best: ${formatTime(best)}` : ''];
       else if (!r.counts) {
         title = 'Finished';
-        lines = [`Time: ${formatTime(r.time)}`, game.rules.classic ? 'Classic rules: not a record' : 'Damage off: not a record'];
+        lines = [`Time: ${formatTime(r.time)}`, 'Damage off: not a record'];
       } else {
         title = r.record ? 'New Record!' : 'Finished';
         const gap = r.best === null ? 'Your first time on the board'
@@ -1518,8 +1554,31 @@ export class Renderer {
 
   /** Draw a full frame. `v` holds interpolated positions. */
   draw(game, v) {
-    const ctx = this.ctx;
     this.layout(game);
+    if (this.retro) this.drawRetro(game, v); else this.paint(game, v);
+  }
+
+  /**
+   * 2006 Mode: the frame drawn at the original 576x448 into a canvas of its own, then blown up to
+   * fill the letterbox with hard pixel edges, as a low-resolution game scaled up looks.
+   */
+  drawRetro(game, v) {
+    const low = (this.low ||= document.createElement('canvas'));
+    if (low.width !== STAGE_W || low.height !== STAGE_H) { low.width = STAGE_W; low.height = STAGE_H; }
+    const real = { canvas: this.canvas, ctx: this.ctx, scale: this.scale, offX: this.offX, offY: this.offY };
+    Object.assign(this, { canvas: low, ctx: low.getContext('2d'), scale: 1, offX: 0, offY: 0 });
+    try { this.paint(game, v); } finally { Object.assign(this, real); }
+    const ctx = this.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(low, this.offX, this.offY, Math.round(STAGE_W * this.scale), Math.round(STAGE_H * this.scale));
+  }
+
+  /** Draw a frame, its layout worked out (into the 576x448 canvas, in 2006 Mode). */
+  paint(game, v) {
+    const ctx = this.ctx;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -1544,6 +1603,7 @@ export class Renderer {
         case 'help': this.help(game); break;
         case 'options': this.options(game); break;
         case 'garage': this.garage(game, v); break;
+        case 'classicSelect': this.classicSelect(game); break;
         case 'trialSelect': this.trialSelect(game); break;
         case 'sandbox': this.sandboxScreen(game, 'sandbox'); break;
         case 'stageEditor': this.stageEditor(game); break;

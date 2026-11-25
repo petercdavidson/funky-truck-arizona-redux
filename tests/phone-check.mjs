@@ -102,9 +102,13 @@ try {
   await sleep(300);
   await touch('touchStart', [await buttonAt('title', 'play')]); await touch('touchEnd', []);
   await sleep(300);
-  await touch('touchStart', [await buttonAt('modes', 'standard')]); await touch('touchEnd', []);
+  await touch('touchStart', [await buttonAt('modes', 'classicSelect')]); await touch('touchEnd', []);
   await sleep(300);
-  check(await evaluate('window.__funkyTruck.game.screen') === 'playing', 'tapping STANDARD starts the game');
+  check(await evaluate('window.__funkyTruck.game.screen') === 'classicSelect', 'tapping CLASSIC opens its screen');
+  await shot('phone-portrait-classic');
+  await touch('touchStart', [await buttonAt('classicSelect', 'classic')]); await touch('touchEnd', []);
+  await sleep(300);
+  check(await evaluate('window.__funkyTruck.game.screen') === 'playing', 'tapping START starts the game');
 
   // Hold the gas pedal and check the truck moves forwards.
   await sleep(1500);
@@ -203,8 +207,10 @@ try {
   await sleep(100);
   check(await pressedNow() === '', 'one button: lifting all fingers lets go');
   await touch('touchStart', [[winW / 2, 250]]);
-  await sleep(1400);
-  check(await evaluate('window.__funkyTruck.game.driveKeys().up'), 'one button: holding drives');
+  // (sampled through the hold: over a hill's crest it tilts instead, as it should in the air)
+  let drove = 0;
+  for (let i = 0; i < 14; i++) { await sleep(100); if (await evaluate('window.__funkyTruck.game.driveKeys().up')) drove++; }
+  check(drove >= 3, `one button: holding drives (${drove} of 14 samples)`);
   await shot('phone-landscape-one-button');
   await touch('touchEnd', []);
   const xb = await evaluate('window.__funkyTruck.game.truck.T[0]');
@@ -228,7 +234,7 @@ try {
   if (menuAt) {
     await touch('touchStart', [menuAt]); await touch('touchEnd', []);
     await sleep(300);
-    check(await evaluate('window.__funkyTruck.game.screen') === 'title', 'game over: tapping Menu goes to the title screen');
+    check(await evaluate('window.__funkyTruck.game.screen') === 'classicSelect', 'game over: tapping Menu goes back to Classic\'s screen');
   }
 
   // Time Trial on a phone held upright: the stage list, and starting a stage from it.
@@ -286,6 +292,20 @@ try {
   check(!!await center('[data-press="fire"]') && !!await center('[data-key="boost"]'), 'sandbox: the fire, jump and boost buttons are there');
   check(await evaluate('document.getElementById("fire-count").textContent') === '∞', 'sandbox: unlimited missiles show as ∞');
   await shot('phone-portrait-sandbox');
+
+  // 2006 Mode: 576x448 drawn 30 times a second, blown up into a letterbox.
+  for (const [w, h, name] of [[844, 390, 'landscape'], [390, 844, 'portrait']]) {
+    await phone(w, h);
+    await load('?test=classic&retro=1&stage=1&frames=200&touch=1');
+    await evaluate(`(() => { const r = window.__funkyTruck.renderer; r.drawCount = 0; const d = r.draw.bind(r); r.draw = (g, v) => { r.drawCount++; d(g, v); }; })()`);
+    const raf = await evaluate('new Promise((res) => { let n = 0; const t0 = performance.now(); const f = (t) => { n++; if (t - t0 < 2000) requestAnimationFrame(f); else res(n / 2); }; requestAnimationFrame(f); })');
+    const fps = (await evaluate('window.__funkyTruck.renderer.drawCount')) / 2;
+    check(raf < 45 || (fps > 26 && fps < 32), `2006 Mode, ${name}: drawn ${fps} times a second (the screen: ${raf})`);
+    const view = await evaluate(`(() => { const r = window.__funkyTruck.renderer; return { retro: r.retro, low: [r.low.width, r.low.height], w: Math.round(576 * r.scale), h: Math.round(448 * r.scale), W: r.canvas.width, H: r.canvas.height }; })()`);
+    check(view.retro && view.low[0] === 576 && view.low[1] === 448, `2006 Mode, ${name}: drawn at 576x448`);
+    check(Math.abs(view.w / view.h - 576 / 448) < 0.01 && (view.w === view.W || view.h === view.H), `2006 Mode, ${name}: blown up to fill the window one way (${view.w}x${view.h} of ${view.W}x${view.H})`);
+    await shot(`phone-${name}-2006`);
+  }
 
   ws.close();
 } catch (err) {

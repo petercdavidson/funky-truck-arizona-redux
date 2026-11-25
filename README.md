@@ -24,22 +24,22 @@ sight and falls back down.
 
 | Mode | What it is |
 | --- | --- |
-| **Standard** | The nine stages, with tricks, a ragdoll wreck, and no invisible ceiling. The camera follows the truck up and down anywhere, even above or below the stage. |
-| **Classic** | The nine stages as the original game played: the original flip bonus, the ceiling, the original controls, and a wrecked truck stays in one piece. Only display fixes (live text, alignment) and the pause button are new. |
+| **Classic** | The nine stages as the original game played them. Choosing it opens its screen, with your two best scores, **Start**, and two switches. **Tricks** off: the original scoring (a landed flip's degrees, paid at once while the time bonus runs, after the finish line too); the same inputs give exactly the same truck and score as the original (a test replays recorded runs to check). Tricks on: tricks scored in chains instead. **2006 Mode**: the original as it looked: 576×448, drawn at 30 frames a second and blown up to fill the window with hard pixel edges, the original camera, no speedometer or altimeter, and a wrecked truck stays in one piece and drives on (tricks are always off). Otherwise Classic has the new view and extras, and a wreck comes apart (with tricks off, the whole truck still drives on unseen for the original's 3 seconds, so a flip it lands scores just as it did). Either way: the original's invisible ceiling along the top of each stage (Stages Two, Four, Six and Nine run close enough under it to hit it on a big jump), and the original scrape, where the chassis bottoming out on a hard landing counts as damage. The camera never shows above the ceiling. Classic and Classic with tricks keep separate best scores; 2006 Mode counts as Classic. |
 | **Endless** | A course generated as you drive that never ends. No damage: it's free play. **End Run** in the pause menu finishes the run and saves your best distance. |
-| **Time Trial** | Any of the nine stages, or **All Nine** in a row, against the clock (Practice is part of it now). The clock runs from when the truck first lands on each stage to its finish line. Your best run on each track comes back as a see-through **ghost** to race, and the clock's readout shows how far ahead (green) or behind (pink) of it you are at the same point on the track. Switches on its screen: **Tricks** (spotted and scored as in Standard, or not at all; either way times count), **Damage** (off: the time is shown, but isn't a record), **Classic** (the original rules: no tricks, and times aren't records) and **Ghost**. It also has the three **stunt tracks**, where tricks always score and there's no finish line and no clock; their best trick score is kept instead (with damage on), when the run ends (a wreck, quitting or restarting): **Mega Ramp** (a 450 m accelerator at 45°, a launch ramp good for about 470 km/h and 13 s in the air, then a long run-out ending in a quarter pipe), **Kicker Run** (a bumpy downhill of small kickers that goes on for ever) and **Halfpipe** (a deep bowl with steep walls and a ledge along each top). The screen shows each best time and best trick score. The pause menu can **Restart**; finishing offers **Retry**, **Next** and **Stages**; quitting goes back to the stage list. |
-| **Stage Editor** | Your own stages. **Open Editor** opens the Stage Editor in a new tab; **Save to Game** there puts the stage on **Load Stage**, which also loads stages from files. Pick one, set **Damage** and **Classic** (both off unless you switch them on) and **Play**. A stage with a finish line can be completed like one of the nine; one without goes on until you quit, like a stunt track. |
+| **Time Trial** | Any of the nine stages, or **All Nine** in a row, against the clock (Practice is part of it now). The clock runs from when the truck first lands on each stage to its finish line. Your best run on each track comes back as a see-through **ghost** to race, and the clock's readout shows how far ahead (green) or behind (pink) of it you are at the same point on the track. The nine stages have the original ceiling and scrape, as in Classic. Switches on its screen: **Tricks** (spotted and scored as in Classic with tricks, or not at all; either way times count), **Damage** (off: the time is shown, but isn't a record), **2006 Mode** (as in Classic, with tricks off; times count) and **Ghost**. It also has the three **stunt tracks**, where tricks always score and there's no finish line and no clock; their best trick score is kept instead (with damage on), when the run ends (a wreck, quitting or restarting): **Mega Ramp** (a 450 m accelerator at 45°, a launch ramp good for about 470 km/h and 13 s in the air, then a long run-out ending in a quarter pipe), **Kicker Run** (a bumpy downhill of small kickers that goes on for ever) and **Halfpipe** (a deep bowl with steep walls and a ledge along each top). The screen shows each best time and best trick score. The pause menu can **Restart**; finishing offers **Retry**, **Next** and **Stages**; quitting goes back to the stage list. |
+| **Stage Editor** | Your own stages. **Open Editor** opens the Stage Editor in a new tab; **Save to Game** there puts the stage on **Load Stage**, which also loads stages from files. Pick one, set **Damage** and **2006 Mode** (both off unless you switch them on; 2006 Mode scores flips the original way) and **Play**. Custom stages have no ceiling. A stage with a finish line can be completed like one of the nine; one without goes on until you quit, like a stunt track. |
 
-Outside Classic, the driving view fills the window, on a phone held either way up (the
+Outside 2006 Mode, the driving view fills the window, on a phone held either way up (the
 on-screen controls sit over the bottom of it). Close in, it never shows less of the world than
-Classic's 576×448: a taller window shows more sky and ground, and a wider one more to each side
-(the truck keeps Classic's place in the middle 576). The backdrop scales up evenly to cover it.
-Classic keeps the original 576×448 view. The menus' backdrop fills the window, with the menu centred on it. In a window at least as
+the original's 576×448: a taller window shows more sky and ground, and a wider one more to each side
+(the truck keeps the original's place in the middle 576). The backdrop scales up evenly to cover it.
+The camera follows the truck up and down anywhere, even below the stage, and above it where there's
+no ceiling. 2006 Mode keeps the original 576×448 view. The menus' backdrop fills the window, with the menu centred on it. In a window at least as
 tall as it is wide (a phone held upright, say), every menu switches to a tall layout: one column,
 with the title screen's buttons in one column, Time Trial's stages in a 3×3 grid, and
 everything scaled up to fill the width, so the buttons are much bigger.
 
-**Dynamic camera** (outside Classic; a switch on the Options screen turns it off): it follows the
+**Dynamic camera** (outside 2006 Mode; a switch on the Options screen turns it off): it follows the
 truck exactly as the original camera does, keeping it in the same place on screen, but pulls the
 frame back when the truck keeps up a good speed (mostly: full pull-back from speed comes at about
 120 km/h) or has been high in the air for a while, up to 1.8 times as much of the world. It never
@@ -49,14 +49,14 @@ move it. While the truck rolls backwards, the frame also eases back a little (up
 show where it's going. At very high speeds (beyond about 120 km/h) it also moves with the truck, so
 the truck never outruns it. The settings are `CAMERA` in `src/game.js`.
 
-Outside Classic the HUD has a **speedometer** in km/h, or mph with the **Units** option (64 px of
+Outside 2006 Mode the HUD has a **speedometer** in km/h, or mph with the **Units** option (64 px of
 the stage is 2.5 m). Its bar is quasi-logarithmic: it moves at everyday speeds and is full at
 300 km/h. It reads the speed of the truck's centre of mass, so it stays steady while the truck
 turns over in the air, and reads 0 while the truck is being dropped in at the start of a stage,
 until it first lands. Nothing goes faster than 9999 km/h (only Sandbox gets near).
 
 When the truck is so high that the ground below it is out of sight, an **altitude** reading
-(▼ metres or feet to the ground) comes up under the speedometer. Outside Classic the backdrop moves
+(▼ metres or feet to the ground) comes up under the speedometer. Outside 2006 Mode the backdrop moves
 a little too: sideways as you travel, and down as you climb, so the mountains sink away below a
 truck flying high. Dirt flies from a cab scraping along the ground, and from a wrecked truck's
 loose wheels and body.
@@ -64,26 +64,28 @@ loose wheels and body.
 On a phone held upright the HUD is drawn bigger, and the stage's name, trick names and milestones
 come up lower down, nearer the truck.
 
-The game-over box says how far the run got: the stage reached (Standard and Classic), the stage
+The game-over box says how far the run got: the stage reached (Classic), the stage
 (Time Trial), or the distance (Endless).
 
 **Garage**: choose the truck's body, paint, tyres and wheels. Choosing a body puts it in its own
 colour; Paint then gives it any other body's colour. Only the look changes: every body and tyre
 drives exactly the same (the garage says so). **Reset Truck** goes back to the truck you start with.
 
-Standard, Classic and Endless each keep their own best (score, score, distance), and Time Trial a
+Classic, Classic with tricks and Endless each keep their own best (score, score, distance), and Time Trial a
 best time and ghost per track (a ghost is about 30 KB a minute of driving), and a best trick score
 per stunt track.
 
-In damage-free runs outside Classic (Endless, Sandbox, and Time Trial with damage off), a **Flip** button
+In damage-free runs outside 2006 Mode (Endless, Sandbox, and Time Trial with damage off), a **Flip** button
 appears at the top of the screen when the truck has been stuck on its roof or side for two seconds.
 It hops the truck up and turns it back onto its wheels, and stays for three seconds after the
 truck stops looking stuck. A flip upright isn't a trick: tricks count again a second after it lands.
 
-Outside Classic the body touching ground underneath it (the chassis bottoming out on a hard landing
-or a ramp) isn't a scrape: no damage, bail or scrape sound. Hitting the cab's roof or sides is.
+Except on the nine stages in Classic and Time Trial (which keep the original scrape), the body
+touching ground underneath it (the chassis bottoming out on a hard landing or a ramp) isn't a
+scrape: no damage or scrape sound. Hitting the cab's roof or sides is. Bottoming out never bails a
+trick chain.
 
-**Dynamic crash cam** (outside Classic; on the Options screen): when the truck is wrecked, the
+**Dynamic crash cam** (outside 2006 Mode; on the Options screen): when the truck is wrecked, the
 camera eases over from the driving camera (in about 1¼ s) and pulls back, up to 8 times the
 usual view, to keep all the scattering pieces in frame, centred on them. A wheel that shoots off
 pulls the camera out with it at once. If the pieces spread further than 8 times the view can show,
@@ -92,7 +94,7 @@ it stays centred where it would be to show them all. `CRASH_CAM` in `src/game.js
 **One Button** (the Controls option: Standard, Pedals on a touchscreen, or One Button): one button drives on the
 ground and tilts the truck back in the air. On a keyboard it's Space or the up arrow (the other
 arrow keys do nothing); on a touchscreen the pedals go and holding anywhere on the screen is the
-button. Classic always uses the original controls. It also helps you balance: with both wheels on
+button. It works in every mode, 2006 Mode included (it does nothing the arrow keys can't). It also helps you balance: with both wheels on
 the ground and tipped more than 45° (nose down, or nose up as on a steep climb), holding the button
 also presses the tilt that leans the truck back towards level, exactly as the arrow keys would. On
 one wheel it doesn't, as there the arrow keys can't tilt the truck either (let go to come down from
@@ -129,7 +131,7 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 One Button), the dynamic camera, the dynamic crash cam, **Units** (metric, or imperial: mph, and
 heights in feet, then miles past a mile), and **Show Frame Rate** (frames per second
 in the bottom left corner). Options for one mode stay on that
-mode's screen (Time Trial's Tricks, Damage, Classic and Ghost). The speaker button in the top
+mode's screen (Classic's Tricks and 2006 Mode; Time Trial's Tricks, Damage, 2006 Mode and Ghost). The speaker button in the top
 right corner of the title screen switches the sound on and off too.
 
 The game's
@@ -137,7 +139,7 @@ version is in the title screen's bottom-right corner; on the live site it's foll
 commit it was built from.
 
 The pause screen names the run (mode and stage, or distance in Endless) and has an **Options**
-button with the options that apply to the run (Classic has no controls or camera switches).
+button with the options that apply to the run (2006 Mode has no camera or units switches).
 
 The best scores, the High Scores screen's stats, the options and the truck chosen in the garage (with each body's paint) are saved in the browser
 (`localStorage`).
@@ -220,7 +222,7 @@ plays them.
 | Wheelie / Nose Wheelie | Drive along on the back / front wheel for ¾ s or more | 2 per 1/70 s |
 | Clean | Land a jump on both wheels at once without scraping the cab | half the jump's points |
 
-Tricks score in Standard, Endless, Sandbox and Time Trial (unless switched off there; never in Classic). Tricks done close together make a chain. The chain pays out about 1½ s after its last trick, worth
+Tricks score in Classic with tricks on, Endless, Sandbox and Time Trial (unless switched off there; never in 2006 Mode). Tricks done close together make a chain. The chain pays out about 1½ s after its last trick, worth
 its points times the number of tricks in it (up to ×5). While a chain is open, its running total and
 multiplier show under the score. Scraping the cab is a **bail**: the chain pays out at once, without
 the multiplier, and a grey *bail* note appears under the trick names. A chain still open at the finish line is paid out there. Each trick name stays on
@@ -247,7 +249,7 @@ checks the truck moves, and saves screenshots. Pass a folder as the first argume
 where they go: `node tests/phone-check.mjs /tmp/shots`.
 
 For screenshots of a particular state, the page accepts test parameters, for example
-`?test=play&stage=5&frames=600&touch=1` or `?test=garage&look=3,1,2,0` (body, tyre, wheel, paint) (add `&classic=1` or `&damage=0` for those options), or `?test=endless&seed=3&frames=600` for Endless Mode. See `applyTestParams` in `src/main.js`. Nothing is
+`?test=play&stage=5&frames=600&touch=1` or `?test=garage&look=3,1,2,0` (body, tyre, wheel, paint) (add `&retro=1` for 2006 Mode or `&damage=0`; `?test=classic&stage=3&tricks=0&retro=1` for Classic), or `?test=endless&seed=3&frames=600` for Endless Mode. See `applyTestParams` in `src/main.js`. Nothing is
 saved to storage while a test parameter is set.
 
 ## Code layout
@@ -267,7 +269,7 @@ saved to storage while a test parameter is set.
 | `src/audio.js`, `src/sound-events.js` | Synthesised sound, and the watcher that turns game events into sound cues. |
 | `sounds.html` | A page for hearing every sound. |
 | `src/trial.js` | Time Trial: time formats, saved best times, and ghosts (recorded as the truck's pose every other step, packed small). No DOM. |
-| `src/wreck.js` | The ragdoll wreck: a wrecked truck's pieces (outside Classic). The wheels come off and bounce like rubber, and hit each other and the body (each body's own outline, `src/wreck-shapes.js`). They leave their wheel arches without being flung (upside down, they hop out), and never sink back in; their spin counts, gripping the ground, the body and each other. The body rises out of any ground its cab scraped into, and grips the ground by its weight. Once everything has settled the wreck goes still until something knocks it. The suspension hangs from the body like legs. |
+| `src/wreck.js` | The ragdoll wreck: a wrecked truck's pieces (outside 2006 Mode). The wheels come off and bounce like rubber, and hit each other and the body (each body's own outline, `src/wreck-shapes.js`). They leave their wheel arches without being flung (upside down, they hop out), and never sink back in; their spin counts, gripping the ground, the body and each other. The body rises out of any ground its cab scraped into, and grips the ground by its weight. Once everything has settled the wreck goes still until something knocks it. The suspension hangs from the body like legs. |
 | `tools/wreck-lab.html` | The Wreck Lab: real crashes, found by bots driving the nine stages (`node tools/make-wreck-crashes.mjs`), replayed two at a time with all six bodies, then wrecked live. `node tools/wreck-lab-sim.mjs` tallies how the wheels end up. |
 | `tools/make-tile-art.mjs` | Samples the pixels along each tile's edges into `src/tile-art.js`, for the Path tool's look pass: serve the repo, then `node tools/make-tile-art.mjs`. |
 | `tools/make-wreck-shapes.mjs` | Traces each body sprite's outline into `src/wreck-shapes.js`: serve the repo, then `node tools/make-wreck-shapes.mjs`. |

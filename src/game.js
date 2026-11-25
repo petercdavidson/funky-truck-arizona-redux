@@ -158,6 +158,19 @@ export class CollisionWorld {
     if (!last) return null;
     return { x: c22, y: d33, nx: last.nx, ny: last.ny, type: last.type, wall: !!last.wall };
   }
+
+  /**
+   * The first ground straight down from (x, y0) to y1, as collide() finds it, looked for a piece
+   * at a time: collide() searches a box as wide as its line is long, so one long line down
+   * through a stage would look through a great many empty cells. (For the camera and altimeter.)
+   */
+  down(x, y0, y1, piece = 256) {
+    for (let y = y0; y < y1; y += piece) {
+      const h = this.collide(x, y, x, Math.min(y + piece, y1));
+      if (h) return h;
+    }
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -542,20 +555,35 @@ export function emptyKeys() {
 }
 
 /**
- * The rules a run is played by.
- *   classic  the original game: no tricks, no ragdoll wreck, the invisible ceiling, the original
- *            flip bonus, and no one-button controls
- *   damage   scraping the cab adds damage, and 1000 damage wrecks the truck
+ * The rules a run is played by (each missing one is off):
+ *   damage     scraping the cab adds damage, and 1000 damage wrecks the truck
+ *   ceiling    the invisible ceiling along the top of the level (the nine stages, in Classic and
+ *              Time Trial). The camera never shows above it.
+ *   scrapeAll  the original scrape: any ground the cab's probe touches counts, even ground under
+ *              the body (bottoming out on a hard landing or a ramp). Without it, only ground beside
+ *              or above the cab does. Either way, bottoming out never bails a trick chain.
+ *   flipBonus  the original scoring: a landed flip's degrees, paid at once while the time bonus
+ *              runs (after the finish line too), and the side walls count as ground. No tricks.
+ *   tricks     false: no tricks are watched for
+ *   retro      2006 Mode: the original's look (576x448, 30 fps, letterboxed), its camera, no
+ *              speedometer or altimeter, no ragdoll wreck (the truck keeps driving, whole), no Esc wreck
  */
 export const RULES = {
-  play: { classic: false, damage: true },
-  classic: { classic: true, damage: true },
-  endless: { classic: false, damage: false },
-  sandbox: { classic: false, damage: false },
+  endless: { damage: false },
+  sandbox: { damage: false },
 };
 
 /**
- * The dynamic camera (outside Classic, when switched on): it pulls back to show more when the
+ * Classic Mode's rules: the original game on the nine stages, with or without tricks, and in the
+ * new view or 2006 Mode (which always has tricks off). Tricks off plays exactly as the original.
+ */
+export function classicRules({ tricks = false, retro = false } = {}) {
+  const flip = !tricks || retro;
+  return { damage: true, ceiling: true, scrapeAll: true, flipBonus: flip, tricks: !flip, retro: !!retro };
+}
+
+/**
+ * The dynamic camera (outside 2006 Mode, when switched on): it pulls back to show more when the
  * truck is going fast (mostly) or has been high above the ground for a while, and closes in again
  * when it settles. `zoom` is how many times the usual view it shows (1 = the usual view, never
  * less than Classic's 576x448). It follows the truck just as the original camera does, with the
@@ -578,7 +606,7 @@ export const CAMERA = {
 };
 
 /**
- * The dynamic crash cam (outside Classic, when switched on): once the truck is wrecked, the camera
+ * The dynamic crash cam (outside 2006 Mode, when switched on): once the truck is wrecked, the camera
  * pulls back to keep every piece in view, centred on them, up to `maxZoom` times the usual view
  * (beyond that it stays centred on them all). `margin` is room
  * left round the pieces (stage units, at zoom 1), `maxRate` the most the zoom changes in a step
@@ -599,9 +627,9 @@ export const UPRIGHT_LINGER = 210;
 /** After a flip upright, steps on the ground before tricks are watched for again (1 s). */
 export const TRICK_COOLDOWN = 70;
 /**
- * Outside Classic, the body touching ground that's underneath it (the chassis bottoming out on a
- * hard landing or a ramp) isn't a scrape. Underneath means the ground's normal is within about
- * 65° of the truck's up direction.
+ * Without the original scrape (`scrapeAll`), the body touching ground that's underneath it (the
+ * chassis bottoming out on a hard landing or a ramp) isn't a scrape, and it never bails a trick
+ * chain. Underneath means the ground's normal is within about 65° of the truck's up direction.
  */
 const UNDERSIDE = 0.42;
 const RIGHTING_STEPS = 80;
@@ -631,7 +659,8 @@ export const STAGES_PER_PAGE = 6;
  * Modes: 'campaign' (all nine stages), 'practice' (one stage), 'endless' (a generated course),
  * 'trial' (Time Trial: a stage or all nine against the clock, see trial.js), 'sandbox' (any track,
  * the physics as you like, with rival and enemy cars: see sandbox.js and battle.js).
- * The title screen's Play and Classic both start a campaign, under different rules.
+ * Classic (mode 'campaign', the nine stages) has its own screen ('classicSelect') with its Tricks
+ * and 2006 Mode switches.
  */
 export class Game {
   /**
@@ -668,8 +697,9 @@ export class Game {
     this.endTimer = 0;                // L5B72
     this.tickerTimer = 0;             // e8472
     this.ticker = '';
-    this.rules = RULES.play;
-    // Best scores: Classic keeps the original game's saved best; Play and Endless have their own.
+    this.rules = { damage: true };
+    // Best scores: Classic keeps the original game's saved best ('bestScore'); Classic with tricks
+    // ('bestPlay', which Standard's best became) and Endless have their own.
     this.best = validCount(this.store.get('bestScore')); // a0a82
     this.bestPlay = validCount(this.store.get('bestPlay'));
     this.bestEndless = validCount(this.store.get('bestEndless'));
@@ -689,8 +719,10 @@ export class Game {
     this.oneButton = flag('oneButton', false);
     this.practiceDamage = flag('practiceDamage', true);
     this.customDamage = flag('customDamage', false);
-    this.customClassic = flag('customClassic', false);
-    this.practiceClassic = flag('practiceClassic', false);
+    this.customRetro = flag('customRetro', false);   // custom stages in 2006 Mode
+    this.classicTricks = flag('classicTricks', true);  // Classic: tricks on (2006 Mode always has them off)
+    this.classicRetro = flag('classicRetro', false);   // Classic: 2006 Mode
+    this.trialRetro = flag('trialRetro', false);     // Time Trial: 2006 Mode
     this.trialTricks = flag('trialTricks', true);   // Time Trial: tricks spotted and scored
     this.dynamicCamera = flag('dynamicCamera', true);
     this.crashCam = flag('crashCam', true);
@@ -707,7 +739,7 @@ export class Game {
     this.ghostT = null;               // where the ghost truck is this step (null: not on screen)
     this.split = null;                // clock now minus the ghost's at this point of the track
     this.trialResult = null;          // { time, best, record } at the end of a finished run
-    this.wreck = null;                // the pieces of a wrecked truck (outside Classic)
+    this.wreck = null;                // the pieces of a wrecked truck (outside 2006 Mode)
     this.resetConfirm = null;         // High Scores: the reset being confirmed, { steps } since asked
     this.selfWrecked = false;         // the wreck was done on purpose (Esc), not by damage
     this.crashSteps = 0;              // steps the crash cam has been on
@@ -715,7 +747,7 @@ export class Game {
     this.milestones = [];             // ...and ones waiting their turn
     this.milestoneCount = 0;          // bumped for each one (for the sound and the confetti)
     this.scraping = false;            // the cab is scraping the ground this step
-    this.speedKmh = 0;                // the speedometer (outside Classic), smoothed a little
+    this.speedKmh = 0;                // the speedometer (outside 2006 Mode), smoothed a little
     this.stuck = 0;                   // steps the truck has spent stuck (flip-upright assist)
     this.canUpright = false;
     this.righting = 0;                // steps left of a flip upright
@@ -732,16 +764,16 @@ export class Game {
     this.wrecked = false;
     this.finished = false;
     this.camX = 0; this.camY = 0;     // J1Fc4 / k20D4
-    this.zoom = 1;                    // the dynamic camera's pull-back (outside Classic)
+    this.zoom = 1;                    // the dynamic camera's pull-back (outside 2006 Mode)
     // Dynamic camera springs: each a value and its velocity per step.
     this.ground = 0; this.groundV = 0;     // smoothed height above the ground
     this.camSpeed = 0; this.camSpeedV = 0; // smoothed speed
     this.zoomV = 0;
     this.back = 0; this.backV = 0;         // how far the camera has eased back for reversing (0-1)
     // How much of the world the driving view shows across and top to bottom (at zoom 1) when it
-    // fills the window: never less than Classic's 576x448, and more one way to match the window's
-    // shape. The renderer keeps these up to date, even on the menus, so a stage starts with its
-    // camera in the right place. Classic always shows 576x448 (see viewW, viewH).
+    // fills the window: never less than the original's 576x448, and more one way to match the
+    // window's shape. The renderer keeps these up to date, even on the menus, so a stage starts
+    // with its camera in the right place. 2006 Mode always shows 576x448 (see viewW, viewH).
     this.fillViewW = STAGE_W;
     this.fillViewH = STAGE_H;
     this.dirt = [];                   // Z5D11
@@ -761,13 +793,13 @@ export class Game {
   }
 
   /** How much of the world shows top to bottom at zoom 1. It only moves the camera. */
-  get viewH() { return this.rules.classic ? STAGE_H : this.fillViewH; }
+  get viewH() { return this.rules.retro ? STAGE_H : this.fillViewH; }
   set viewH(h) { this.fillViewH = h; }
   /** How much of the world shows across at zoom 1. It only moves the camera. */
-  get viewW() { return this.rules.classic ? STAGE_W : this.fillViewW; }
+  get viewW() { return this.rules.retro ? STAGE_W : this.fillViewW; }
   set viewW(w) { this.fillViewW = w; }
   /** Where the camera keeps the truck across the view (at zoom 1): 150 from the left of a
-   *  Classic-sized view, centred in a wider one, and eased right a little while reversing. */
+   *  576-wide view, centred in a wider one, and eased right a little while reversing. */
   get camAnchorX() { return 150 + (this.viewW - STAGE_W) / 2 + this.back * CAMERA.lookBack; }
 
   get levelData() {
@@ -810,33 +842,50 @@ export class Game {
     this.saveLook();
   }
 
-  /** Flip an on/off option and save it: 'soundOn', 'oneButton', 'practiceDamage', 'practiceClassic', 'dynamicCamera', 'crashCam', 'ghostOn', 'showFps'. */
+  /** Flip an on/off option and save it: 'soundOn', 'oneButton', 'classicTricks', 'classicRetro', 'practiceDamage', 'trialRetro', 'dynamicCamera', 'crashCam', 'ghostOn', 'showFps', ... */
   toggle(option) {
-    const key = { soundOn: 'sound', oneButton: 'oneButton', practiceDamage: 'practiceDamage', practiceClassic: 'practiceClassic', trialTricks: 'trialTricks', customDamage: 'customDamage', customClassic: 'customClassic', dynamicCamera: 'dynamicCamera', crashCam: 'crashCam', ghostOn: 'ghost', showFps: 'showFps', imperial: 'imperial' }[option];
+    const key = { soundOn: 'sound', oneButton: 'oneButton', classicTricks: 'classicTricks', classicRetro: 'classicRetro', practiceDamage: 'practiceDamage', trialRetro: 'trialRetro', trialTricks: 'trialTricks', customDamage: 'customDamage', customRetro: 'customRetro', dynamicCamera: 'dynamicCamera', crashCam: 'crashCam', ghostOn: 'ghost', showFps: 'showFps', imperial: 'imperial' }[option];
     if (!key) return;
     this[option] = !this[option];
     this.store.set(key, this[option]);
   }
 
-  /** The dynamic camera applies outside Classic, when switched on. */
-  get dynamicCameraActive() { return this.dynamicCamera && !this.rules.classic; }
+  /** The dynamic camera applies outside 2006 Mode, when switched on. */
+  get dynamicCameraActive() { return this.dynamicCamera && !this.rules.retro; }
 
-  /** The crash cam works on a wrecked truck outside Classic, when switched on. */
-  get crashCamActive() { return this.crashCam && !this.rules.classic && !!this.wreck; }
+  /** The crash cam works on a wrecked truck outside 2006 Mode, when switched on. */
+  get crashCamActive() { return this.crashCam && !this.rules.retro && !!this.wreck; }
 
-  /** One-button controls apply outside Classic. */
-  get oneButtonActive() { return this.oneButton && !this.rules.classic; }
+  /** One-button controls apply everywhere (nothing they do is beyond the arrow keys). */
+  get oneButtonActive() { return this.oneButton; }
 
-  /** The flip-upright assist is offered in damage-free runs outside Classic. */
-  get uprightAllowed() { return !this.rules.damage && !this.rules.classic; }
+  /** The flip-upright assist is offered in damage-free runs outside 2006 Mode. */
+  get uprightAllowed() { return !this.rules.damage && !this.rules.retro; }
 
   // ---- flow
 
-  /** The nine stages, as Play (`classic` false) or as the original game (`classic` true). */
-  startCampaign(classic = false) { this.mode = 'campaign'; this.rules = classic ? RULES.classic : RULES.play; this.beginRun(0); }
+  /**
+   * Classic: the nine stages by the original rules, with tricks or not, in the new view or 2006
+   * Mode (as the Classic screen's switches have them, unless given).
+   */
+  startCampaign({ tricks = this.classicTricks, retro = this.classicRetro } = {}) {
+    this.mode = 'campaign';
+    this.rules = classicRules({ tricks, retro });
+    this.beginRun(0);
+  }
+
+  /**
+   * The rules for one of Time Trial's tracks (`stage`: one of the nine, rather than a stunt
+   * track): the nine stages keep the original ceiling and scrape, as Classic has them.
+   */
+  trackRules(stage, tricks) {
+    const retro = this.trialRetro;
+    return { damage: this.practiceDamage, ceiling: stage, scrapeAll: stage, retro, tricks: tricks && !retro };
+  }
+
   startPractice(l) {
     this.mode = 'practice';
-    this.rules = { classic: this.practiceClassic, damage: this.practiceDamage };
+    this.rules = this.trackRules(l < this.data.levels.length, true);
     this.beginRun(l);
   }
 
@@ -901,14 +950,16 @@ export class Game {
     this.stagePage = (this.stagePage + d + pages) % pages;
   }
 
-  /** Play saved stage i (or `level`, a stage given directly), with the Damage and Classic switches as set. */
+  /** Play saved stage i (or `level`, a stage given directly), with the Damage and 2006 Mode switches as set. */
   startCustom(i = this.stagePick, level = null) {
     const stage = level || this.stages[i];
     if (!stage) return;
     this.mode = 'custom';
     this.customIndex = level ? -1 : i;
     this.customLevel = stage;
-    this.rules = { classic: this.customClassic, damage: this.customDamage };
+    // (no ceiling; 2006 Mode scores flips the original way, as Classic does)
+    const retro = this.customRetro;
+    this.rules = { damage: this.customDamage, retro, flipBonus: retro, tricks: !retro };
     this.beginRun(0);
   }
 
@@ -983,14 +1034,15 @@ export class Game {
   /**
    * Time Trial (with Practice in it): a stage (0-8), all nine in a row (TRIAL_ALL), against the
    * clock, or a stunt track (TRIAL_STUNTS + i), for tricks. The switches on its screen choose the
-   * rules: Tricks (spotted and scored, or not), Damage and Classic. The clock runs from when the
-   * truck first lands on each stage to its finish line; a time only goes on the board with damage
-   * on, by the new rules (`timeCounts`). A stunt track has no finish and no clock: its best trick
-   * score is kept instead (with damage on), when the run ends.
+   * rules: Tricks (spotted and scored, or not), Damage and 2006 Mode (which has tricks off). The
+   * nine stages have the original ceiling and scrape. The clock runs from when the truck first
+   * lands on each stage to its finish line; a time only goes on the board with damage on
+   * (`timeCounts`). A stunt track has no finish and no clock: its best trick score is kept
+   * instead (with damage on), when the run ends.
    */
   startTrial(track) {
     this.mode = 'trial';
-    this.rules = { classic: this.practiceClassic, damage: this.practiceDamage, tricks: this.trialTricks && !this.practiceClassic };
+    this.rules = this.trackRules(track < TRIAL_STUNTS, this.trialTricks);
     this.track = track;
     this.clock = 0; this.runStep = 0; this.split = null; this.trialResult = null;
     this.poses = []; this.marks = {};
@@ -1000,8 +1052,8 @@ export class Game {
     this.beginRun(stunt ? this.data.levels.length + track - TRIAL_STUNTS : track === TRIAL_ALL ? 0 : track);
   }
 
-  /** Time Trial: whether this run's time can go on the board (a stage, with damage, by the new rules). */
-  get timeCounts() { return this.mode === 'trial' && this.rules.damage && !this.rules.classic && this.track < TRIAL_STUNTS; }
+  /** Time Trial: whether this run's time can go on the board (a stage, with damage). */
+  get timeCounts() { return this.mode === 'trial' && this.rules.damage && this.track < TRIAL_STUNTS; }
   /** Time Trial: whether this run's trick score can be a stunt track's best. */
   get stuntCounts() { return this.mode === 'trial' && this.track >= TRIAL_STUNTS && this.rules.damage && this.rules.tricks !== false; }
 
@@ -1042,7 +1094,7 @@ export class Game {
   /** Time Trial: the run is over (finished, not wrecked); keep the time if it's the best. */
   finishTrial() {
     const time = this.clock, best = this.trialBests[this.track] ?? null;
-    // (without damage, or by Classic rules, the time is shown but can't be a record)
+    // (without damage, the time is shown but can't be a record)
     const counts = this.timeCounts;
     const record = counts && (best === null || time < best);
     this.trialResult = { time, best, record, counts };
@@ -1068,7 +1120,7 @@ export class Game {
   }
 
   makeWorld(radius = this.truck.wheelRadius) {
-    return new CollisionWorld(this.levelData, this.tileTable, radius, { ceiling: this.rules.classic });
+    return new CollisionWorld(this.levelData, this.tileTable, radius, { ceiling: !!this.rules.ceiling });
   }
 
   /**
@@ -1099,7 +1151,7 @@ export class Game {
     this.lastFocus = null; this.pace = [0, 0]; this.shiftTotal = [0, 0];
     this.camX = Math.min(Math.max(s[0] - this.camAnchorX, 0), this.maxCamX);       // s4833
     this.camY = s[1] - this.viewH / 2;
-    if (this.rules.classic) this.camY = Math.min(Math.max(this.camY, 0), this.maxCamY);
+    this.clampCamY();
     this.updateCamera();
     this.ticker = this.mode === 'custom' || this.sandboxCustom ? this.customLevel.name : this.stageName(this.level); this.tickerTimer = 140;   // m2813
     this.endTimer = 0;
@@ -1129,7 +1181,7 @@ export class Game {
   nextPractice() { if (this.hasNextPractice) this.startPractice(this.lastLevel + 1); }
 
   restart() {
-    if (this.mode === 'campaign') this.startCampaign(this.rules.classic);
+    if (this.mode === 'campaign') this.startCampaign({ tricks: !this.rules.flipBonus, retro: this.rules.retro });
     else if (this.mode === 'endless') this.startEndless();
     else if (this.mode === 'sandbox') this.startSandbox();
     else if (this.mode === 'custom') this.startCustom(this.customIndex, this.customIndex < 0 ? this.customLevel : null);
@@ -1241,11 +1293,11 @@ export class Game {
   }
 
   /**
-   * Where quitting a run goes: back to its list of stages for Practice and Time Trial, otherwise
-   * the title screen.
+   * Where quitting a run goes: back to its list of stages for Practice and Time Trial, to Classic's
+   * screen, to Sandbox's settings, otherwise the title screen.
    */
   get quitScreen() {
-    return { practice: 'trialSelect', trial: 'trialSelect', sandbox: 'sandbox', custom: 'stageLoad' }[this.mode] || 'title';
+    return { campaign: 'classicSelect', practice: 'trialSelect', trial: 'trialSelect', sandbox: 'sandbox', custom: 'stageLoad' }[this.mode] || 'title';
   }
 
   showMenu(screen) {
@@ -1299,15 +1351,21 @@ export class Game {
 
   // ---- the Esc easter egg: wreck the truck on purpose
 
-  /** Wrecking on purpose works outside Classic rules, and not in a Time Trial run that could set a time. */
-  get selfWreckAllowed() { return !this.rules.classic && !this.timeCounts; }
+  /** Wrecking on purpose works outside 2006 Mode (which has no ragdoll wreck). */
+  get selfWreckAllowed() { return !this.rules.retro; }
+
+  /**
+   * Whether a truck wrecked on purpose can still finish the stage, its body rolling over the line:
+   * not in Classic or Time Trial (as a truck wrecked by damage can't).
+   */
+  get selfWreckFinishes() { return !['campaign', 'trial', 'practice'].includes(this.mode); }
 
   /**
    * Wreck the truck now: it comes apart as a damage wreck does, but there's no game over. With
    * damage on, the loose cab takes damage whenever it touches the ground (any side of it) until
    * it's wrecked for real; without, the pieces tumble until you leave. If the body rolls over the
-   * finish line, the stage still counts. Returns false if it can't (already wrecked, over the
-   * finish line, or by rules that don't allow it).
+   * finish line, the stage still counts, outside Classic and Time Trial (`selfWreckFinishes`).
+   * Returns false if it can't (already wrecked, over the finish line, or in 2006 Mode).
    */
   selfWreck() {
     if (!this.selfWreckAllowed || this.screen !== 'playing' || this.wreck || this.endTimer > 0) return false;
@@ -1369,31 +1427,39 @@ export class Game {
     // of the way there each step, at most a tile. The dynamic camera is the same with the frame
     // pulled back: distances on the stage scale with the zoom, so on screen it behaves alike.
     const z = this.zoom;
-    // The original camera moves at most a tile a step. Outside Classic the truck can go faster
+    // The original camera moves at most a tile a step. Outside 2006 Mode the truck can go faster
     // than that (the stunt tracks), so there the limit rises to keep up with it.
     const t = this.truck;
-    const lim = this.rules.classic ? TILE * z : Math.max(TILE * z, 1.5 * Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]));
+    const lim = this.rules.retro ? TILE * z : Math.max(TILE * z, 1.5 * Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]));
     // (The crash cam keeps the pieces in the middle.)
     const anchorX = this.camAnchorX + (this.viewW / 2 - this.camAnchorX) * ease;
     let dx = Math.max(Math.min((fx - anchorX * z - this.camX) * 0.2, lim), -lim);
     let dy = Math.max(Math.min((fy - this.viewH * z / 2 - this.camY) * 0.2, lim), -lim);
     // Following a fifth of the way each step, the camera trails five steps' travel behind: fine at
     // the original's speeds, but at Sandbox's (a boost, no gravity) the truck would leave the
-    // screen. Outside Classic it also moves with whatever is followed beyond PACE_FROM px a step,
+    // screen. Outside 2006 Mode it also moves with whatever is followed beyond PACE_FROM px a step,
     // so the trail never gets longer than at that speed.
     // (That speed is smoothed, so bumps and landings don't jolt the camera.)
-    if (!this.rules.classic) {
+    if (!this.rules.retro) {
       const over = (v) => Math.sign(v) * Math.max(0, Math.abs(v) - PACE_FROM);
       const P = (this.pace ||= [0, 0]);
       P[0] += (over(fvx) - P[0]) * 0.08; P[1] += (over(fvy) - P[1]) * 0.08;
       dx += P[0]; dy += P[1];
     }
     this.camX = Math.min(Math.max(this.camX + dx, 0), this.maxCamX);
-    // Classic stays inside the level. Elsewhere the camera follows the truck up and down wherever
-    // it goes: above the level there's sky, and below it the renderer keeps drawing dirt (every
-    // column of every stage ends in solid dirt).
     this.camY += dy;
-    if (this.rules.classic) this.camY = Math.min(Math.max(this.camY, 0), this.maxCamY);
+    this.clampCamY();
+  }
+
+  /**
+   * 2006 Mode's camera stays inside the level, as the original's did. Elsewhere it follows the
+   * truck up and down wherever it goes: below the level the renderer keeps drawing dirt (every
+   * column of every stage ends in solid dirt), and above it there's sky, unless the level has the
+   * invisible ceiling: then the camera stops there, so it never shows where the truck can't go.
+   */
+  clampCamY() {
+    if (this.rules.retro) this.camY = Math.min(Math.max(this.camY, 0), this.maxCamY);
+    else if (this.rules.ceiling) this.camY = Math.max(this.camY, 0);
   }
 
   /**
@@ -1432,7 +1498,7 @@ export class Game {
 
   /** How far below the point (x, y) the ground is (a wheel centre's resting height), up to `max`. */
   groundBelow(x, y, max = 1000) {
-    const h = this.world.collide(x, y, x, y + max);
+    const h = this.world.down(x, y, y + max);
     return h ? Math.max(0, h.y - y) : max;
   }
 
@@ -1497,7 +1563,7 @@ export class Game {
   }
 
   /**
-   * Outside Classic: the cab or body scraping along the ground at (x, y) (ground normal (nx, ny)),
+   * Outside 2006 Mode: the cab or body scraping along the ground at (x, y) (ground normal (nx, ny)),
    * moving at (vx, vy) px a step, throws dirt up off the ground and on the way it's going.
    */
   scrapeDirt(x, y, nx, ny, vx, vy) {
@@ -1536,38 +1602,47 @@ export class Game {
     return { ...k, up: one, down: false, left, right };
   }
 
-  stepTruck(w) { // V7B33
+  /**
+   * One step of your truck. `hidden`: it's wrecked (Classic with tricks off), and its pieces are
+   * what's shown, but the whole truck still drives on unseen for the moments before the game-over
+   * box, as the original's did, so a flip it lands still scores just as it would have.
+   */
+  stepTruck(w, hidden = false) { // V7B33
     const t = this.truck;
     t.integrate();
     t.rearContact = false; t.frontContact = false; t.rearGround = false; t.frontGround = false;
-    t.wallsCount = this.rules.classic;
+    t.wallsCount = !!this.rules.flipBonus;
     for (let i = 0; i < 2; i++) { t.constrain(); t.collideWheels(w); }
-    // (Outside Classic, a wheel against an invisible side wall is still in the air.)
+    // (Except with the original scoring, a wheel against an invisible side wall is still in the air.)
     const down = t.rearDown || t.frontDown;
     // The longest jump (not the drop in at the start, before the truck has landed).
-    if (down && this.landed && this.airSteps > this.stats.maxAir) this.stats.maxAir = this.airSteps;
+    if (!hidden && down && this.landed && this.airSteps > this.stats.maxAir) this.stats.maxAir = this.airSteps;
     this.airSteps = down ? 0 : this.airSteps + 1;
     if (this.airSteps === 0) this.landed = true;
     const keys = this.driveKeys();
     t.drive(keys);
     t.spinWheels();
-    if (t.rearContact) this.kickDirt(t.rearSpin, 1, t.rearN);
-    if (t.frontContact) this.kickDirt(t.frontSpin, 2, t.frontN);
+    if (!hidden && t.rearContact) this.kickDirt(t.rearSpin, 1, t.rearN);
+    if (!hidden && t.frontContact) this.kickDirt(t.frontSpin, 2, t.frontN);
     t.tilt(keys);
     const type = t.probeBody(w);
-    // The cab (the truck above its wheels) is touching the ground. Outside Classic, ground under
-    // the body doesn't count: that's the chassis bottoming out, not the cab scraping.
-    const touching = type !== null && type !== 1 && (this.rules.classic || !this.underside(t));
-    this.scraping = touching; // heard even after the finish line
-    if (touching && !this.rules.classic) {
+    // The cab (the truck above its wheels) is touching the ground. Ground under the body is the
+    // chassis bottoming out: by the original scrape (scrapeAll) it counts too, otherwise not.
+    const cab = type !== null && type !== 1;
+    const under = cab && this.underside(t);
+    const touching = cab && (this.rules.scrapeAll || !under);
+    if (!hidden) this.scraping = touching; // heard even after the finish line
+    if (touching && !hidden && !this.rules.retro) {
       const h = t.probeHit, B = w.offset ?? 0;
       this.scrapeDirt(h.x - h.nx * B, h.y - h.ny * B, h.nx, h.ny, t.T[0] - t.P[0], t.T[1] - t.P[1]);
     }
-    // It only damages the truck or bails a chain before the stage is over.
+    // It only damages the truck or bails a chain before the stage is over. (Bottoming out never
+    // bails a chain.)
     const scraped = touching && this.endTimer === 0;
+    const bailed = cab && !under && this.endTimer === 0;
     if (scraped && this.rules.damage) this.damage = Math.min(1000, this.damage + 6);
     const flip = t.trackFlip();
-    if (this.rules.classic) {
+    if (this.rules.flipBonus) {
       // The original flip bonus: a landed flip's degrees, paid at once while the time bonus runs.
       if (flip !== null && this.bonus !== 0) {
         this.flipBonus = flip; this.flipBonusTimer = 70;
@@ -1589,7 +1664,7 @@ export class Game {
       // its wheels for a moment, and then the trick tracker starts afresh.
       if (this.righting === 0 && (t.rearContact || t.frontContact) && --this.trickCooldown === 0) this.tricks.reset();
     } else {
-      const paid = this.tricks.step(t, flip, scraped, scoring);
+      const paid = this.tricks.step(t, flip, bailed, scoring);
       if (paid > 0) this.payTricks(paid);
     }
     if (this.uprightAllowed) this.updateStuck(touching);
@@ -1603,7 +1678,7 @@ export class Game {
     return h.nx * Math.sin(r) - h.ny * Math.cos(r) > UNDERSIDE; // normal . the truck's up
   }
 
-  // ---- flip-upright assist (damage-free runs outside Classic)
+  // ---- flip-upright assist (damage-free runs outside 2006 Mode)
 
   /** Watch for the truck being stuck: on its roof or side, or with the cab dragging, for a while. */
   updateStuck(cabTouching) {
@@ -1658,18 +1733,20 @@ export class Game {
       return;
     }
     // The stunt tracks have no finish: they're for playing on.
-    // (A truck wrecked on purpose finishes if its body gets over the line.)
-    if (!this.onCourse && !this.isStunt && this.focus[0] >= this.finishX) {
+    // (A truck wrecked on purpose finishes if its body gets over the line, outside Classic and Time Trial.)
+    const canFinish = !this.selfWrecked || this.selfWreckFinishes;
+    if (!this.onCourse && !this.isStunt && canFinish && this.focus[0] >= this.finishX) {
       this.ticker = 'Stage Complete !'; this.tickerTimer = 140; this.endTimer = 210;
       this.bankTricks(); // a chain still going at the finish line is paid out
     }
     if (this.damage === 1000 && this.rules.damage) {
       this.ticker = 'Your truck is wrecked - Game over !'; this.tickerTimer = 140; this.endTimer = 210;
-      if (!this.rules.classic) {
+      if (!this.rules.retro) {
         // The truck comes apart and collapses; the pieces tumble for a moment before the game-over
-        // screen. (One wrecked on purpose is in pieces already.)
+        // screen. (One wrecked on purpose is in pieces already.) Classic keeps the original's
+        // 3 s before it, as the time bonus still left then is added to the score.
         if (!this.wreck) this.wreck = new Wreck(this.truck, this.world, this.thinWorld, this.look.body);
-        this.endTimer = 160;
+        if (this.mode !== 'campaign') this.endTimer = 160;
         this.tricks.reset();
       }
     }
@@ -1698,11 +1775,11 @@ export class Game {
     }
   }
 
-  /** The best score for the current rules (Classic and Play are kept apart). */
-  get bestForRules() { return this.rules.classic ? this.best : this.bestPlay; }
+  /** The best score for the current rules (Classic, and Classic with tricks, are kept apart). */
+  get bestForRules() { return this.rules.flipBonus ? this.best : this.bestPlay; }
 
   saveBest(score) {
-    if (this.rules.classic) { if (score > this.best) { this.best = score; this.store.set('bestScore', score); } }
+    if (this.rules.flipBonus) { if (score > this.best) { this.best = score; this.store.set('bestScore', score); } }
     else if (score > this.bestPlay) { this.bestPlay = score; this.store.set('bestPlay', score); }
   }
 
@@ -1736,7 +1813,7 @@ export class Game {
         if (this.keys.upright) this.upright();
         if (this.onCourse) this.updateEndless();
         else this.updateLoop();
-        if (!this.wreck && !this.rules.classic) this.keepInside();
+        if (!this.wreck && !this.rules.ceiling) this.keepInside();
         this.updateCamera();
         this.updateAltitude();
         this.updateDirt();
@@ -1778,7 +1855,7 @@ export class Game {
 
   /**
    * Keep your truck between the level's side walls. The walls only reach the top of the level, and
-   * outside Classic there's no ceiling, so a truck high enough (Sandbox's boost, low gravity) could
+   * without the ceiling, so a truck high enough (Sandbox's boost, low gravity) could
    * otherwise fly over them, and one hitting a wall fast could leave its body on the far side.
    * Pushed back in, it loses its speed into the wall. Inside, it never does anything.
    */
@@ -1798,9 +1875,16 @@ export class Game {
     t.probePrev = null;
   }
 
+  /**
+   * Classic with tricks off, wrecked by damage: the whole truck drives on unseen behind its pieces
+   * until the game-over box, as the original's did, so its score is just what the original's was.
+   */
+  get hiddenTruck() { return this.rules.flipBonus && !this.selfWrecked && !!this.wreck; }
+
   /** The wrecked truck's pieces, and (wrecked on purpose, with damage on) the damage to its cab. */
   stepWreck() {
     this.wreck.step();
+    if (this.hiddenTruck) this.stepTruck(this.world, true);
     // Dirt: off the loose wheels' tyres as they spin on the ground, and from the body scraping along.
     const W = this.wreck, T = W.T, P = W.P;
     W.wheels.forEach((wh, n) => {
@@ -1853,24 +1937,24 @@ export class Game {
       }
     };
     if (this.wreck) cap(this.wreck.T, this.wreck.P, false);
-    else cap(this.truck.T, this.truck.P, true);
+    if (!this.wreck || this.hiddenTruck) cap(this.truck.T, this.truck.P, true);
   }
 
   /**
-   * The altimeter (outside Classic): how high the truck is above the ground under it, in metres,
+   * The altimeter (outside 2006 Mode): how high the truck is above the ground under it, in metres,
    * while that ground is out of sight below the view; otherwise null. (With no ground under it at
    * all, past a level's side, also null.)
    */
   updateAltitude() {
     this.altitude = null;
-    if (this.rules.classic || this.wreck || !this.landed) return;
+    if (this.rules.retro || this.wreck || !this.landed) return;
     const t = this.truck, x = (t.T[2] + t.T[4]) / 2, y = Math.min(t.T[3], t.T[5]);
     const bottom = this.camY + this.viewH * this.zoom;
     if (y > bottom) return;
     // (from just below the view's bottom edge: ground any nearer would be in sight)
     const max = this.levelData.height * TILE + 200 - y;
     if (max <= 0) return;
-    const h = this.world.collide(x, Math.max(y, bottom - this.world.offset), x, y + max);
+    const h = this.world.down(x, Math.max(y, bottom - this.world.offset), y + max);
     if (!h || h.y < bottom - this.world.offset) return;
     this.altitude = Math.max(0, (h.y - y) / TILE * METRES_PER_TILE);
   }

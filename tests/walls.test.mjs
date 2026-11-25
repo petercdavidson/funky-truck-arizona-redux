@@ -1,4 +1,5 @@
-// The invisible side walls of a stage: outside Classic, a wheel against one isn't on the ground.
+// The invisible side walls of a stage: except by the original scoring (Classic with tricks off), a
+// wheel against one isn't on the ground.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -9,9 +10,7 @@ const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.met
 /** Throw the truck, high up, at the left wall, turning over; step until a wheel touches it. */
 function throwAtWall(classic) {
   const g = new Game(data);
-  g.practiceClassic = classic;
-  g.practiceDamage = false;
-  g.startPractice(0);
+  g.startCampaign({ tricks: !classic });
   for (let i = 0; i < 120; i++) g.step();
   const t = g.truck;
   for (let i = 0; i < 10; i += 2) { t.T[i] += 120 - t.T[0]; t.T[i + 1] -= 1500; }
@@ -25,7 +24,7 @@ function throwAtWall(classic) {
   throw new Error('never reached the wall');
 }
 
-test('outside Classic, hitting a side wall in the air keeps the jump going (no landing, no end to the trick)', () => {
+test('with tricks, hitting a side wall in the air keeps the jump going (no landing, no end to the trick)', () => {
   const { g, t } = throwAtWall(false);
   assert.ok(g.groundBelow(t.T[2] + 30, t.T[3]) > 300, 'still high above the ground');
   assert.equal(t.rearDown || t.frontDown, false, 'the wall is not ground');
@@ -33,13 +32,13 @@ test('outside Classic, hitting a side wall in the air keeps the jump going (no l
   assert.ok(g.airSteps > 0 && g.tricks.air > 0, 'still in the air for tricks');
 });
 
-test('in Classic, the side wall counts as the original game had it', () => {
+test('in Classic with tricks off, the side wall counts as the original game had it', () => {
   const { t } = throwAtWall(true);
   assert.equal(t.rearDown || t.frontDown, true);
   assert.equal(t.airborne, false);
 });
 
-test('dirt flies from a wrecked truck\'s wheels and body, and from a cab scraping along (not in Classic)', async () => {
+test('dirt flies from a wrecked truck\'s wheels and body, and from a cab scraping along (not in 2006 Mode)', async () => {
   const { turnOver } = await import('./helpers.mjs');
   const live = (g) => g.dirt.filter((d) => d.life > 0).length;
   // a wreck at speed
@@ -57,7 +56,7 @@ test('dirt flies from a wrecked truck\'s wheels and body, and from a cab scrapin
   // a cab sliding on its roof
   for (const classic of [false, true]) {
     g = new Game(data);
-    g.practiceDamage = false; g.practiceClassic = classic;
+    g.practiceDamage = false; g.trialRetro = classic;
     g.startPractice(0);
     for (let i = 0; i < 150; i++) g.step();
     turnOver(g.truck);
@@ -65,7 +64,7 @@ test('dirt flies from a wrecked truck\'s wheels and body, and from a cab scrapin
     let scraped = 0; most = 0;
     for (let i = 0; i < 45; i++) { g.step(); if (g.scraping) scraped++; most = Math.max(most, live(g)); }
     assert.ok(scraped > 0, 'the cab scraped');
-    if (classic) assert.equal(most, 0, 'Classic: no dirt from the cab');
+    if (classic) assert.equal(most, 0, '2006 Mode: no dirt from the cab');
     else assert.ok(most > 0, 'dirt from the scraping cab');
   }
 });

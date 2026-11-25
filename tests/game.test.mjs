@@ -101,8 +101,7 @@ test('best score is saved, and a bad saved value is ignored', () => {
   store.set('truckLook', { body: 99, tyre: 'x', hub: 2 });
   const g = new Game(data, { store });
   assert.deepEqual(g.look, { body: 0, tyre: 0, hub: 2, paint: 0 });
-  g.practiceClassic = true; // Classic keeps the original saved best
-  g.startPractice(0);
+  g.startCampaign({ tricks: false }); // Classic keeps the original saved best
   g.damage = 1000;
   g.score = 1234;
   for (let i = 0; i < 300 && g.screen === 'playing'; i++) g.step();

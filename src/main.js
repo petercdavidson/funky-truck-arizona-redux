@@ -106,18 +106,20 @@ function moveMenuHighlight(dx, dy) {
   if (best) renderer.hover = best;
 }
 
-/** Start the mode highlighted in the mode picker (Standard if none is). */
+/** Start the mode highlighted in the mode picker (Classic if none is). */
 function chooseMode() {
   const b = modeButtons().includes(renderer.hover) ? renderer.hover : null;
-  doAction(b ? b.action : 'standard');
+  doAction(b ? b.action : 'classicSelect');
 }
 
 /**
- * Esc: the easter egg first (outside Classic and Time Trial, a truck being driven is wrecked on
- * the spot, and its pieces tumble with no game over), then back a level as usual.
+ * Esc: the easter egg first (outside 2006 Mode, a truck being driven is wrecked on the spot, and
+ * its pieces tumble; in Classic and Time Trial it can't finish the stage after), then back a
+ * level as usual.
  */
 function escape() {
   if (game.screen === 'playing' && game.selfWreck()) { sound.play('wreck'); return; }
+  if (game.screen === 'classicSelect') { doAction('play'); return; }
   if (game.sandboxPick) { doAction('sbPickClose'); return; }
   if (game.screen === 'pauseOptions') { doAction('pauseBack'); return; }
   if (game.screen === 'sandboxTweaks') { doAction('tweaksBack'); return; }
@@ -142,6 +144,7 @@ function onKey(e, down) {
       if (name === 'up' || name === 'down') { moveModeChoice(name === 'up' ? -1 : 1); return; }
       if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') { chooseMode(); return; }
     }
+    if (game.screen === 'classicSelect' && !renderer.padHover && (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter')) { doAction('classic'); return; }
   }
   if (name) { for (const n of [name].flat()) keyboard[n] = down; combineKeys(); }
 }
@@ -182,7 +185,7 @@ function doAction(a) {
     return;
   }
   sound.play('click');
-  if (['oneButton', 'practiceDamage', 'practiceClassic', 'trialTricks', 'customDamage', 'customClassic', 'dynamicCamera', 'crashCam', 'ghostOn', 'showFps', 'imperial'].includes(a)) { game.toggle(a); return; }
+  if (['oneButton', 'classicTricks', 'classicRetro', 'practiceDamage', 'trialRetro', 'trialTricks', 'customDamage', 'customRetro', 'dynamicCamera', 'crashCam', 'ghostOn', 'showFps', 'imperial'].includes(a)) { game.toggle(a); return; }
   if (a === 'play') game.showMenu('modes');
   else if (a === 'back') game.showMenu('title');
   else if (a === 'stats') game.showMenu('stats');
@@ -192,8 +195,8 @@ function doAction(a) {
   else if (a === 'resetAsk') game.askReset();
   else if (a === 'resetNo') game.cancelReset();
   else if (a === 'resetYes') game.resetScores();
-  else if (a === 'standard') game.startCampaign();
-  else if (a === 'classic') game.startCampaign(true);
+  else if (a === 'classicSelect') game.showMenu('classicSelect');
+  else if (a === 'classic') game.startCampaign();
   else if (a === 'endless') game.startEndless();
   else if (a === 'sandbox') game.showMenu('sandbox');
   else if (a === 'stageEditor') game.showMenu('stageEditor');
@@ -500,6 +503,11 @@ function placeView() {
   st.setProperty('--view-h', `${renderer.viewH * renderer.scale * k}px`);
 }
 
+/** 2006 Mode draws the game at most this often (frames a second), with no smoothing between steps. */
+const RETRO_FPS = 30;
+const RETRO_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'gameOver']);
+let retroDrawn = -Infinity, drawnScreen = '';
+
 // The frame rate (an option): frames drawn over the last half second, shown in the corner.
 const fpsBox = document.getElementById('fps');
 let fpsFrames = 0, fpsSince = 0;
@@ -515,8 +523,6 @@ function countFrame(now) {
 
 function frame(now) {
   requestAnimationFrame(frame);
-  placeView();
-  countFrame(now);
   if (!last) last = now;
   // Sandbox's slow motion runs fewer steps a second (each step is the same as ever).
   const slow = game.mode === 'sandbox' && game.screen === 'playing' ? game.slowMotion : 1;
@@ -555,9 +561,19 @@ function frame(now) {
   if (ds.screen !== game.screen) ds.screen = game.screen;
   const snd = game.soundOn ? '1' : '0';
   if (ds.sound !== snd) ds.sound = snd;
-  const cur = snapshot();
-  const t = ['playing', 'title', 'modes', 'garage'].includes(game.screen) ? Math.min(acc / DT, 1) : 1;
-  renderer.draw(game, prev ? lerpView(prev, cur, t) : { ...cur, B: cur.B && lerpBattle(null, cur.B, 1) });
+  // 2006 Mode: a frame every 1/30 s (a few ms early is fine: the screen's own frames are what
+  // it waits on), showing the latest step as it is.
+  const retro = !!game.rules.retro && RETRO_SCREENS.has(game.screen);
+  const draw = !retro || game.screen !== drawnScreen || now - retroDrawn >= 1000 / RETRO_FPS - 4;
+  if (draw) {
+    if (retro) retroDrawn = now;
+    drawnScreen = game.screen;
+    const cur = snapshot();
+    const t = !retro && ['playing', 'title', 'modes', 'garage'].includes(game.screen) ? Math.min(acc / DT, 1) : 1;
+    renderer.draw(game, prev ? lerpView(prev, cur, t) : { ...cur, B: cur.B && lerpBattle(null, cur.B, 1) });
+    placeView();
+    countFrame(now);
+  }
   const one = game.oneButtonActive ? '1' : '0', up = game.canUpright && game.screen === 'playing' ? '1' : '0';
   if (ds.onebutton !== one) ds.onebutton = one;
   if (ds.upright !== up) ds.upright = up;
@@ -581,12 +597,13 @@ function fit() {
 
 /**
  * Test hook for automated screenshots, e.g. ?test=play&stage=5&frames=400&touch=1
- *   test   = title | modes | stats | options | garage | help | practice | trials | sandboxSetup | play | trial
- *            | endless | sandbox | paused | gameover
- *            (trial: a Time Trial of `stage`, 9 for All Nine)
+ *   test   = title | modes | classicSelect | stats | options | garage | help | practice | trials | sandboxSetup
+ *            | play | classic | trial | endless | sandbox | paused | gameover
+ *            (trial: a Time Trial of `stage`, 9 for All Nine; classic: Classic from `stage`)
  *   stage  = stage index for play (0-8), frames = steps to simulate with the gas held
+ *   retro  = 1 for 2006 Mode (play, classic, trial, custom), tricks = 0 for Classic with tricks off
  *   seed   = for endless: a number, so the same course comes up every time
- *   test=custom plays the level being edited in the Stage Editor, editor/ (damage=0 for no damage, classic=1)
+ *   test=custom plays the level being edited in the Stage Editor, editor/ (damage=0 for no damage)
  *   look   = body,tyre,hub[,paint] (e.g. 3,2,4,0), touch = 1 to show the touch controls
  * Nothing is saved to storage while this is active.
  */
@@ -603,7 +620,7 @@ function applyTestParams() {
     Object.assign(game.look, { body, tyre, hub, paint: Number.isInteger(paint) ? paint : body });
   }
   const frames = Number(q.get('frames')) || 0;
-  const screens = { garage: 'garage', help: 'help', practice: 'trialSelect', trials: 'trialSelect', sandboxSetup: 'sandbox', title: 'title', modes: 'modes', stats: 'stats', options: 'options' };
+  const screens = { garage: 'garage', help: 'help', classicSelect: 'classicSelect', practice: 'trialSelect', trials: 'trialSelect', sandboxSetup: 'sandbox', title: 'title', modes: 'modes', stats: 'stats', options: 'options' };
   if (screens[test]) {
     game.showMenu(screens[test]);
     for (let i = 0; i < 300; i++) game.step();
@@ -617,15 +634,20 @@ function applyTestParams() {
     game.sandbox.course = Number(q.get('course')) || 0; // 0 Endless, 1-9 the stages, then the stunt tracks
     game.startSandbox();
   } else if (test === 'trial') {
+    game.trialRetro = q.get('retro') === '1';
     game.startTrial(Number(q.get('stage')) || 0);
+  } else if (test === 'classic') {
+    game.startCampaign({ tricks: q.get('tricks') !== '0', retro: q.get('retro') === '1' });
+    const stage = Number(q.get('stage')) || 0;
+    if (stage) { game.level = stage; game.startStage(); }
   } else if (test === 'custom') {
     // The editor's Play: its finish line if it has one (Restart in the pause menu).
     if (!custom) { game.showMenu('title'); return; }
     game.customDamage = q.get('damage') !== '0';
-    game.customClassic = q.get('classic') === '1';
+    game.customRetro = q.get('retro') === '1';
     game.startCustom(-1, custom);
   } else {
-    if (q.get('classic') === '1') game.practiceClassic = true;
+    if (q.get('retro') === '1') game.trialRetro = true;
     if (q.get('damage') === '0') game.practiceDamage = false;
     game.startPractice(Number(q.get('stage')) || 0);
   }

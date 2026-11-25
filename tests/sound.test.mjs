@@ -52,7 +52,7 @@ test('the engine follows the throttle and goes quiet when paused', () => {
 
 test('Classic: landing a flip, finishing and wrecking all make cues', () => {
   const g = new Game(data), w = new SoundWatcher();
-  g.startCampaign(true);
+  g.startCampaign({ tricks: false });
   listen(g, w, 100);
   g.flipBonus = 400; g.flipBonusTimer = 70; // as if a flip just landed
   let heard = listen(g, w, 1);

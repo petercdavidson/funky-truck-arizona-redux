@@ -54,7 +54,8 @@ test('a custom stage with a finish line can be completed; its score is not a bes
   assert.equal(g.mode, 'custom');
   assert.equal(g.levelData.name, 'Short');
   assert.equal(g.rules.damage, true);
-  assert.equal(g.rules.classic, false);
+  assert.equal(!!g.rules.retro, false);
+  assert.equal(g.rules.ceiling, undefined, 'no ceiling on a custom stage');
   assert.equal(g.isStunt, false);
   assert.equal(g.quitScreen, 'stageLoad');
   let at = null;
@@ -75,10 +76,11 @@ test('a custom stage with a finish line can be completed; its score is not a bes
 test('a custom stage with no finish goes on until you quit, like a stunt track', () => {
   const g = new Game(data, { store: memoryStore() });
   g.bringInStage(flat(60, null, 'Open'));
-  g.customClassic = true;
+  g.customRetro = true;
   g.startCustom(0);
   assert.equal(g.isStunt, true);
-  assert.equal(g.rules.classic, true);
+  assert.equal(g.rules.retro, true);
+  assert.equal(g.rules.flipBonus, true, '2006 Mode scores flips the original way');
   for (let i = 0; i < 1500; i++) { g.keys.up = true; g.step(); }
   assert.equal(g.screen, 'playing');
 });

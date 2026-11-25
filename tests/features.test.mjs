@@ -57,15 +57,24 @@ test('the title truck jumps when tapped, turns over the way it was hit, and stay
   assert.equal(g.kickTitleTruck(t.T[0], t.T[1]), false);
 });
 
-test('Esc wreck: only outside Classic and Time Trial, once, and the run goes on', () => {
+test('Esc wreck: anywhere but 2006 Mode, once, and the run goes on', () => {
   const g = new Game(data);
-  g.startCampaign(true);
-  assert.equal(g.selfWreck(), false, 'not in Classic');
+  g.startCampaign({ retro: true });
+  settle(g, 150);
+  assert.equal(g.selfWreck(), false, 'not in 2006 Mode');
+  g.trialRetro = true;
+  g.startTrial(1);
+  settle(g, 150);
+  assert.equal(g.selfWreck(), false, 'not in Time Trial\'s 2006 Mode either');
+  for (const start of [() => g.startCampaign({ tricks: false }), () => g.startCampaign({ tricks: true })]) {
+    start();
+    settle(g, 150);
+    assert.ok(g.selfWreck(), 'in Classic');
+  }
+  g.trialRetro = false;
   g.startTrial(0);
-  assert.equal(g.selfWreck(), false, 'not in Time Trial');
-  g.practiceClassic = true;
-  g.startPractice(1);
-  assert.equal(g.selfWreck(), false, 'not by Classic rules in Practice');
+  settle(g, 150);
+  assert.ok(g.timeCounts && g.selfWreck(), 'and in a Time Trial run that could set a time');
   g.startEndless();
   settle(g, 150);
   assert.ok(g.selfWreck());
@@ -74,7 +83,7 @@ test('Esc wreck: only outside Classic and Time Trial, once, and the run goes on'
   settle(g, 1500);
   assert.equal(g.screen, 'playing', 'no damage: the pieces tumble until you leave');
   assert.equal(g.damage, 0);
-  assert.equal(g.stats.selfWrecks, 1);
+  assert.equal(g.stats.selfWrecks, 4);
 });
 
 test('Esc wreck with damage on: the loose cab takes damage until it\'s wrecked for real', () => {
@@ -89,21 +98,33 @@ test('Esc wreck with damage on: the loose cab takes damage until it\'s wrecked f
   assert.equal(g.damage, 1000);
 });
 
-test('Esc wreck: a body that rolls over the finish line still finishes the stage', () => {
+test('Esc wreck: a body that rolls over the finish line finishes a custom stage, but not in Classic or Time Trial', () => {
+  /** Wreck the truck just before the finish line, rolling towards it; step until the run ends (or 800 steps). */
+  const rollOver = (g) => {
+    settle(g, 150);
+    const t = g.truck, x = g.finishX - 1.5 * TILE;
+    const ground = g.world.collide(x, 0, x, g.levelData.height * TILE);
+    const dx = x - t.T[0], dy = ground.y - 40 - t.T[1];
+    for (let i = 0; i < 10; i += 2) { t.T[i] += dx; t.T[i + 1] += dy; t.P[i] = t.T[i] - 9; t.P[i + 1] = t.T[i + 1]; }
+    t.probePrev = null;
+    assert.ok(g.selfWreck());
+    let steps = 0;
+    while (g.screen === 'playing' && steps < 800) { g.step(); steps++; }
+    assert.ok(g.focus[0] > g.finishX, 'the body did roll over the line');
+  };
   const g = new Game(data);
-  g.practiceDamage = false;
-  g.startPractice(0);
-  settle(g, 150);
-  const t = g.truck, x = (g.levelData.width - 10.5) * TILE;
-  const ground = g.world.collide(x, 0, x, g.levelData.height * TILE);
-  const dx = x - t.T[0], dy = ground.y - 40 - t.T[1];
-  for (let i = 0; i < 10; i += 2) { t.T[i] += dx; t.T[i + 1] += dy; t.P[i] = t.T[i] - 9; t.P[i + 1] = t.T[i + 1]; }
-  t.probePrev = null;
-  assert.ok(g.selfWreck());
-  let steps = 0;
-  while (g.screen === 'playing' && steps < 800) { g.step(); steps++; }
+  g.customDamage = false;
+  g.startCustom(-1, { ...data.levels[0], name: 'Mine', finish: (data.levels[0].width - 9) * TILE });
+  rollOver(g);
   assert.equal(g.screen, 'gameOver');
-  assert.ok(g.finished && !g.wrecked, 'finished, not wrecked');
+  assert.ok(g.finished && !g.wrecked, 'a custom stage: finished, not wrecked');
+  for (const [name, start] of [['Time Trial', (k) => { k.practiceDamage = false; k.startTrial(0); }], ['Classic', (k) => k.startCampaign()]]) {
+    const k = new Game(data);
+    start(k);
+    rollOver(k);
+    assert.ok(!k.finished, `${name}: not finished`);
+    assert.equal(k.level, 0, `${name}: still on Stage One`);
+  }
 });
 
 test('flips are counted out in the air as each turn is completed', () => {
@@ -248,8 +269,10 @@ test('the crash cam pulls back to keep the wreck\'s pieces in view, and can be s
   assert.ok(Math.abs(y.camY + y.viewH * y.zoom / 2 - centre[1]) < 60, `centred where every piece would fit (${Math.round(y.camY + y.viewH * y.zoom / 2 - centre[1])})`);
   const c = new Game(data);
   c.crashCam = true;
-  c.startCampaign(true);
-  assert.equal(c.crashCamActive, false, 'not in Classic');
+  c.startCampaign({ retro: true });
+  settle(c, 150);
+  c.damage = 1000; c.step();
+  assert.equal(c.crashCamActive, false, 'not in 2006 Mode');
 });
 
 test('the pause menu\'s Options shows only the options that apply', async () => {
@@ -259,8 +282,10 @@ test('the pause menu\'s Options shows only the options that apply', async () => 
     const shown = (game) => layout.pauseOptions.filter((b) => b.show(game)).map((b) => b.action);
     g.startCampaign();
     assert.deepEqual(shown(g), ['sound', 'oneButton', 'dynamicCamera', 'crashCam', 'imperial', 'showFps', 'pauseBack']);
-    g.startCampaign(true);
-    assert.deepEqual(shown(g), ['sound', 'showFps', 'pauseBack'], 'Classic: no controls or cameras');
+    g.startCampaign({ tricks: false });
+    assert.deepEqual(shown(g), ['sound', 'oneButton', 'dynamicCamera', 'crashCam', 'imperial', 'showFps', 'pauseBack'], 'Classic: all of them');
+    g.startCampaign({ retro: true });
+    assert.deepEqual(shown(g), ['sound', 'oneButton', 'showFps', 'pauseBack'], '2006 Mode: no cameras or units');
   }
   g.startCampaign();
   g.togglePause();

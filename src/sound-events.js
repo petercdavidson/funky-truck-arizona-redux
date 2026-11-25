@@ -55,8 +55,8 @@ export class SoundWatcher {
         else if (air >= BUMP_AIR && fall > 1.5) events.push({ type: 'bump', force: Math.min(1, fall / 6), wheel: w });
       }
       this.scrapeHold = game.scraping ? SCRAPE_HOLD : Math.max(0, this.scrapeHold - 1);
-      if (game.rules.classic) {
-        // Classic: the original flip bonus, heard as it's paid (which is the moment it lands).
+      if (game.rules.flipBonus) {
+        // The original flip bonus (Classic, tricks off), heard as it's paid (the moment it lands).
         if (game.flipBonusTimer > this.flipTimer) events.push({ type: 'flip', degrees: game.flipBonus });
       } else if (game.tricks.done > this.tricksDone) {
         // Tricks sound as they're done, not when their points are added up later.

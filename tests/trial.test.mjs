@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Game, TILE, unpackLevel } from '../src/game.js';
-import { TRIAL_ALL, POSE, formatTime, formatGap, encodePoses, decodePoses, loadGhost, validBests } from '../src/trial.js';
+import { TRIAL_ALL, TRIAL_STUNTS, POSE, formatTime, formatGap, encodePoses, decodePoses, loadGhost, validBests } from '../src/trial.js';
 import { memoryStore } from './helpers.mjs';
 import { drive } from './bot.mjs';
 
@@ -156,26 +156,40 @@ test('quitting Practice or Time Trial goes back to its list of stages', () => {
   g.startPractice(4);
   assert.equal(g.quitScreen, 'trialSelect', 'Practice is part of Time Trial now');
   g.startCampaign();
-  assert.equal(g.quitScreen, 'title');
+  assert.equal(g.quitScreen, 'classicSelect', 'and Classic to its own screen');
   g.startEndless();
   assert.equal(g.quitScreen, 'title');
 });
 
-test('Time Trial without damage, or by Classic rules, shows the time but sets no record', () => {
-  for (const which of ['damage', 'classic']) {
-    const store = memoryStore();
-    const g = new Game(data, { store });
-    if (which === 'damage') g.toggle('practiceDamage'); else g.toggle('practiceClassic');
-    g.startTrial(0);
-    assert.equal(g.timeCounts, false);
-    drive(g, { steps: 6000 });
-    for (let i = 0; i < 400 && g.screen === 'playing'; i++) g.step();
-    assert.equal(g.screen, 'gameOver');
-    if (!g.finished) continue; // (Classic's ceiling can stop the simulated driver)
-    assert.ok(g.trialResult && g.trialResult.time > 0 && !g.trialResult.record && !g.trialResult.counts, which);
-    assert.equal(store.get('trialBests'), null, `${which}: no best time saved`);
-    assert.equal(store.get('ghost0'), null, `${which}: no ghost saved`);
-  }
+test('Time Trial without damage shows the time but sets no record; 2006 Mode\'s times count', () => {
+  const store = memoryStore();
+  const g = new Game(data, { store });
+  g.toggle('practiceDamage');
+  g.startTrial(0);
+  assert.equal(g.timeCounts, false);
+  drive(g, { steps: 6000 });
+  for (let i = 0; i < 400 && g.screen === 'playing'; i++) g.step();
+  assert.equal(g.screen, 'gameOver');
+  assert.ok(g.finished);
+  assert.ok(g.trialResult && g.trialResult.time > 0 && !g.trialResult.record && !g.trialResult.counts);
+  assert.equal(store.get('trialBests'), null, 'no best time saved');
+  assert.equal(store.get('ghost0'), null, 'no ghost saved');
+  g.toggle('practiceDamage'); g.toggle('trialRetro');
+  g.startTrial(0);
+  assert.equal(g.timeCounts, true);
+  assert.equal(g.rules.tricks, false, '2006 Mode: no tricks, whatever the switch says');
+});
+
+test('Time Trial\'s nine stages keep the original ceiling and scrape; its stunt tracks don\'t', () => {
+  const g = new Game({ ...data, stunts: [{ ...data.levels[0], name: 'Stunt' }] });
+  g.startTrial(4);
+  assert.equal(g.rules.ceiling, true);
+  assert.equal(g.rules.scrapeAll, true);
+  g.startTrial(TRIAL_ALL);
+  assert.equal(g.rules.ceiling, true);
+  g.startTrial(TRIAL_STUNTS);
+  assert.equal(g.rules.ceiling, false);
+  assert.equal(g.rules.scrapeAll, false);
 });
 
 test('Time Trial tricks can be switched off; with them on, tricks score on a timed stage', async () => {

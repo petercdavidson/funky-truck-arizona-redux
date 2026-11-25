@@ -98,36 +98,50 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 
 ## Modes and rules
 
-- The mode called Standard in the game is `mode: 'campaign'` with `RULES.play` in the code.
+- Classic is `mode: 'campaign'` (`startCampaign({ tricks, retro })`, rules from `classicRules`):
+  the nine stages, with its own screen (`classicSelect`) holding its Tricks and 2006 Mode switches
+  (`classicTricks`, `classicRetro`). Standard was merged into it in 1.24.7: its best became Classic
+  with tricks' (`bestPlay`); Classic's is `bestScore`.
+- A run's rules are `game.rules` (see `RULES` in `game.js`): `damage`, `ceiling` (the original's
+  invisible ceiling: the nine stages in Classic and Time Trial; the camera stops at it),
+  `scrapeAll` (the original scrape: the chassis bottoming out is damage; never a trick bail),
+  `flipBonus` (the original scoring, and side walls count as ground: Classic with tricks off, and
+  2006 Mode), `tricks` (false: none watched for), `retro` (2006 Mode: 576x448 drawn at 30 fps and
+  scaled up with hard pixels, `Renderer.drawRetro`; the original camera; no speedometer, altimeter,
+  dynamic or crash cam, ragdoll or Esc wreck).
+- **Classic with tricks off must play exactly as the original**: identical inputs, identical truck
+  and score. `tests/classic-parity.test.mjs` replays runs recorded before the merge
+  (`tests/fixtures/classic-runs.json`); it must keep passing. Classic's ragdoll wreck keeps the
+  original's 210 steps before game over, and the whole truck drives on unseen behind it
+  (`hiddenTruck`) so its flips still score. Anything new in Classic must leave that test alone
+  (display, camera and options are fine; physics and scoring aren't).
 - `src/stats.js` (no DOM): the High Scores screen's records and totals, counted through
   `TrickTracker`'s `onTrick` / `onBank` hooks and saved as `funkytruck.stats`.
-- Esc easter egg (`Game.selfWreck`): outside Classic rules and a Time Trial run that could set a time, Esc wrecks the truck
-  with no game over; Esc again leaves. Not in the README on purpose.
-- "Classic" means the original gameplay, before the added features. A run's rules are
-  `game.rules = { classic, damage, tricks? }` (`tricks` false: Time Trial's Tricks switch off). Play,
-  Endless, Time Trial and Sandbox share the new features; Classic
-  has none of them (no tricks, ragdoll, one-button controls or flip-upright, and it keeps the
-  ceiling and the original flip bonus). Display fixes and quality-of-life touches are fine in Classic.
-- New features go in every mode except Classic unless the user says otherwise. General options go
+- Esc easter egg (`Game.selfWreck`): outside 2006 Mode, Esc wrecks the truck with no game over;
+  Esc again leaves. In Classic and Time Trial a truck wrecked that way can't finish the stage
+  (`selfWreckFinishes`). Not in the README on purpose.
+- New features go in every mode (in Classic as display and options only, see above, and not in
+  2006 Mode) unless the user says otherwise. General options go
   on the Options screen (`OPTIONS` in `render.js`); an option for one mode goes in the small on/off
   switches at the side of that mode's screen (`option()`).
 - Practice was merged into Time Trial (`mode: 'trial'`, `startTrial`): its screen (`trialSelect`) has the
-  stages, All Nine, the stunt tracks and the Tricks / Damage / Classic / Ghost switches. A time only
-  counts with damage on by the new rules (`timeCounts`); stunt tracks keep a best trick score
+  stages, All Nine, the stunt tracks and the Tricks / Damage / 2006 Mode / Ghost switches. Its
+  stages have Classic's ceiling and scrape (`trackRules`). A time only counts with damage on
+  (`timeCounts`); stunt tracks keep a best trick score
   (`stuntBests`). `mode: 'practice'` (`startPractice`) is still there, with no menu of its own: the
   tests and `?test=play` use it for a plain one-stage run.
-- Quitting a Time Trial run goes back to its stage list (`Game.quitScreen`).
+- Quitting a Time Trial run goes back to its stage list, and Classic to its screen (`Game.quitScreen`).
 
 ## Rules that keep the game feeling right
 
 - The simulation runs at a **fixed 70 steps per second** (the original Flash frame rate). Every
   physics constant assumes that. Never scale physics by frame time. Rendering interpolates between
-  steps.
+  steps (except in 2006 Mode, which draws the latest step 30 times a second).
 - Coordinates are the original **576×448 stage**, y pointing down, rotation clockwise in degrees
   for game state. `Renderer` scales the stage to fit the screen.
 - The physics is a faithful port of the original game. Treat changes to `Truck` / `CollisionWorld`
   as gameplay changes: say so explicitly and add or adjust tests.
-- Screens are `game.screen` strings: `title`, `modes` (the mode picker over the title), `stats`, `pauseOptions`, `options`, `help`, `garage`, `practiceSelect`, `trialSelect`, `sandbox`, `stageEditor`, `stageLoad`, `sandboxTweaks`, `playing`,
+- Screens are `game.screen` strings: `title`, `modes` (the mode picker over the title), `classicSelect`, `stats`, `pauseOptions`, `options`, `help`, `garage`, `practiceSelect`, `trialSelect`, `sandbox`, `stageEditor`, `stageLoad`, `sandboxTweaks`, `playing`,
   `paused`, `gameOver`. A new screen needs an entry in `BUTTONS`, a case in `Renderer.draw`, and
   `body[data-screen]` CSS if it affects touch controls.
 - Saved data goes through `game.store` (key prefix `funkytruck.` in localStorage). Validate
