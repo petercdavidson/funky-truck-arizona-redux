@@ -179,10 +179,11 @@ function artOf(edges) {
     A[id] = a; Lu[id] = l;
     return id;
   };
-  const cache = new Float32Array(n * n * 2).fill(-1), more = new Map();
+  // the seams worked out so far: a row of 8 forms x 256 tiles for each (a, dir), made when needed
+  const rows = [];
   const seam = (a, b, dir) => {
-    const plain = a < n && b < n, i = plain ? (a * n + b) * 2 + dir : (a * 4096 + b) * 2 + dir;
-    let c = plain ? cache[i] : more.get(i);
+    const row = rows[a * 2 + dir] || (rows[a * 2 + dir] = new Float32Array(2048).fill(-1));
+    let c = row[b];
     if (c >= 0) return c;
     if (edgesOf(a) < 0 || edgesOf(b) < 0) return 0;
     const pa0 = A[a], pb0 = A[b], la0 = Lu[a], lb0 = Lu[b], ea = dir ? 64 : 32, eb = dir ? 0 : 96;
@@ -197,7 +198,7 @@ function artOf(edges) {
       c += Math.abs(pa - pb) + Math.min(pa, pb) * Math.min(1, dl * 0.08);
     }
     c /= 32;
-    if (plain) cache[i] = c; else more.set(i, c);
+    row[b] = c;
     return c;
   };
   /** The seams over columns x0..x1-1 (and where they meet the columns either side). */
@@ -241,6 +242,7 @@ export function drawPath(level, sketch, kit, opts = {}) {
   const W = level.width, H = level.height;
   let pts = sketch.map(([x, y]) => [x, y]);
   if (pts.length < 2) return null;
+  if (opts.closed) return drawLoop(level, pts, kit, opts);
   if (opts.free || (opts.free !== false && !leftToRight(pts))) return drawPathFree(level, pts, kit, opts);
   if (pts[pts.length - 1][0] < pts[0][0]) pts.reverse();
   // keep it going left to right
@@ -377,7 +379,18 @@ export function drawPath(level, sketch, kit, opts = {}) {
   for (let key = done.key; key && from.get(key)?.cell; key = from.get(key).prev) chain.unshift(from.get(key).cell);
   const { tiles, tops } = buildTiles(level, chain, x0, x1, kit);
   if (seam && opts.look !== false) polish(tiles, chain, x0, x1, kit, tops);
-  return { chain, x0, x1, tiles };
+  return { chain, x0, x1, tiles, tops };
+}
+
+/**
+ * The look pass for a path laid with `look: false` (drawPath's result `r`): done later, so the
+ * ground's shape can follow the pointer quickly and the art catches up when it stops. Changes
+ * `r.tiles` in place.
+ */
+export function lookPath(r, kit) {
+  if (!r || !kit.seam) return;
+  if (r.free) lookAround(r.tiles, kit, [...r.changed, ...r.chain.map((c) => [c.x, c.y])], { rounds: 3 });
+  else polish(r.tiles, r.chain, r.x0, r.x1, kit, r.tops);
 }
 
 /** The level's tiles with columns x0..x1-1 rebuilt around `chain`. */
@@ -713,11 +726,12 @@ function drawPathFree(level, sketch, kit, opts = {}) {
   });
   const KINK = opts.kink ?? 2, UNSEEN = opts.unseenJoin ?? 1.2, PER = opts.perPiece ?? 0.05, ART = opts.art ?? 3;
   const AHEAD = 48;       // samples a piece may reach ahead (192 px)
+  const NP = opieces.length;
   // a piece in cell (cx, cy), the last piece having left the sketch at sample k: its cost, and how
   // far along the sketch it leaves it
   const cache = new Map();
   const place = (p, cx, cy, k) => {
-    const kb = k >> 2, key = `${p.index},${cx},${cy},${kb}`;
+    const kb = k >> 2, key = ((kb * H + cy) * W + cx) * NP + p.index;
     if (cache.has(key)) return cache.get(key);
     const list = near.get(cy * W + cx);
     let out = null;
@@ -779,17 +793,22 @@ function drawPathFree(level, sketch, kit, opts = {}) {
   const endAt = new Map(endJoins.map((e) => [`${e.X},${e.Y}`, e]));
 
   const heap = new Heap(), best = new Map(), from = new Map();
+  // states are numbered (a number is a much quicker key than a string): edge points by when first seen
+  const pointNo = new Map(), NK = (n >> 3) + 1;
   const push = (X, Y, last, k, cost, prev, cell) => {
-    const key = `${X},${Y},${last},${k >> 3}`;
+    const pk = X * (H * T + 1) + Y;
+    let pn = pointNo.get(pk);
+    if (pn === undefined) { pn = pointNo.size; pointNo.set(pk, pn); }
+    const key = ((pn * (NP + 1) + last + 1) * NK + (k >> 3)) + 1;
     const had = best.get(key);
     if (had !== undefined && had <= cost) return;
     best.set(key, cost); from.set(key, { prev, cell });
     heap.push(cost, key, X, Y, last, k);
   };
   for (const e of startJoins) push(e.X, e.Y, e.p.index, 0, Math.hypot(e.X - S[0][0], e.Y - S[0][1]) / T * 0.5, null, null);
-  // or anywhere near the start
+  // or anywhere near the start (unless it must carry on from the ground there: closing a loop)
   const [sx0, sy0] = S[0];
-  for (let cy = Math.floor(sy0 / T) - 1; cy <= Math.floor(sy0 / T) + 1; cy++) for (let cx = Math.floor(sx0 / T) - 1; cx <= Math.floor(sx0 / T) + 1; cx++) {
+  if (!(opts.joinStart && startJoins.length)) for (let cy = Math.floor(sy0 / T) - 1; cy <= Math.floor(sy0 / T) + 1; cy++) for (let cx = Math.floor(sx0 / T) - 1; cx <= Math.floor(sx0 / T) + 1; cx++) {
     if (cx < 0 || cy < 0 || cx >= W || cy >= H) continue;
     for (const k of oByEntry.keys()) {
       const [ix, iy] = k.split(',').map(Number), X = cx * T + ix, Y = cy * T + iy, d = Math.hypot(X - sx0, Y - sy0);
@@ -833,8 +852,47 @@ function drawPathFree(level, sketch, kit, opts = {}) {
   const chain = [];
   for (let key = done.key; key && from.get(key)?.cell; key = from.get(key).prev) chain.unshift(from.get(key).cell);
   if (!chain.length) return null;
-  const tiles = buildFree(level, chain, kit, opts);
-  return { chain, tiles, x0: Math.min(...chain.map((c) => c.x)), x1: Math.max(...chain.map((c) => c.x)) + 1, free: true };
+  if (opts.chainOnly) return { chain };
+  const { tiles, changed } = buildFree(level, chain, kit, opts);
+  return { chain, tiles, changed, x0: Math.min(...chain.map((c) => c.x)), x1: Math.max(...chain.map((c) => c.x)) + 1, free: true };
+}
+
+/**
+ * A closed sketch (a loop: its last point back at its first) turned into tiles: a shape, with the
+ * ground inside it when it runs clockwise (on the screen, y down) and outside it the other way. It's
+ * laid in two goes, as drawPathFree: all but a short stretch where it starts, then that stretch,
+ * which joins the pieces either side of it, so the loop closes up.
+ */
+function drawLoop(level, sketch, kit, opts = {}) {
+  const T = kit.T, n = sketch.length;
+  const at = [0];
+  for (let i = 1; i < n; i++) at.push(at[i - 1] + Math.hypot(sketch[i][0] - sketch[i - 1][0], sketch[i][1] - sketch[i - 1][1]));
+  const total = at[n - 1];
+  if (total < 3 * T) return null;
+  // all but a tile's length around where it starts, less a piece at each end
+  const arc = sketch.filter((_, i) => at[i] >= T / 2 && at[i] <= total - T / 2);
+  const o = { ...opts, look: false, chainOnly: true, joinStart: true };
+  const c1 = drawPathFree(level, arc, kit, o)?.chain;
+  if (!c1 || c1.length < 4) return null;
+  const keep = c1.slice(1, -1), a = keep[0], b = keep[keep.length - 1];
+  const pa = kit.oById.get(a.id), pb = kit.oById.get(b.id);
+  const inP = [a.x * T + pa.inX, a.y * T + pa.inY], outP = [b.x * T + pb.outX, b.y * T + pb.outY];
+  const nearest = (p, lo, hi) => {
+    let best = Infinity, k = lo;
+    for (let i = lo; i < hi; i++) { const d = Math.hypot(sketch[i][0] - p[0], sketch[i][1] - p[1]); if (d < best) { best = d; k = i; } }
+    return k;
+  };
+  const half = n >> 1, iOut = nearest(outP, half, n), iIn = nearest(inP, 0, half);
+  // then the rest, from where those pieces end round to where they start, joining them
+  const seam = [outP, ...sketch.slice(iOut + 1, n - 1), ...sketch.slice(0, iIn), inP];
+  const stamped = level.tiles.map((r) => r.slice());
+  for (const c of keep) stamped[c.y][c.x] = c.id;
+  const c2 = drawPathFree({ ...level, tiles: stamped }, seam, kit, o)?.chain || [];
+  const chain = [...keep, ...c2];
+  const { tiles, changed } = buildFree(level, chain, kit, { ...opts, look: false });
+  const r = { chain, tiles, changed, free: true, x0: Math.min(...chain.map((c) => c.x)), x1: Math.max(...chain.map((c) => c.x)) + 1 };
+  if (opts.look !== false) lookPath(r, kit);
+  return r;
 }
 
 /**
@@ -844,7 +902,7 @@ function drawPathFree(level, sketch, kit, opts = {}) {
  * the old ground went (to its first sky). Then the look pass.
  */
 function buildFree(level, chain, kit, opts = {}) {
-  const W = level.width, H = level.height;
+  const H = level.height;
   const tiles = level.tiles.map((r) => r.slice());
   const cols = new Map();
   for (const c of chain) {
@@ -852,7 +910,6 @@ function buildFree(level, chain, kit, opts = {}) {
     if (!cols.has(c.x)) cols.set(c.x, []);
     cols.get(c.x).push(c.y);
   }
-  const onChain = new Set(chain.map((c) => c.y * W + c.x));
   const changed = [];
   const put = (x, y, id) => { if (tiles[y][x] !== id) { tiles[y][x] = id; changed.push([x, y]); } };
   for (const [x, ys] of cols) {
@@ -873,9 +930,7 @@ function buildFree(level, chain, kit, opts = {}) {
     } else for (let y = bottom + 1; y < H && level.tiles[y][x] !== SKY; y++) put(x, y, SKY);
   }
   if (opts.look !== false) lookAround(tiles, kit, [...changed, ...chain.map((c) => [c.x, c.y])], { rounds: 3 });
-  // the chain's own pieces stay where they are (only swapped for others of the same shape)
-  for (const c of chain) if (!onChain.has(c.y * W + c.x)) tiles[c.y][c.x] = c.id;
-  return tiles;
+  return { tiles, changed };
 }
 
 /** A small binary heap of [cost, ...data]. */
