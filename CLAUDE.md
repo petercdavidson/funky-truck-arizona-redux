@@ -49,8 +49,8 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   `gravity`, `tiltPower` and `springK`: Truck properties whose defaults are the original's;
   `startStage` puts them back for every other mode), and its cars (`setTraffic`, and `stepTraffic`,
   which loops them on Endless and the stunt tracks). A Sandbox run counts into throwaway stats
-  (`game.realStats` is the saved one), so nothing in it reaches High Scores. Sandbox is opened from
-  the Options screen.
+  (`game.realStats` is the saved one), so nothing in it reaches High Scores. Sandbox is in the mode
+  picker (`MODES`).
 - `src/trial.js` (no DOM): Time Trial's time formats, saved bests and ghosts. `Game.updateTrial` runs
   the clock (from first landing to the finish line) and records the ghost; ghosts are poses, not
   inputs, so they survive physics changes.

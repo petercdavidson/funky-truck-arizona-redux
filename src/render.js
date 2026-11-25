@@ -22,6 +22,8 @@ const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
 const SPEEDO_MAX = 160;  // km/h at which the speedometer's bar is full
 const BOX_FILL = 'rgba(140,97,79,0.96)', BOX_EDGE = 'rgba(255,255,255,0.6)'; // the game-over box and the mode picker
 const MILESTONE_GOLD = '#ffe27a';
+/** The HUD in a tall view: how much bigger, how far down from the top (stage units), and where the middle's news goes (a share of the view's height). */
+const HUD_TALL = { k: 1.5, top: 12, middle: 0.2 };
 
 // ---------------------------------------------------------------------------------------------
 // Clickable areas per screen. `label` buttons are drawn by us; the rest are hotspots over the
@@ -96,6 +98,7 @@ export const MODES = [
   ['Endless', 'endless', 'A course that goes on for ever: how far can you get?'],
   ['Time Trial', 'trial', 'Race the clock, and your best run\'s ghost'],
   ['Practice', 'practice', 'Any one stage, and the stunt tracks'],
+  ['Sandbox', 'sandbox', 'Any track, with the physics as you like'],
   ['Stage Editor', 'stageEditor', 'Build your own stages, and play them'],
 ];
 const modeRow = (i, tall) => (tall ? r(40, 96 + 66 * i, 280, 38) : r(112, 100 + 30 * i, 120, 25));
@@ -250,7 +253,7 @@ function sandboxButtons(tall, tweaks, extra = {}) {
       { rect: tall ? r(185, y, 145, 40) : r(296, y, 110, 26), label: 'Back', action: 'tweaksBack', ...big }]
     : [{ rect: tall ? r(20, y, 100, 40) : r(124, y + 2, 100, 26), label: 'Reset', action: 'sbReset', ...big },
       { rect: tall ? r(130, y, 100, 40) : r(238, y - 2, 100, 34), label: 'Go!', action: 'sbGo', ...(tall ? T_BIG : { size: 15 }) },
-      { rect: tall ? r(240, y, 100, 40) : r(352, y + 2, 100, 26), label: 'Back', action: 'options', ...big }];
+      { rect: tall ? r(240, y, 100, 40) : r(352, y + 2, 100, 26), label: 'Back', action: 'play', ...big }];
   return [...steppers, ...bottom, ...picks];
 }
 
@@ -263,8 +266,7 @@ export const BUTTONS = {
   stats: statsButtons(false),
   options: [
     ...OPTIONS.map(([label, action], i) => ({ rect: optionRow(i, false), label, action })),
-    { rect: r(160, 400, 120, 25), label: 'Sandbox', action: 'sandbox' },
-    { rect: r(296, 400, 120, 25), label: 'Menu', action: 'menu' },
+    { rect: r(228, 400, 120, 25), label: 'Menu', action: 'menu' },
   ],
   pauseOptions: pauseOptionButtons(false),
   help: [{ rect: r(229, 386, 120, 25), label: 'Menu', action: 'menu' }],
@@ -313,8 +315,7 @@ export const TALL_BUTTONS = {
   stats: statsButtons(true, T_BIG),
   options: [
     ...OPTIONS.map(([label, action], i) => ({ rect: optionRow(i, true), label, action, ...T_BIG })),
-    { rect: r(30, 560, 145, 38), label: 'Sandbox', action: 'sandbox', ...T_BIG },
-    { rect: r(185, 560, 145, 38), label: 'Menu', action: 'menu', ...T_BIG },
+    { rect: r(80, 560, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
   ],
   pauseOptions: pauseOptionButtons(true, T_BIG),
   help: [{ rect: r(80, 500, 200, 38), label: 'Menu', action: 'menu', ...T_BIG }],
@@ -743,8 +744,13 @@ export class Renderer {
 
   // ---- world
 
-  /** `zoom` is the dynamic camera's pull-back: the view shows `zoom` times as much of the world. */
-  tiles(level, camX, camY, zoom = 1) {
+  /**
+   * `zoom` is the dynamic camera's pull-back: the view shows `zoom` times as much of the world.
+   * With `extend` (custom stages), whatever is at each edge of the level goes on for ever past
+   * it: the end columns repeat to each side, and solid ground in the top or bottom row carries on
+   * up or down (sky stays sky), so the view is covered however far the camera pulls back.
+   */
+  tiles(level, camX, camY, zoom = 1, extend = false) {
     // Draw in device pixels with edges snapped to whole pixels so adjacent tiles meet exactly.
     const ctx = this.ctx;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -758,20 +764,23 @@ export class Renderer {
     const edgeY = (gy) => Math.round((gy * TILE - camY) * s) + this.offY;
     const rows = Math.ceil(this.viewH * zoom / TILE) + 1;
     const cols = Math.ceil(this.viewW * zoom / TILE) + 1;
+    const H = level.height;
     for (let c = 0; c < cols; c++) {
       const gx = tx0 + c;
-      if (gx < 0 || gx >= level.width) continue;
+      const sx = extend ? Math.min(Math.max(gx, 0), level.width - 1) : gx; // the column shown here
+      if (sx < 0 || sx >= level.width) continue;
       const x0 = edgeX(gx), x1 = edgeX(gx + 1);
       // The stages only have ground tiles as deep as the original 448-high view could see. A
       // taller view can look further down, so below a column's last tile, if that tile is solid
-      // dirt, keep drawing dirt.
-      let last = level.height - 1;
-      while (last >= 0 && level.tiles[last][gx] === 0) last--;
-      const fillFrom = last >= 0 && level.tiles[last][gx] === FILL_TILE ? last + 1 : Infinity;
+      // dirt, keep drawing dirt. (A custom stage: only if its bottom row is solid dirt.)
+      let last = H - 1;
+      while (!extend && last >= 0 && level.tiles[last][sx] === 0) last--;
+      const fillFrom = last >= 0 && level.tiles[last][sx] === FILL_TILE ? last + 1 : Infinity;
+      const fillAbove = extend && level.tiles[0][sx] === FILL_TILE;
       for (let r = 0; r < rows; r++) {
         const gy = ty0 + r;
-        if (gy < 0) continue;
-        const id = gy >= fillFrom ? FILL_TILE : gy < level.height ? level.tiles[gy][gx] : 0;
+        if (gy < 0 && !fillAbove) continue;
+        const id = gy < 0 || gy >= fillFrom ? FILL_TILE : gy < H ? level.tiles[gy][sx] : 0;
         if (id === 0) continue; // tile 0 is empty sky
         const y0 = edgeY(gy), y1 = edgeY(gy + 1);
         ctx.drawImage(this.a.tiles[id] || tileImage(this.a, id), x0, y0, x1 - x0, y1 - y0);
@@ -812,7 +821,7 @@ export class Renderer {
     const ctx = this.ctx;
     this.backdrop();
     const zoom = game.rules.classic ? 1 : v.zoom || 1;
-    this.tiles(game.levelData, v.camX, v.camY, zoom);
+    this.tiles(game.levelData, v.camX, v.camY, zoom, game.mode === 'custom' || !!game.sandboxCustom);
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, 0, this.viewW, this.viewH);
@@ -873,13 +882,13 @@ export class Renderer {
       // (Battle's waves come in without confetti)
       for (let i = 0; i < (m.confetti === false ? 0 : 70); i++) {
         const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4, sp = 120 + Math.random() * 260;
-        this.confetti.push({ x: this.viewW / 2 + (Math.random() - 0.5) * 60, y: 168, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        this.confetti.push({ x: this.hudW / 2 + (Math.random() - 0.5) * 60, y: 168 + this.hudDrop, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
           rot: Math.random() * 6, spin: (Math.random() - 0.5) * 14, color: colors[i % colors.length], life: 1.6 + Math.random() * 0.8 });
       }
     }
     if (this.confetti.length && game.screen === 'playing') {
       for (const c of this.confetti) { c.vy += 420 * dt; c.vx *= 1 - 1.2 * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.rot += c.spin * dt; c.life -= dt; }
-      this.confetti = this.confetti.filter((c) => c.life > 0 && c.y < this.viewH + 20);
+      this.confetti = this.confetti.filter((c) => c.life > 0 && c.y < this.hudH + 20);
     }
     for (const c of this.confetti) {
       ctx.save();
@@ -892,7 +901,7 @@ export class Renderer {
     }
     if (!m || game.screen !== 'playing') return;
     // (It simply appears and disappears: no animation in or out.)
-    this.text(m.text, this.viewW / 2, 144, { size: 30, font: HUD_FONT, weight: '900', color: MILESTONE_GOLD });
+    this.fitText(m.text, this.hudW / 2, 144 + this.hudDrop, this.hudW - 16, { size: 30, font: HUD_FONT, weight: '900', color: MILESTONE_GOLD });
   }
 
   /** A HUD meter in the original damage bar's style: a label, a bar filled to `share`, and optionally a reading just right of the bar. */
@@ -905,7 +914,9 @@ export class Renderer {
     ctx.font = `${label.weight} ${label.size}px ${label.font}`;
     ctx.textAlign = 'left'; // the measurement below depends on it
     this.text(name, 13.1 + ctx.measureText(name).actualBoundingBoxLeft, y + 13, label);
-    if (reading) this.text(reading, 99.5, y + 27.5, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic', color: 'rgba(255,255,255,0.9)' });
+    // (In a narrow view the reading goes under the bar, leaving the top middle clear for the pause button.)
+    if (reading && this.hudW < 420) this.text(reading, 13.1, y + 41, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic', color: 'rgba(255,255,255,0.9)' });
+    else if (reading) this.text(reading, 99.5, y + 27.5, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic', color: 'rgba(255,255,255,0.9)' });
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.fillRect(13.1, y + 17.5, 80, 10);
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
@@ -916,14 +927,32 @@ export class Renderer {
     ctx.fillRect(13.1 + 80 + 1.5, y + 17.5, 1.7, 10);
   }
 
-  hud(game) { // Symbol 305 / X3323
+  /**
+   * The HUD. In a tall view (a phone held upright) it's drawn bigger, by HUD_TALL.k, a little
+   * further from the top, and the news in the middle (the stage's name, tricks, milestones) is
+   * lower down, nearer the truck: `hudW` is the width it has, `hudDrop` how far the middle's
+   * lines move down.
+   */
+  hud(game) {
+    const ctx = this.ctx, tall = this.viewH > this.viewW * 1.15;
+    const k = tall ? HUD_TALL.k : 1, top = tall ? HUD_TALL.top : 0;
+    if (game.battle?.opts.weapons) battleHud(this, game);
+    ctx.save();
+    ctx.translate(0, top);
+    ctx.scale(k, k);
+    this.hudW = this.viewW / k;
+    this.hudH = (this.viewH - top) / k;
+    this.hudDrop = tall ? Math.max(0, (this.viewH * HUD_TALL.middle - top) / k - 82) : 0;
+    try { this.hudInner(game); } finally { ctx.restore(); }
+  }
+
+  hudInner(game) { // Symbol 305 / X3323
     // The right-hand readouts keep to the view's right edge, however wide it is.
-    const R = this.viewW - 10;
+    const R = this.hudW - 10;
     let y = 7.5;
     if (game.rules.damage) { this.meter('damage', game.damage / 1000, y); y += 34; }
     // Outside Classic: the speedometer, in km/h (the bar is full at SPEEDO_MAX).
     if (!game.rules.classic) this.meter('speed', game.speedKmh / SPEEDO_MAX, y, `${Math.round(game.speedKmh)} km/h`);
-    if (game.battle?.opts.weapons) battleHud(this, game);
     const hud = { size: 12.85, font: HUD_FONT, weight: '800', align: 'right' };
     if (game.mode === 'trial') { this.trialHud(game, R, hud); return; }
     this.text('score', R + 0.5, 9, { size: 12.5, font: HUD_FONT, weight: '800', align: 'right' });
@@ -943,7 +972,7 @@ export class Renderer {
     if (!game.rules.classic) this.trickNames(game);
     if (game.onCourse) this.milestone(game);
     if (game.tickerTimer > 0 && game.screen !== 'gameOver') {
-      this.text(game.ticker, this.viewW / 2, 82, { size: 15, font: HUD_FONT, weight: '800' });
+      this.text(game.ticker, this.hudW / 2, 82 + this.hudDrop, { size: 15, font: HUD_FONT, weight: '800' });
     }
   }
 
@@ -957,7 +986,7 @@ export class Renderer {
     const best = game.trialBests[game.track];
     if (best) this.text(`best ${formatTime(best)}`, R, 62, { ...hud, size: 11, color: 'rgba(255,255,255,0.85)' });
     this.trickNames(game);
-    if (game.tickerTimer > 0 && game.screen !== 'gameOver') this.text(game.ticker, this.viewW / 2, 82, { size: 15, font: HUD_FONT, weight: '800' });
+    if (game.tickerTimer > 0 && game.screen !== 'gameOver') this.text(game.ticker, this.hudW / 2, 82 + this.hudDrop, { size: 15, font: HUD_FONT, weight: '800' });
   }
 
   /** The name of the trick just done, popping in under the ticker and fading out. */
@@ -967,11 +996,11 @@ export class Renderer {
     const ctx = this.ctx;
     if (bail) {
       // A bail ends the chain: a muted note under the trick names, not another trick.
-      this.text('bail', this.viewW / 2, 126, { size: 14, font: HUD_FONT, weight: 'italic 700', color: 'rgba(228,228,228,0.75)' });
+      this.text('bail', this.hudW / 2, 126 + this.hudDrop, { size: 14, font: HUD_FONT, weight: 'italic 700', color: 'rgba(228,228,228,0.75)' });
     }
     if (!show) return;
     // (They simply appear and disappear: no animation in or out.)
-    this.text(show.names.join('  +  '), this.viewW / 2, 103, { size: 17, font: HUD_FONT, weight: '800' });
+    this.fitText(show.names.join('  +  '), this.hudW / 2, 103 + this.hudDrop, this.hudW - 16, { size: 17, font: HUD_FONT, weight: '800' });
   }
 
   // ---- screens

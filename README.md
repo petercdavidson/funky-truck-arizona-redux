@@ -116,7 +116,7 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 
 **Options** (on the title screen) has the switches for sound, the controls (Standard / Pedals or
 One Button), the dynamic camera, the dynamic crash cam, and **Show Frame Rate** (frames per second
-in the bottom left corner), and the way into **Sandbox** (below). Options for one mode stay on that
+in the bottom left corner). Options for one mode stay on that
 mode's screen (Practice's Damage and Classic, Time Trial's Ghost). The speaker button in the top
 right corner of the title screen switches the sound on and off too.
 
@@ -135,7 +135,7 @@ Battle Mode and Rally Mode are out of the game for now; they are kept, playable,
 
 ## Sandbox Mode
 
-Sandbox is on the **Options** screen. Its screen sets things up, and **Tweaks** in the pause menu
+Sandbox is in the **Play** menu's list of modes. Its screen sets things up, and **Tweaks** in the pause menu
 changes them during a run (they take effect at once); the pause menu's **Sandbox Menu** goes back to this screen and **Quit to Menu** to the title. They're saved. Each has − and + buttons, and
 tapping the value in between lists every choice to pick from. Anything changed from normal shows in
 gold:

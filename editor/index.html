@@ -105,7 +105,7 @@
     main { grid-area: view; position: relative; display: grid; grid-template-rows: 1fr auto; min-width: 0; min-height: 0; background: #121110; }
     #viewport { position: relative; min-height: 0; overflow: hidden; }
     #viewport canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
-    #scroller { position: absolute; inset: 0; overflow: auto; }
+    #scroller { position: absolute; inset: 0; overflow: auto; touch-action: none; }
     #spacer { pointer-events: none; }
     .floating { position: absolute; z-index: 5; display: flex; gap: 4px; align-items: center; padding: 4px; background: rgba(38,35,33,0.92);
       border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
@@ -721,7 +721,7 @@
       setZoom(Z * Math.exp(-d * (e.ctrlKey && Math.abs(d) < 50 ? 0.012 : 0.002)), ...local(e));
     }, { passive: false });
     scroller.addEventListener('gesturestart', (e) => { e.preventDefault(); gesture = { z: Z }; });
-    scroller.addEventListener('gesturechange', (e) => { e.preventDefault(); if (gesture) setZoom(gesture.z * e.scale, ...local(e)); });
+    scroller.addEventListener('gesturechange', (e) => { e.preventDefault(); if (gesture && !touch) setZoom(gesture.z * e.scale, ...local(e)); }); // (a touch screen's pinch is the touch handlers')
     scroller.addEventListener('gestureend', (e) => { e.preventDefault(); gesture = null; });
     $('zoomIn').onclick = () => setZoom(Z * 1.25);
     $('zoomOut').onclick = () => setZoom(Z / 1.25);
@@ -939,6 +939,52 @@
       if (h?.part === 'pt') { remember(true); activate(h.p); Object.assign(AP().pts[h.i], { auto: true, broken: false }); layGuide(); save(); say('Smooth again.'); }
     });
     scroller.addEventListener('mouseleave', () => { hover = null; pathHover = null; drawOver(); });
+
+    // ---- touch on the stage: one finger works as the mouse does (paint, select, drag points); two
+    // fingers drag the view about, and pinch to zoom. A first finger waits a moment before it
+    // starts drawing, so a two-finger drag doesn't leave a mark where the first finger landed.
+    let touch = null;
+    const mouse = (type, t) => scroller.dispatchEvent(new MouseEvent(type, { clientX: t.clientX, clientY: t.clientY, button: 0, bubbles: true }));
+    const mid = (ts) => [(ts[0].clientX + ts[1].clientX) / 2, (ts[0].clientY + ts[1].clientY) / 2];
+    const apart = (ts) => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY) || 1;
+    const startDraw = () => { clearTimeout(touch.timer); touch.mode = 'draw'; mouse('mousemove', touch.last); mouse('mousedown', touch.last); };
+    scroller.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const ts = e.touches;
+      if (ts.length === 1 && !touch) {
+        const t = { clientX: ts[0].clientX, clientY: ts[0].clientY };
+        touch = { mode: 'wait', first: t, last: t, timer: setTimeout(() => { if (touch?.mode === 'wait') startDraw(); }, 90) };
+      } else if (ts.length >= 2) {
+        if (touch?.mode === 'draw') mouse('mouseup', touch.last);
+        if (touch) clearTimeout(touch.timer);
+        const [mx, my] = mid(ts), r = scroller.getBoundingClientRect();
+        touch = { mode: 'pan', d0: apart(ts), z0: Z, wx: (sx() + mx - r.left) / Z, wy: (sy() + my - r.top) / Z };
+      }
+    }, { passive: false });
+    scroller.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (!touch) return;
+      const ts = e.touches;
+      if (touch.mode === 'pan') {
+        if (ts.length < 2) return;
+        const [mx, my] = mid(ts), r = scroller.getBoundingClientRect();
+        setZoom(touch.z0 * apart(ts) / touch.d0);
+        scroller.scrollLeft = touch.wx * Z - (mx - r.left); scroller.scrollTop = touch.wy * Z - (my - r.top);
+        return;
+      }
+      touch.last = { clientX: ts[0].clientX, clientY: ts[0].clientY };
+      if (touch.mode === 'wait' && Math.hypot(touch.last.clientX - touch.first.clientX, touch.last.clientY - touch.first.clientY) > 10) startDraw();
+      if (touch.mode === 'draw') mouse('mousemove', touch.last);
+    }, { passive: false });
+    const touchEnd = (e) => {
+      e.preventDefault();
+      if (!touch || e.touches.length) return;
+      if (touch.mode === 'wait') startDraw();      // a tap
+      if (touch.mode === 'draw') mouse('mouseup', touch.last);
+      touch = null;
+    };
+    scroller.addEventListener('touchend', touchEnd, { passive: false });
+    scroller.addEventListener('touchcancel', touchEnd, { passive: false });
 
     function setStart(c) {
       L.start = [clamp(Math.round(c.px), TILE / 2, L.width * TILE - TILE / 2), clamp(Math.round(c.py), TILE / 2, L.height * TILE - TILE / 2)];
@@ -1333,6 +1379,7 @@
         let list = JSON.parse(localStorage.getItem('funkytruck.stages'));
         if (!Array.isArray(list)) list = [];
         const replaced = list.some((o) => o?.name === L.name);
+        if (replaced && !confirm(`The game already has a stage called "${L.name}". Replace it with this one?\n\n(To keep both, cancel and give this stage another name.)`)) { say('Not saved: the stage of the same name is unchanged.'); return; }
         list = [{ ...stageOf(), saved: Date.now() }, ...list.filter((o) => o?.name !== L.name)].slice(0, 40);
         localStorage.setItem('funkytruck.stages', JSON.stringify(list));
         say(`Saved "${L.name}" to the game (Stage Editor, Load Stage)${replaced ? ', replacing the one of the same name' : ''}.`);

@@ -30,8 +30,9 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
 
 ## How the page works
 
-- Made for a desktop browser (mouse or trackpad and keyboard); it stacks up on a narrow screen
-  but nothing is designed around touch.
+- Made for a desktop browser (mouse or trackpad and keyboard); it stacks up on a narrow screen.
+  On a touch screen one finger acts as the mouse (touch events turned into mouse events on
+  `#scroller`) and two fingers drag the view and pinch to zoom.
 - The view is two canvases the size of the view (`#tiles`, `#over`) under a transparent scrolling
   div (`#scroller` with `#spacer` the size of the level at the zoom). Only the tiles in view are
   drawn, redrawn on scroll; drawing uses world px × `Z`, shifted by the scroll (`toView`). Mouse
@@ -81,7 +82,7 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
 - `funkytruck.editorLevel`: the stage being edited (saved as you go). The **Play** button opens
   the game at `../index.html?test=custom` (`&damage=0` for no damage), which plays this one.
 - `funkytruck.stages`: the game's list of stages (Stage Editor > Load Stage). **Save to Game**
-  puts the stage first in the list, replacing one of the same name, each with `saved` (ms); at
+  puts the stage first in the list, replacing one of the same name (after asking), each with `saved` (ms); at
   most 40 are kept. Keep this in step with `addStage` in `src/stages.js`.
 - Files: **Save file** / **Open file** use the same JSON (with `path`). The game's Load Stage
   screen can load these files too.

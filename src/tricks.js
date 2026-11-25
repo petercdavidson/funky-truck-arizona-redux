@@ -135,7 +135,8 @@ export class TrickTracker {
   step(truck, flip, scraped, scoring) {
     this.tickShow();
     if (!scoring) { this.chain = []; this.jump = null; this.wheelie = null; this.air = 0; this.airTurns = 0; return 0; }
-    const rear = truck.rearContact, front = truck.frontContact;
+    // (a wheel against a level's invisible side wall isn't on the ground: see Truck.rearDown)
+    const rear = truck.rearDown ?? truck.rearContact, front = truck.frontDown ?? truck.frontContact;
     const forward = truck.T[0] - truck.P[0];
     let paid = 0;
 

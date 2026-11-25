@@ -32,8 +32,9 @@ const watcher = new SoundWatcher();
 let engineState = { on: false };
 let scrapeState = { on: false, speed: 0 };
 
-// Browsers only start audio after the player taps or presses a key.
-for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, () => sound.unlock(), { capture: true });
+// Browsers only start audio after the player taps or presses a key. (iOS Safari only takes the
+// end of a tap as one, so listen for that too.)
+for (const ev of ['pointerdown', 'pointerup', 'touchend', 'keydown']) window.addEventListener(ev, () => sound.unlock(), { capture: true });
 
 // ---------------------------------------------------------------------------------------------
 // Input state. Several sources can hold the same control, so each source keeps its own keys
@@ -350,7 +351,9 @@ stageFile.addEventListener('change', async () => {
   if (!game.bringInStage(v)) window.alert("That file isn't a stage the game can play.");
 });
 
-document.getElementById('sound-button').addEventListener('click', (e) => {
+// (On the pointer's release, not 'click': the page cancels touches' default actions to stop
+// Safari's magnifier, and on iOS that means taps never turn into clicks.)
+document.getElementById('sound-button').addEventListener('pointerup', (e) => {
   e.preventDefault();
   e.stopPropagation();
   doAction('sound');

@@ -58,8 +58,9 @@ export class CollisionWorld {
     this.grid = [];
     for (let ty = 0; ty < H; ty++) for (let tx = 0; tx < W; tx++) this.addTile(tx, ty, level, table);
     const B = this.offset;
-    this.segs.push({ x1: B, y1: H * TILE, x2: B, y2: 0, nx: 1, ny: 0, type: 1 });
-    this.segs.push({ x1: W * TILE - B, y1: 0, x2: W * TILE - B, y2: H * TILE, nx: -1, ny: 0, type: 1 });
+    // The invisible side walls (`wall`: outside Classic, touching one isn't landing on the ground).
+    this.segs.push({ x1: B, y1: H * TILE, x2: B, y2: 0, nx: 1, ny: 0, type: 1, wall: true });
+    this.segs.push({ x1: W * TILE - B, y1: 0, x2: W * TILE - B, y2: H * TILE, nx: -1, ny: 0, type: 1, wall: true });
     if (ceiling) this.segs.push({ x1: 0, y1: B, x2: W * TILE, y2: B, nx: 0, ny: 1, type: 1 });
     this.buildGrid();
   }
@@ -153,7 +154,7 @@ export class CollisionWorld {
       }
     }
     if (!last) return null;
-    return { x: c22, y: d33, nx: last.nx, ny: last.ny, type: last.type };
+    return { x: c22, y: d33, nx: last.nx, ny: last.ny, type: last.type, wall: !!last.wall };
   }
 }
 
@@ -174,6 +175,11 @@ export class Truck {
     this.wheelRadius = 22.5;           // J532
     this.circumference = PI * this.wheelRadius * 2; // s4045
     this.rearContact = false; this.frontContact = false; // F7D45, J1155
+    // ...touching the ground, not just an invisible side wall (set with the contacts).
+    this.rearGround = false; this.frontGround = false;
+    // Whether touching a side wall counts as being on the ground, for flips and tricks (the
+    // original's way, kept in Classic). Outside Classic the game sets it false.
+    this.wallsCount = true;
     this.rearN = [0, 0]; this.frontN = [0, 0];           // g8e45, k2255
     this.rearV = [0, 0]; this.frontV = [0, 0];           // i0055, m4455
     this.rearSpin = 0; this.frontSpin = 0;               // H9F45, L3355
@@ -304,6 +310,7 @@ export class Truck {
     let h = w.collide(P[2], P[3], T[2], T[3]);
     if (h) {
       this.rearContact = true;
+      if (!h.wall) this.rearGround = true;
       this.rearV = [T[2] - P[2], T[3] - P[3]];
       T[2] = h.x; T[3] = h.y;
       this.rearN = [h.nx, h.ny];
@@ -311,6 +318,7 @@ export class Truck {
     h = w.collide(P[4], P[5], T[4], T[5]);
     if (h) {
       this.frontContact = true;
+      if (!h.wall) this.frontGround = true;
       this.frontV = [T[4] - P[4], T[5] - P[5]];
       T[4] = h.x; T[5] = h.y;
       this.frontN = [h.nx, h.ny];
@@ -380,11 +388,15 @@ export class Truck {
     return result;
   }
 
+  /** A wheel on the ground, for flips and tricks (a side wall only counts where wallsCount). */
+  get rearDown() { return this.wallsCount ? this.rearContact : this.rearGround; }
+  get frontDown() { return this.wallsCount ? this.frontContact : this.frontGround; }
+
   // a4eF5: returns a completed flip's total rotation (degrees) when the truck lands.
   trackFlip() {
     let rot = this.bodyRot;
     if (rot < 0) rot += 360;
-    if (!this.airborne && !this.rearContact && !this.frontContact) {
+    if (!this.airborne && !this.rearDown && !this.frontDown) {
       this.airborne = true; this.flipLast = rot; this.flipAccum = 0;
     }
     if (!this.airborne) return null;
@@ -392,7 +404,7 @@ export class Truck {
     if (d < -180) { d += 360; d = -d; } else if (d > 180) { d -= 360; d = -d; }
     this.flipLast = rot;
     this.flipAccum += d;
-    if (this.rearContact || this.frontContact) {
+    if (this.rearDown || this.frontDown) {
       this.airborne = false;
       const a = Math.abs(this.flipAccum);
       if (a >= 190) return Math.floor(a);
@@ -1449,9 +1461,11 @@ export class Game {
   stepTruck(w) { // V7B33
     const t = this.truck;
     t.integrate();
-    t.rearContact = false; t.frontContact = false;
+    t.rearContact = false; t.frontContact = false; t.rearGround = false; t.frontGround = false;
+    t.wallsCount = this.rules.classic;
     for (let i = 0; i < 2; i++) { t.constrain(); t.collideWheels(w); }
-    const down = t.rearContact || t.frontContact;
+    // (Outside Classic, a wheel against an invisible side wall is still in the air.)
+    const down = t.rearDown || t.frontDown;
     // The longest jump (not the drop in at the start, before the truck has landed).
     if (down && this.landed && this.airSteps > this.stats.maxAir) this.stats.maxAir = this.airSteps;
     this.airSteps = down ? 0 : this.airSteps + 1;
