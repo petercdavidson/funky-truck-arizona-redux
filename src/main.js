@@ -343,8 +343,11 @@ stageFile.addEventListener('change', async () => {
   const f = stageFile.files[0];
   stageFile.value = '';
   if (!f) return;
+  const text = await f.text().catch(() => '');
+  // A cloud folder's online-only file (Dropbox, iCloud) can reach the page with nothing in it.
+  if (!text.trim()) { window.alert("That file is empty. If it's in Dropbox, iCloud or another cloud folder, it may not be downloaded yet: make it available offline (or copy it out of that folder) and try again."); return; }
   let v = null;
-  try { v = JSON.parse(await f.text()); } catch { /* not JSON */ }
+  try { v = JSON.parse(text); } catch { /* not JSON */ }
   if (v && !v.name) v.name = f.name.replace(/\.json$/i, '');
   if (!game.bringInStage(v)) window.alert("That file isn't a stage the game can play.");
 });

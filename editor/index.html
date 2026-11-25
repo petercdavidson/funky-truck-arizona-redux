@@ -1414,7 +1414,10 @@
       const f = $('file').files[0];
       if (!f) return;
       try {
-        const v = JSON.parse(await f.text());
+        const text = await f.text();
+        // A cloud folder's online-only file (Dropbox, iCloud) can reach the page with nothing in it.
+        if (!text.trim()) throw new Error("it's empty. If it's in Dropbox, iCloud or another cloud folder, it may not be downloaded yet: make it available offline (or copy it out of that folder) and try again.");
+        const v = JSON.parse(text);
         if (!Array.isArray(v.tiles) || !v.tiles.length || !v.tiles.every((r) => Array.isArray(r) && r.length === v.tiles[0].length && r.every((id) => isTileId(id, NT)))) throw new Error('not a level');
         dropFloat(); remember();
         L = { name: v.name || f.name.replace(/\.json$/, ''), width: v.tiles[0].length, height: v.tiles.length, tiles: v.tiles, start: Array.isArray(v.start) ? v.start : [3 * TILE, 3 * TILE], paths: readPaths(v), ap: -1, pathBase: null };
