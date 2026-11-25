@@ -64,7 +64,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   world back a repeat). The physics has no air drag, so a long or steep downhill speeds up without
   limit: check designs with the simulated driver (`tools/tune-stunts.mjs`, the stunt tests).
 - `editor/` (`editor/index.html`): the Stage Editor, its own page, opened in a new tab from the game's
-  Stage Editor screen. It has its own `editor/CLAUDE.md`, so work on the editor can start there
+  Stage Editor screen (its path search runs in `editor/path-worker.js`, a module worker). It has its own `editor/CLAUDE.md`, so work on the editor can start there
   without reading the game. It shares only the stage format and storage keys (`src/stages.js`:
   `funkytruck.editorLevel` for its Play button, `index.html?test=custom`; `funkytruck.stages` for
   Save to Game) and reads tiles and levels through `src/assets.js`. Levels are JSON:
