@@ -154,6 +154,30 @@ try {
   await shot('phone-landscape-driving');
   const gasL = await center('[data-key="up"]');
   check(!!gasL && gasL[0] < 844 && gasL[1] < 390, 'gas pedal is on screen in landscape');
+  {
+    // Sliding a finger from one pedal of a pair to the other swaps which is pressed.
+    const keys = async () => { const k = JSON.parse(await evaluate('JSON.stringify(window.__funkyTruck.game.keys)')); return ['up', 'down', 'left', 'right'].filter((n) => k[n]).join(' '); };
+    const rev = await center('[data-key="down"]'), back = await center('[data-key="left"]'), fwd = await center('[data-key="right"]');
+    await touch('touchStart', [rev]); await sleep(80);
+    const k1 = await keys();
+    await touch('touchMove', [gasL]); await sleep(80);
+    const k2 = await keys();
+    await touch('touchEnd', []); await sleep(80);
+    check(k1 === 'down' && k2 === 'up', `pedals: sliding from reverse to forwards swaps them (${k1} -> ${k2})`);
+    await touch('touchStart', [back]); await sleep(80);
+    await touch('touchMove', [fwd]); await sleep(80);
+    const k3 = await keys();
+    await touch('touchMove', [gasL]); await sleep(80);
+    const k4 = await keys();
+    await touch('touchEnd', []); await sleep(80);
+    check(k3 === 'right' && k4 === 'right', `tilt: slides within its pair, not onto the pedals (${k3}, ${k4})`);
+    check(await keys() === '', 'nothing held after lifting');
+    // Four fingers at once wreck the truck (outside Classic).
+    await touch('touchStart', [[100, 100], [200, 100], [300, 100], [400, 100]]); await sleep(80);
+    await touch('touchEnd', []); await sleep(80);
+    check(await evaluate('window.__funkyTruck.game.selfWrecked'), 'four fingers wreck the truck');
+    await load('?test=play&stage=1&frames=300&touch=1');
+  }
 
   // One button: the pedals go, and holding anywhere on the screen is the button.
   await evaluate('(() => { const g = window.__funkyTruck.game; g.oneButton = true; g.startCampaign(); })()');

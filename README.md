@@ -100,8 +100,8 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 
 | Action | Keyboard | Touch | Gamepad |
 | --- | --- | --- | --- |
-| Forwards / reverse | ↑ / ↓ (or W / S) | right-hand pedals | A or RT / B or LT |
-| Tilt back / forwards | ← / → (or A / D) | left-hand buttons | stick or d-pad |
+| Forwards / reverse | ↑ / ↓ (or W / S) | right-hand pedals (slide between them) | A or RT / B or LT |
+| Tilt back / forwards | ← / → (or A / D) | left-hand buttons (slide between them) | stick or d-pad |
 | One Button | Space or ↑ | hold anywhere | A |
 | Pause | P | ⏸ button | Start |
 | Flip upright (when offered) | R | Flip button | Y |
@@ -136,13 +136,13 @@ Battle Mode and Rally Mode are out of the game for now; they are kept, playable,
 ## Sandbox Mode
 
 Sandbox is on the **Options** screen. Its screen sets things up, and **Tweaks** in the pause menu
-changes them during a run (they take effect at once). They're saved. Each has − and + buttons, and
+changes them during a run (they take effect at once); the pause menu's **Sandbox Menu** goes back to this screen and **Quit to Menu** to the title. They're saved. Each has − and + buttons, and
 tapping the value in between lists every choice to pick from. Anything changed from normal shows in
 gold:
 
 | Setting | Choices |
 | --- | --- |
-| Track | **Endless** (the default), the nine stages and the three stunt tracks (before a run only) |
+| Track | **Endless** (the default), the nine stages, the three stunt tracks and any stages saved into the game from the Stage Editor (before a run only) |
 | Drive Power | ×½, ×1, ×1.5, ×2, ×3, ×5 |
 | Gravity | None, Moon, Low, Earth, High, Jupiter |
 | Air Spin | how hard the tilt keys turn the truck: ×½, ×1, ×2, ×4 |

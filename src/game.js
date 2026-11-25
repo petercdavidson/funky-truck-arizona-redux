@@ -657,10 +657,11 @@ export class Game {
     this.bestEndless = validCount(this.store.get('bestEndless'));
     this.battle = null;               // Sandbox's cars and missiles (battle.js)
     // Sandbox Mode's settings (sandbox.js): which choice of each.
+    // The Stage Editor's stages (stages.js), and the one picked on the Load Stage screen. (Before
+    // Sandbox's settings: its tracks include them.)
+    this.stages = validStages(this.store.get('stages'), data.collision.length);
     this.sandbox = validSandbox(this.store.get('sandbox'), this.sandboxCourses);
     this.sandboxPick = null;          // the setting whose list of choices is open on the Sandbox screen
-    // The Stage Editor's stages (stages.js), and the one picked on the Load Stage screen.
-    this.stages = validStages(this.store.get('stages'), data.collision.length);
     this.stagePick = -1;
     this.stagePage = 0;
     this.customLevel = null;          // the custom stage being played
@@ -750,7 +751,7 @@ export class Game {
 
   get levelData() {
     if (this.onCourse) return this.course.level;
-    if (this.mode === 'custom') return this.customLevel;
+    if (this.mode === 'custom' || this.sandboxCustom) return this.customLevel;
     return this.isStunt ? this.stunts[this.level - this.data.levels.length] : this.data.levels[this.level];
   }
 
@@ -765,11 +766,11 @@ export class Game {
   /** Whether this run is on a stunt track. */
   get isStunt() {
     // (a custom stage with no finish line is played like a stunt track)
-    if (this.mode === 'custom') return !Number.isFinite(this.customLevel?.finish);
+    if (this.mode === 'custom' || this.sandboxCustom) return !Number.isFinite(this.customLevel?.finish);
     return (this.mode === 'practice' || this.mode === 'sandbox') && !this.onCourse && this.level >= this.data.levels.length;
   }
   /** Where this stage's finish line is (px): the stages' own, or a custom stage's. */
-  get finishX() { return this.mode === 'custom' ? this.customLevel.finish : (this.levelData.width - 9) * TILE; }
+  get finishX() { return this.mode === 'custom' || this.sandboxCustom ? this.customLevel.finish : (this.levelData.width - 9) * TILE; }
   /** The name of stage `i` of Practice: "Stage One" ... "Stage Nine", then the stunt tracks. */
   stageName(i) { return i < this.data.levels.length ? STAGE_NAMES[i] : this.stunts[i - this.data.levels.length]?.name ?? ''; }
   get maxCamX() { return this.levelData.width * TILE - this.viewW * this.zoom; }   // N53D4
@@ -867,6 +868,9 @@ export class Game {
     if (i < 0 || i >= this.stages.length) return;
     this.stages = this.stages.filter((_, k) => k !== i);
     this.store.set('stages', this.stages);
+    // Sandbox's track: a stage after this one moves up one; this one goes back to Endless.
+    const c = this.sandbox.course, k = this.sandboxBase + i;
+    if (c >= k) { this.sandbox.course = c === k ? 0 : c - 1; this.store.set('sandbox', this.sandbox); }
     if (this.stagePick === i) this.stagePick = -1; else if (this.stagePick > i) this.stagePick--;
     this.reloadStages();
   }
@@ -887,10 +891,17 @@ export class Game {
     this.beginRun(0);
   }
 
-  /** Sandbox: how many tracks it offers (Endless, then the nine stages, then the stunt tracks). */
-  get sandboxCourses() { return 1 + this.data.levels.length + (this.data.stunts?.length || 0); }
+  /** Sandbox: where its custom stages start in its list of tracks (after Endless, the nine stages and the stunt tracks). */
+  get sandboxBase() { return 1 + this.data.levels.length + (this.data.stunts?.length || 0); }
+  /** Sandbox: how many tracks it offers (Endless, the nine stages, the stunt tracks, then the stages saved into the game). */
+  get sandboxCourses() { return this.sandboxBase + this.stages.length; }
   /** The name of Sandbox track `i` (the stages by number, to keep its list short). */
-  sandboxCourseName(i) { return i === 0 ? 'Endless' : i <= this.data.levels.length ? `Stage ${i}` : this.stageName(i - 1); }
+  sandboxCourseName(i) {
+    if (i >= this.sandboxBase) return this.stages[i - this.sandboxBase]?.name ?? '';
+    return i === 0 ? 'Endless' : i <= this.data.levels.length ? `Stage ${i}` : this.stageName(i - 1);
+  }
+  /** Whether this Sandbox run is on a custom stage (played from `customLevel`, like Custom mode's). */
+  get sandboxCustom() { return this.mode === 'sandbox' && this.sandboxOnStage; }
 
   /**
    * Sandbox: the chosen track, with the physics as set (sandbox.js). No damage. Stages keep their
@@ -900,10 +911,14 @@ export class Game {
     this.mode = 'sandbox';
     this.rules = RULES.sandbox;
     this.sandboxPick = null;
+    if (this.sandbox.course >= this.sandboxCourses) this.sandbox.course = 0;   // a stage since forgotten
     this.sandboxEndless = this.sandbox.course === 0;
+    const custom = this.stages[this.sandbox.course - this.sandboxBase] || null;
+    this.sandboxOnStage = !!custom;
+    if (custom) { this.customLevel = custom; this.customIndex = this.sandbox.course - this.sandboxBase; }
     this.clock = 0;
     if (this.sandboxEndless) { this.newCourse(); this.bestToBeat = 0; }
-    this.beginRun(this.sandboxEndless ? 0 : this.sandbox.course - 1);
+    this.beginRun(this.sandboxEndless || custom ? 0 : this.sandbox.course - 1);
   }
 
   /** Sandbox: step setting `key` by `delta` choices (wrapping round), save it, and use it now. */
@@ -1014,7 +1029,7 @@ export class Game {
    * flipped (walls, ceilings, overhangs: src/tile-forms.js); every other level is the table as is.
    */
   get tileTable() {
-    if (this.mode !== 'custom') return this.data.collision;
+    if (this.mode !== 'custom' && !this.sandboxCustom) return this.data.collision;
     if (this.formsFor !== this.levelData) { this.formsFor = this.levelData; this.forms = formTable(this.data.collision, this.levelData); }
     return this.forms;
   }
@@ -1037,7 +1052,7 @@ export class Game {
     this.camY = s[1] - this.viewH / 2;
     if (this.rules.classic) this.camY = Math.min(Math.max(this.camY, 0), this.maxCamY);
     this.updateCamera();
-    this.ticker = this.mode === 'custom' ? this.customLevel.name : this.stageName(this.level); this.tickerTimer = 140;   // m2813
+    this.ticker = this.mode === 'custom' || this.sandboxCustom ? this.customLevel.name : this.stageName(this.level); this.tickerTimer = 140;   // m2813
     this.endTimer = 0;
     this.score += this.bonus;
     this.bonus = (this.level + 1) * 10000;

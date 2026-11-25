@@ -173,6 +173,7 @@ function goMenu() {
 }
 
 function doAction(a) {
+  const screen0 = game.screen, pick0 = game.sandboxPick, held = renderer.padHover ? renderer.hover : null;
   if (a === 'sound') {
     game.toggle('soundOn');
     sound.setEnabled(game.soundOn);
@@ -219,6 +220,7 @@ function doAction(a) {
   else if (a === 'garage') game.showMenu('garage');
   else if (a === 'help') game.showMenu('help');
   else if (a === 'menu') goMenu();
+  else if (a === 'quitTitle') game.showMenu('title');
   else if (a === 'again') game.restart();
   else if (a === 'nextStage') { if (game.mode === 'trial') game.nextTrial(); else game.nextPractice(); }
   else if (a === 'resume') game.togglePause();
@@ -228,6 +230,15 @@ function doAction(a) {
     if (m) game.cycleLook(m[1], Number(m[2]));
   }
   renderer.hover = null;
+  // A controller's highlight stays where it was on a screen you press again and again (the
+  // Garage's arrows, Sandbox's settings); opening a list of choices goes to the one chosen, and
+  // closing it goes back to the setting it was opened from.
+  if (held && game.screen === screen0) {
+    const nav = navButtons(game.screen, game, renderer.tall), find = (act) => nav.find((b) => b.action === act);
+    if (game.sandboxPick === pick0) renderer.hover = nav.includes(held) ? held : null;
+    else if (game.sandboxPick) renderer.hover = find(`sbSet:${game.sandbox[game.sandboxPick]}`) || null;
+    else renderer.hover = find(`sbPick:${pick0}`) || null;
+  }
   canvas.style.cursor = '';
 }
 
@@ -265,23 +276,35 @@ canvas.addEventListener('pointerleave', () => { renderer.hover = null; });
 
 // ---- on-screen driving controls (multi-touch: each button tracks its own pointers)
 
-for (const btn of touchUI.querySelectorAll('[data-key]')) {
-  const name = btn.dataset.key;
-  const pointers = new Set();
+// A finger can slide from one button of a pair (tilt back / forwards, reverse / forwards) to the
+// other: each finger presses the button of its pair it's over (or was last over).
+for (const group of [...touchUI.querySelectorAll('.pad'), ...touchUI.querySelectorAll('.act[data-key]')]) {
+  const btns = group.matches('[data-key]') ? [group] : [...group.querySelectorAll('[data-key]')];
+  const on = new Map();                  // pointer id -> the button it presses
   const update = () => {
-    touchKeys[name] = pointers.size > 0;
-    btn.classList.toggle('held', pointers.size > 0);
+    for (const b of btns) {
+      const held = [...on.values()].includes(b);
+      touchKeys[b.dataset.key] = held;
+      b.classList.toggle('held', held);
+    }
     combineKeys();
   };
-  btn.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    setTouchMode(true);
-    btn.setPointerCapture?.(e.pointerId);
-    pointers.add(e.pointerId);
-    update();
-  });
-  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-    btn.addEventListener(ev, (e) => { pointers.delete(e.pointerId); update(); });
+  for (const btn of btns) {
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      setTouchMode(true);
+      try { btn.setPointerCapture?.(e.pointerId); } catch { /* a pointer that's already gone */ }
+      on.set(e.pointerId, btn);
+      update();
+    });
+    btn.addEventListener('pointermove', (e) => {
+      if (!on.has(e.pointerId)) return;
+      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-key]');
+      if (over && btns.includes(over) && over !== on.get(e.pointerId)) { on.set(e.pointerId, over); update(); }
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+      btn.addEventListener(ev, (e) => { on.delete(e.pointerId); update(); });
+    }
   }
 }
 
@@ -355,6 +378,10 @@ document.addEventListener('dblclick', (e) => e.preventDefault());
 for (const ev of ['touchstart', 'touchend']) {
   document.addEventListener(ev, (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
 }
+// Four fingers down at once while driving: the Esc easter egg's wreck (where it applies).
+document.addEventListener('touchstart', (e) => {
+  if (e.touches.length >= 4 && game?.screen === 'playing' && game.selfWreck()) sound.play('wreck');
+}, { passive: true });
 
 // ---- gamepads
 

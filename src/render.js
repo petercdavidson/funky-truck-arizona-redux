@@ -174,6 +174,8 @@ function pauseButtons(place) {
     // Quitting Practice or Time Trial goes back to its list of stages, and Sandbox to its settings
     { label: (g) => (g.mode === 'sandbox' ? 'Sandbox Menu' : g.quitScreen === 'title' ? 'Quit to Menu' : 'Quit to Stages'), action: 'menu' },
     { label: 'Options', action: 'pauseOptions' },
+    // Sandbox's Quit goes all the way back to the title (Sandbox Menu above is its settings)
+    kind === 'sandbox' && { label: 'Quit to Menu', action: 'quitTitle' },
   ].filter(Boolean).map((b, i) => ({ ...b, rect: place(i), show: when })));
 }
 
@@ -195,16 +197,20 @@ function gameOverButtons(column, grid) {
   ];
 }
 
-/** The most choices a Sandbox setting has (its tracks). */
-const PICK_MAX = 24;
+/** The most choices a Sandbox setting has (its tracks: 13, and up to 40 custom stages). */
+const PICK_MAX = 60;
 /** How many choices setting `key` has, and the name of choice i. */
 const choiceCount = (g, key) => (!key ? 0 : key === 'course' ? g.sandboxCourses : SANDBOX_ROW[key].choices.length);
 const choiceLabel = (g, key, i) => (!key ? '' : key === 'course' ? g.sandboxCourseName(i) : SANDBOX_ROW[key].choices[i]?.[1] ?? '');
 /** The open list of choices: its box, and where choice i goes (a column, or two for a long list). */
 function pickBox(g, tall, screen) {
-  const n = choiceCount(g, g.sandboxPick), cols = n > 7 ? 2 : 1, rows = Math.ceil(n / cols);
-  const w = tall ? 150 : 140, h = tall ? 34 : 24, gap = tall ? 8 : 5, pad = 12, head = tall ? 36 : 28;
+  const n = choiceCount(g, g.sandboxPick);
+  const h = tall ? 34 : 24, gap = tall ? 8 : 5, pad = 12, head = tall ? 36 : 28;
   const W = tall ? TALL_W : STAGE_W, H = tall ? TALL_H[screen] : STAGE_H;
+  // A column, two for a long list, and more (narrower) once two would run off the screen.
+  const fit = Math.floor((H - 16 - 2 * pad - head + gap) / (h + gap));
+  const cols = Math.max(n > 7 ? 2 : 1, Math.ceil(n / fit)), rows = Math.ceil(n / cols);
+  const w = Math.min(tall ? 150 : 140, (W - 16 - 2 * pad - (cols - 1) * gap) / cols);
   const bw = cols * w + (cols - 1) * gap + 2 * pad, bh = rows * (h + gap) - gap + 2 * pad + head;
   return { x: (W - bw) / 2, y: Math.max(8, (H - bh) / 2), w: bw, h: bh, pad, head, rows, cw: w, ch: h, gap };
 }
@@ -353,7 +359,7 @@ export function buttonsFor(screen, tall = false) {
 /** Which run this is, for the pause screen: "Play  ·  Stage Three", "Endless  ·  420 m", ... */
 export function runName(game) {
   if (game.mode === 'endless') return `Endless  ·  ${game.metres} m`;
-  if (game.mode === 'sandbox') return `Sandbox  ·  ${game.onCourse ? `Endless  ·  ${game.metres} m` : game.stageName(game.level)}`;
+  if (game.mode === 'sandbox') return `Sandbox  ·  ${game.onCourse ? `Endless  ·  ${game.metres} m` : game.sandboxCustom ? game.customLevel.name : game.stageName(game.level)}`;
   if (game.mode === 'trial') return `Time Trial  ·  ${trialName(game, game.track)}`;
   if (game.mode === 'custom') {
     const rules = [game.rules.classic && 'Classic rules', !game.rules.damage && 'no damage'].filter(Boolean);

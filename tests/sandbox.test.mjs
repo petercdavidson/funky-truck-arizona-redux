@@ -225,3 +225,23 @@ test('sandbox, all settings turned up, for a long while: nothing breaks', () => 
     }
   }
 });
+
+test('Sandbox can play a custom stage saved into the game; forgetting it moves the track back', () => {
+  const g = new Game(data, { store: memoryStore(), random: seeded(3) });
+  const base = g.sandboxCourses;
+  const tiles = Array.from({ length: 8 }, (_, y) => Array.from({ length: 30 }, () => (y >= 6 ? 1 : 0)));
+  assert.ok(g.bringInStage({ name: 'Flat', width: 30, height: 8, start: [3 * TILE, 4 * TILE], tiles, finish: 25 * TILE }));
+  assert.equal(g.sandboxCourses, base + 1);
+  assert.equal(g.sandboxCourseName(base), 'Flat');
+  g.setSandbox('course', base);
+  g.startSandbox();
+  assert.ok(g.sandboxCustom);
+  assert.equal(g.levelData.name, 'Flat');
+  assert.equal(g.finishX, 25 * TILE);
+  for (let i = 0; i < 200; i++) g.step();
+  assert.ok(finite(g.truck.T));
+  g.deleteStage(0);
+  assert.equal(g.sandbox.course, 0);
+  g.startSandbox();
+  assert.ok(!g.sandboxCustom && g.onCourse);
+});
