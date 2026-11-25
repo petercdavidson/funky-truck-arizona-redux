@@ -142,9 +142,10 @@ test('a long sketch on a wide level is quick', () => {
 // ---- the look (the tiles' art at their edges) and mirrors
 
 import { TILE_EDGES } from '../src/tile-art.js';
+import { TILE_SETS } from '../src/tile-sets.js';
 import { MIRROR_PAIRS, NO_MIRROR, mirrorOf, flipTiles } from '../src/autotile.js';
 
-const artKit = buildKit(data.collision, data.levels, TILE, { edges: TILE_EDGES });
+const artKit = buildKit(data.collision, data.levels, TILE, { edges: TILE_EDGES, sets: TILE_SETS });
 
 /** A hill on flat ground, as a sketch (tile units in, px out). */
 function hillSketch(f) {

@@ -330,6 +330,7 @@
     import { buildKit, drawPath, lookPath, lookAround, sidesOf, fillRuns } from '../src/autotile.js';
     import { NO_MIRROR, mirrorOf, baseOf, formOf, makeId, isTileId, mirrorId, flipUpId, turnId, flipTiles, flipTilesUp, turnTiles, formCollision, tileLabel } from '../src/tile-forms.js';
     import { TILE_EDGES } from '../src/tile-art.js';
+    import { TILE_SETS } from '../src/tile-sets.js';
 
     const $ = (id) => document.getElementById(id);
     const a = await loadAssets('../assets/');
@@ -337,7 +338,7 @@
     const NT = collision.length;           // tile ids are 0 .. NT-1; 0 is sky, 1 solid dirt
     const SKY = 0, DIRT = 1;
     const KEY = 'funkytruck.editorLevel', VIEW_KEY = 'funkytruck.editorView';
-    const kit = buildKit(collision, stages, TILE, { edges: TILE_EDGES });   // the Path tool's pieces, fill and look
+    const kit = buildKit(collision, stages, TILE, { edges: TILE_EDGES, sets: TILE_SETS });   // the Path tool's pieces, fill and look
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
     // tiles turned and flipped (src/tile-forms.js): their images and collision lines, made when needed
     const img = (id) => a.tiles[id] || tileImage(a, id);

@@ -109,7 +109,7 @@ export function buildKit(collision, levels, T = 64, opts = {}) {
   for (const p of pieces) variants.set(p.id, pieces.filter((q) => shape(q) === shape(p)).map((q) => q.id));
   const fills = [...used].filter((id) => id !== SKY && !isPiece.has(id)).sort((p, q) => p - q);
   const kit = { T, pieces, byId, byEntry, isPiece, joins, fillPick, variants, fills, collision };
-  if (opts.edges) { Object.assign(kit, artOf(opts.edges)); Object.assign(kit, sheetRules(kit, opts.edges, opts.sheetCols ?? 10)); }
+  if (opts.edges) { Object.assign(kit, artOf(opts.edges)); Object.assign(kit, sheetRules(kit, opts.edges, opts.sets)); }
   // every piece turned each way (forms 0 to 3): for paths that run any way round
   const turn = ([x, y]) => [c(T - y), c(x)];
   const turnIn = ([x, y]) => [T - y, x];
@@ -225,15 +225,24 @@ function artOf(edges) {
 /** A world direction [dx, dy] as it is on the sheet, for a tile turned `f` quarters clockwise. */
 const toSheet = ([x, y], f) => { for (let i = 0; i < ((4 - f) & 3); i++) [x, y] = [-y, x]; return [x, y]; };
 
-function sheetRules(kit, edges, COLS) {
-  const n = edges.length;
+function sheetRules(kit, edges, sets = null) {
+  const n = edges.length, COLS = sets?.cols ?? 10;
   // (a tile with only a few faint pixels round its edges counts as empty)
-  const opaque = (id) => { const s = edges[id]; if (!s) return false; let n = 0; for (let e = 0; e < 4; e++) for (let k = 0; k < 32; k++) if (B64.indexOf(s[e * 64 + k]) > 20) n++; return n >= 8; };
+  const opaque = (id) => { const s = edges[id]; if (!s) return false; let k = 0; for (let e = 0; e < 4; e++) for (let i = 0; i < 32; i++) if (B64.indexOf(s[e * 64 + i]) > 20) k++; return k >= 8; };
+  const blank = new Set(sets?.empty || []);
   const art = new Set();
-  for (let id = DIRT + 1; id < n; id++) if (!kit.isPiece.has(id) && opaque(id)) art.add(id);
+  for (let id = DIRT + 1; id < n; id++) if (!kit.isPiece.has(id) && !blank.has(id) && opaque(id)) art.add(id);
+  // which tiles join their neighbour on the sheet: the sets marked up by hand (src/tile-sets.js),
+  // or without them, any two side by side
+  const H = sets ? new Set(sets.h) : null, V = sets ? new Set(sets.v) : null;
+  const joined = (id, sx, sy) => {
+    if (sx && Math.floor((id + sx) / COLS) !== Math.floor(id / COLS)) return false;
+    if (!H) return true;
+    return sx === 1 ? H.has(id) : sx === -1 ? H.has(id - 1) : sy === 1 ? V.has(id) : V.has(id - COLS);
+  };
+  const nextTo = (id, sx, sy) => (joined(id, sx, sy) ? id + sx + COLS * sy : -1);
   const DIRS = [[1, 0, 'right'], [-1, 0, 'left'], [0, 1, 'bottom'], [0, -1, 'top']];
-  const nextTo = (id, sx, sy) => (sx && Math.floor((id + sx) / COLS) !== Math.floor(id / COLS) ? -1 : id + sx + COLS * sy);
-  // each piece's partners: the art beside it on the sheet, on a side of it that's ground
+  // each piece's partners: the art joined to it on the sheet, on a side of it that's ground
   const partners = new Map(), partnered = new Set();
   for (const p of kit.isPiece) {
     for (const [sx, sy, side] of DIRS) {
@@ -245,11 +254,14 @@ function sheetRules(kit, edges, COLS) {
       partners.get(p).push({ sx, sy, art: a });
     }
   }
+  // the general-purpose art: no piece's partner (with the sets, the lone tiles and sets with no piece)
   const generic = [...art].filter((a) => !partnered.has(a));
   const genericForms = [DIRT];
   for (const a of generic) for (let f = 0; f < 4; f++) genericForms.push(makeId(a, f));
   const genericSet = new Set(genericForms.slice(1));
-  /** Whether a and b, the same way round, sit as they do on the sheet: a left of b (dir 0) or above it (1). */
+  const artForms = [];
+  for (const a of art) for (let f = 0; f < 4; f++) artForms.push(makeId(a, f));
+  /** Whether a and b, the same way round, sit as they do in a set on the sheet: a left of b (dir 0) or above it (1). */
   const sheetJoin = (a, b, dir) => {
     if (a <= DIRT || b <= DIRT) return false;
     const f = formOf(a);
@@ -261,7 +273,7 @@ function sheetRules(kit, edges, COLS) {
   /** How badly a and b meet (dir 0: a left of b; 1: a above b): nothing for a join the sheet has. */
   // (a little more for any other join of two tiles with art: the sheet's own are the sure ones)
   const join = (a, b, dir) => (sheetJoin(a, b, dir) ? 0 : seam(a, b, dir) + (a > DIRT && b > DIRT ? 0.05 : 0));
-  return { art, partners, generic, genericForms, genericSet, sheetJoin, join };
+  return { art, partners, generic, genericForms, genericSet, artForms, sheetJoin, join };
 }
 
 /** Offsets of the cells (relative to the one a point belongs to) that touch a point on its edge. */
@@ -514,7 +526,7 @@ function polish(tiles, chain, x0, x1, kit, tops, rounds = 3) {
  * shortest path through its choices) with the tiles either side held, a few times over. Changes
  * `tiles` in place.
  */
-function solveLook(tiles, cand, pref, kit, rounds = 3) {
+function solveLook(tiles, cand, pref, kit, rounds = 3, pen = null) {
   const seam = kit.join || kit.seam;
   const H = tiles.length, W = tiles[0].length;
   const PRIOR = 0.04;        // choosing other than a preferred tile there
@@ -523,7 +535,7 @@ function solveLook(tiles, cand, pref, kit, rounds = 3) {
   for (const k of cand.keys()) { const x = k % W; x0 = Math.min(x0, x); x1 = Math.max(x1, x + 1); }
   const at = (x, y) => (x < 0 || y < 0 || x >= W || y >= H ? -1 : tiles[y][x]);
   const sm = (a, b, dir) => (a < 0 || b < 0 ? 0 : seam(a, b, dir));
-  const unary = (k, t) => { const p = pref.get(k); return p?.size ? (p.has(t) ? 0 : PRIOR) : 0; };
+  const unary = (k, t) => { const p = pref.get(k); return (p?.size ? (p.has(t) ? 0 : PRIOR) : 0) + (pen?.get(k)?.get(t) || 0); };
   // one line of cells (a column or a row) solved exactly, the cells beside it held
   const line = (cells, dir) => {
     // dir 1: a column (cells top to bottom; the sides are left and right); 0: a row
@@ -749,8 +761,8 @@ export function paintFill(tiles, kit, x, y) {
 export function lookAround(tiles, kit, cells, opts = {}) {
   if (!kit.seam || !cells.length) return;
   const H = tiles.length, W = tiles[0].length, keep = opts.keep;
-  const cand = new Map(), pref = new Map(), seen = new Set();
-  const sheet = !!kit.partners;
+  const cand = new Map(), pref = new Map(), pen = new Map(), seen = new Set();
+  const sheet = !!kit.partners, MISFIT = opts.misfit ?? 0.15;
   for (const [cx, cy] of cells) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const x = cx + dx, y = cy + dy, k = y * W + x;
     if (x < 0 || y < 0 || x >= W || y >= H || seen.has(k)) continue;
@@ -783,10 +795,21 @@ export function lookAround(tiles, kit, cells, opts = {}) {
     const meets = (t, q, wx, wy) => (wx ? (wx > 0 ? kit.seam(q, t, 0) : kit.seam(t, q, 0)) : (wy > 0 ? kit.seam(q, t, 1) : kit.seam(t, q, 1)));
     const corner = facing.length >= 2;
     const fits = [...sugg].filter(([t, own]) => !corner || facing.every(([q, wx, wy]) => q === own || meets(t, q, wx, wy) < 0.03)).map(([t]) => t);
-    cand.set(k, [...new Set([...fits, ...kit.genericForms])]);
-    pref.set(k, fits.length ? new Set(fits) : corner ? kit.genericSet : new Set([DIRT]));
+    let extra = [];
+    if (corner) {
+      // a corner may also take the art (of any set, any way round) that best meets the pieces there
+      const score = (t) => facing.reduce((s, [q, wx, wy]) => s + meets(t, q, wx, wy), 0);
+      // (not the partner of a piece here that didn't fit: it goes with that piece alone)
+      extra = kit.artForms.filter((t) => !sugg.has(t) || fits.includes(t)).map((t) => [t, score(t)]).sort((p, q) => p[1] - q[1]).slice(0, 10).map(([t]) => t);
+    }
+    // (a partner that didn't fit the corner may still win it, at a cost, when the sheet joins it on
+    // another side too, once the tiles round it are chosen)
+    const misfits = [...sugg.keys()].filter((t) => !fits.includes(t));
+    cand.set(k, [...new Set([...fits, ...misfits, ...kit.genericForms, ...extra])]);
+    pref.set(k, fits.length ? new Set(fits) : corner ? new Set([...kit.genericSet, ...extra]) : new Set([DIRT]));
+    if (misfits.length) pen.set(k, new Map(misfits.map((t) => [t, MISFIT])));
   }
-  solveLook(tiles, cand, pref, kit, opts.rounds ?? 3);
+  solveLook(tiles, cand, pref, kit, opts.rounds ?? 3, pen);
 }
 
 // ---- paths any way round: walls, overhangs, ceilings
