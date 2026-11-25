@@ -335,3 +335,23 @@ test('path-made walls and overhangs drive as they look in the game', async () =>
   for (let i = 0; i < 150; i++) g.step();
   assert.ok(g.truck.T[1] < 6 * TILE, `rests on the lip (y ${(g.truck.T[1] / TILE).toFixed(1)})`);
 });
+
+test('a closed sketch (the Shape tool) closes up: ground inside it running clockwise, a hole the other way', () => {
+  const W = 24, H = 20, empty = { width: W, height: H, tiles: Array.from({ length: H }, () => Array(W).fill(0)) };
+  const ring = (dir) => {
+    const pts = [];
+    for (let i = 0; i <= 120; i++) { const a = -Math.PI / 2 + dir * i / 120 * 2 * Math.PI; pts.push([12 * TILE + Math.cos(a) * 4 * TILE, 10 * TILE + Math.sin(a) * 3 * TILE]); }
+    return pts;
+  };
+  for (const dir of [1, -1]) {
+    const r = drawPath(empty, ring(dir), artKit, { smooth: 2, closed: true });
+    assert.ok(r, 'laid');
+    // each piece starts where the one before it ends, the last back at the first
+    const ends = r.chain.map((c) => { const p = artKit.oById.get(c.id); return { i: [c.x * TILE + p.inX, c.y * TILE + p.inY], o: [c.x * TILE + p.outX, c.y * TILE + p.outY] }; });
+    ends.forEach((e, k) => assert.deepEqual(ends[(k + 1) % ends.length].i, e.o, `piece ${k} joins the next`));
+    assert.equal(new Set(r.chain.map((c) => `${c.x},${c.y}`)).size, r.chain.length, 'one piece per cell');
+    // the middle: ground for a lump, sky for a hole; and above the top, sky for a lump
+    assert.equal(r.tiles[10][12] !== 0, dir === 1);
+    assert.equal(r.tiles[2][12], dir === 1 ? 0 : 1);
+  }
+});

@@ -90,7 +90,8 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   Paths may also run any way round (`drawPathFree`: up walls, back over themselves for overhangs,
   along ceilings) with turned pieces; the ground is on the right-hand side of the way a path runs.
   `fillGround` / `paintFill` fill ground in between ground facing up and down (`sidesOf`: which
-  edges of a tile are ground). Tested in `tests/autotile.test.mjs`.
+  edges of a tile are ground). `closed: true` lays a loop (the editor's Shape tool, `drawLoop`);
+  `look: false` leaves the look pass for later (`lookPath`). Tested in `tests/autotile.test.mjs`.
 - `tools/map.html`: draws whole tracks as maps (serve the repo, open `/tools/map.html?stages=9,10,11`).
 - `tests/bot.mjs`: a simulated driver (backs up for run-ups when it stalls) for checking that
   generated courses can be driven. Endless never climbs more than `MAX_RISE` tiles within
