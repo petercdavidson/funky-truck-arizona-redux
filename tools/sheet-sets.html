@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tile sheet: sets of tiles drawn as one picture</title>
+  <!--
+    The tile sheet with its sets marked: tiles next to each other on the sheet join up only where
+    the art carries straight across their shared edge (they were drawn as one picture). Each set
+    is tinted its own colour and outlined in red; a red line between two tiles means they don't
+    join. Yellow numbers have collision (ground pieces); cyan ones are art. Serve the repo
+    (npm start) and open /tools/sheet-sets.html.
+  -->
+  <style>
+    body { margin: 16px; background: #1a1817; color: #efe9e3; font: 14px system-ui, sans-serif; }
+    canvas { display: block; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div>Tile sheet sets: tinted and outlined in red. A red line between two tiles: they don't join. Yellow: ground pieces; cyan: art; grey: empty.</div>
+  <canvas id="map"></canvas>
+  <script type="module">
+    import { loadAssets } from '../src/assets.js';
+    const a = await loadAssets('../assets/');
+    const N = a.tiles.length, COLS = 10, ROWS = Math.ceil(N / COLS), S = 72;
+    const px = a.tiles.map((t) => t.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, 64, 64).data);
+    const P = (id, x, y) => { const d = px[id], i = (y * 64 + x) * 4; return [d[i], d[i + 1], d[i + 2], d[i + 3]]; };
+    const empty = (id) => { const d = px[id]; for (let i = 3; i < d.length; i += 4) if (d[i] > 30) return false; return true; };
+    // how much a line of pixels changes from one to the next (opacity, and colour where opaque)
+    const lineDiff = (f, g) => { let s = 0; for (let k = 0; k < 64; k++) { const p = f(k), q = g(k), al = Math.max(p[3], q[3]) / 255; s += Math.abs(p[3] - q[3]) / 255 + al * (Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) + Math.abs(p[2] - q[2])) / 765; } return s / 64; };
+    const JOIN = 0.05;   // across the edge: under this, the picture carries on (joined pairs measure under 0.03, others over 0.12)
+    const jh = new Set(), jv = new Set();
+    const par = [...Array(N).keys()], find = (i) => (par[i] === i ? i : (par[i] = find(par[i])));
+    for (let id = 0; id < N; id++) {
+      if (empty(id)) continue;
+      if (id % COLS + 1 < COLS && id + 1 < N && !empty(id + 1) && lineDiff((k) => P(id, 63, k), (k) => P(id + 1, 0, k)) < JOIN) { jh.add(id); par[find(id)] = find(id + 1); }
+      if (id + COLS < N && !empty(id + COLS) && lineDiff((k) => P(id, k, 63), (k) => P(id + COLS, k, 0)) < JOIN) { jv.add(id); par[find(id)] = find(id + COLS); }
+    }
+    const cv = document.getElementById('map'), g = cv.getContext('2d');
+    cv.width = COLS * S + 4; cv.height = ROWS * S + 4;
+    g.fillStyle = '#9cbad1'; g.fillRect(0, 0, cv.width, cv.height);
+    const hue = new Map(), size = new Map();
+    for (let i = 0; i < N; i++) size.set(find(i), (size.get(find(i)) || 0) + 1);
+    const pos = (id) => [2 + (id % COLS) * S, 2 + Math.floor(id / COLS) * S];
+    for (let id = 0; id < N; id++) {
+      const [x, y] = pos(id);
+      if (empty(id)) { g.fillStyle = '#bbb'; g.fillRect(x, y, S, S); continue; }
+      g.drawImage(a.tiles[id], x, y, S, S);
+      const r = find(id);
+      if (size.get(r) > 1) { if (!hue.has(r)) hue.set(r, (hue.size * 67) % 360); g.fillStyle = `hsla(${hue.get(r)},90%,55%,0.25)`; g.fillRect(x, y, S, S); }
+      g.font = 'bold 15px system-ui'; g.lineWidth = 3; g.strokeStyle = '#000'; g.fillStyle = a.levels.collision[id]?.length ? '#ffe14d' : '#7ef';
+      g.strokeText(id, x + 4, y + 17); g.fillText(id, x + 4, y + 17);
+    }
+    g.strokeStyle = '#e0002a'; g.lineWidth = 3;
+    for (let id = 0; id < N; id++) {
+      if (empty(id)) continue;
+      const [x, y] = pos(id), c = id % COLS, r = Math.floor(id / COLS);
+      for (const [joined, x1, y1, x2, y2] of [[c + 1 < COLS && jh.has(id), x + S, y, x + S, y + S], [c > 0 && jh.has(id - 1), x, y, x, y + S],
+        [jv.has(id), x, y + S, x + S, y + S], [r > 0 && jv.has(id - COLS), x, y, x + S, y]]) {
+        if (!joined) { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); }
+      }
+    }
+  </script>
+</body>
+</html>
