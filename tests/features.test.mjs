@@ -176,7 +176,7 @@ test('stats are counted as you play, saved, and checked when read back', () => {
   assert.ok(g.stats.mostFlips >= 2);
   assert.equal(g.stats.frontflips, before + 2, 'a Double Frontflip is two flips');
   assert.ok(g.stats.tricks.Frontflip >= 1);
-  g.showMenu('practiceSelect');
+  g.showMenu('trialSelect');
   assert.deepEqual(store.get('stats'), g.stats, 'saved on leaving the run');
   assert.deepEqual(new Game(data, { store }).stats, g.stats, 'read back');
   store.set('stats', { runs: -3, maxAir: 'lots', topSpeed: 1e99, tricks: { Clean: NaN, Wheelie: 4 }, distance: 12.5 });

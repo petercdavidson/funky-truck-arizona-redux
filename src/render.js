@@ -8,7 +8,7 @@ import { HUD_FONT, TITLE_FONT, BODY_PAINTS, tileImage } from './assets.js';
 import { TRICK } from './tricks.js';
 import { VERSION, BUILD } from './version.js';
 import { Wreck } from './wreck.js';
-import { TRIAL_ALL, formatTime, formatGap } from './trial.js';
+import { TRIAL_ALL, TRIAL_STUNTS, formatTime, formatGap } from './trial.js';
 import { battleBack, battleFront, battleHud } from './render-battle.js';
 import { circles } from './battle.js';
 import { SANDBOX_ROWS, SANDBOX_ROW, sandboxValue } from './sandbox.js';
@@ -16,7 +16,7 @@ import { formatSpeed, formatDistance, formatHeight, speedoShare } from './units.
 
 const DEG = Math.PI / 180;
 const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'sandboxTweaks', 'gameOver']);
-const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'help', 'garage', 'practiceSelect', 'trialSelect', 'sandbox', 'stageEditor', 'stageLoad']);
+const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'help', 'garage', 'trialSelect', 'sandbox', 'stageEditor', 'stageLoad']);
 const AHEAD = '#8ff0a4', BEHIND = '#ffb0a0'; // Time Trial gaps: ahead of / behind your best
 const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
@@ -102,8 +102,7 @@ export const MODES = [
   ['Standard', 'standard', 'The nine stages, with tricks and all the new extras'],
   ['Classic', 'classic', 'The original game, exactly as it was'],
   ['Endless', 'endless', 'A course that goes on for ever: how far can you get?'],
-  ['Time Trial', 'trial', 'Race the clock, and your best run\'s ghost'],
-  ['Practice', 'practice', 'Any one stage, and the stunt tracks'],
+  ['Time Trial', 'trial', 'Any stage against the clock and your ghost, and the stunt tracks'],
   ['Sandbox', 'sandbox', 'Any track, with the physics as you like'],
   ['Stage Editor', 'stageEditor', 'Build your own stages, and play them'],
 ];
@@ -142,19 +141,27 @@ function stageEditorButtons(tall) {
   ];
 }
 
-const PRACTICE_OPTIONS = [
+const LOOK_PARTS = ['body', 'paint', 'tyre', 'hub'];
+/**
+ * Time Trial's screen (Practice is part of it): the nine stages' cards in a 3x3 grid, All Nine,
+ * then the stunt tracks' cards, and the switches. Where each goes, on the usual page and the tall.
+ */
+const trialCard = (i) => r(112 + 100 * (i % 3), 58 + 56 * Math.floor(i / 3), 92, 50);
+const tallTrialCard = (i) => r(20 + 110 * (i % 3), 70 + 74 * Math.floor(i / 3), 100, 66);
+const TRIAL_ALL_CARD = r(112, 228, 292, 34), TALL_TRIAL_ALL_CARD = r(20, 292, 320, 44);
+const stuntCard = (i) => r(112 + 100 * i, 290, 92, 50);
+const tallStuntCard = (i) => r(20 + 110 * i, 372, 100, 62);
+/** Time Trial's switches: [label, action]. */
+const TRIAL_OPTIONS = [
+  [(g) => `Tricks: ${onOff(g.trialTricks && !g.practiceClassic)}`, 'trialTricks'],
   [(g) => `Damage: ${onOff(g.practiceDamage)}`, 'practiceDamage'],
   [(g) => `Classic: ${onOff(g.practiceClassic)}`, 'practiceClassic'],
+  [(g) => `Ghost: ${onOff(g.ghostOn)}`, 'ghostOn'],
 ];
-const LOOK_PARTS = ['body', 'paint', 'tyre', 'hub'];
-/** Where Time Trial's stage cards go: a 3x3 grid on the usual page, and on the tall page. */
-const trialCard = (i) => ({ x: 112 + 100 * (i % 3), y: 68 + 68 * Math.floor(i / 3) });
-const tallTrialCard = (i) => ({ x: 20 + 110 * (i % 3), y: 76 + 92 * Math.floor(i / 3) });
-/** Practice's stunt-track buttons (after the nine stages), labelled with the tracks' names. */
+/** Why a Time Trial run's time won't count, if it won't (for the screen and the game-over box). */
+const trialNote = (g) => (!g.practiceDamage ? 'Damage off: times aren\'t records' : g.practiceClassic ? 'Classic rules: times aren\'t records' : 'Times count with damage on');
+/** How many stunt tracks Time Trial's screen has room for. */
 const STUNTS = 3;
-const stuntButtons = (place, extra = {}) => Array.from({ length: STUNTS }, (_, i) => ({
-  rect: place(i), label: (g) => g.stageName(9 + i), action: `stage${9 + i}`, show: (g) => (g.stunts?.length ?? 0) > i, ...extra,
-}));
 /** The garage's note that the truck's look is only a look. */
 const COSMETIC = 'Looks only: every truck drives exactly the same';
 
@@ -284,17 +291,12 @@ export const BUTTONS = {
       { rect: r(344, 226 + 34 * i, 32, 32), action: `${part}+1` },
     ]),
   ],
-  practiceSelect: [
-    ...Array.from({ length: 9 }, (_, i) => ({ rect: r(136 + 34 * i, 228.05, 32, 32), action: `stage${i}` })),
-    ...stuntButtons((i) => r(154 + 92 * i, 290, 84, 25)),
-    { rect: r(229, 413, 120, 25), label: 'Menu', action: 'menu' },
-    ...PRACTICE_OPTIONS.map(([label, action], i) => option(290 + 24 * i, label, action)),
-  ],
   trialSelect: [
-    ...Array.from({ length: 9 }, (_, i) => ({ rect: r(trialCard(i).x, trialCard(i).y, 92, 58), action: `trial${i}` })),
-    { rect: r(112, 274, 292, 40), action: `trial${TRIAL_ALL}` },
-    { rect: r(198, 336, 120, 25), label: 'Menu', action: 'menu' },
-    option(120, (g) => `Ghost: ${onOff(g.ghostOn)}`, 'ghostOn'),
+    ...Array.from({ length: 9 }, (_, i) => ({ rect: trialCard(i), action: `trial${i}` })),
+    { rect: TRIAL_ALL_CARD, action: `trial${TRIAL_ALL}` },
+    ...Array.from({ length: STUNTS }, (_, i) => ({ rect: stuntCard(i), action: `trial${TRIAL_STUNTS + i}`, show: (g) => (g.stunts?.length ?? 0) > i })),
+    { rect: r(198, 404, 120, 25), label: 'Menu', action: 'menu' },
+    ...TRIAL_OPTIONS.map(([label, action], i) => option(96 + 26 * i, label, action)),
   ],
   sandbox: sandboxButtons(false, false),
   stageEditor: stageEditorButtons(false),
@@ -306,11 +308,10 @@ export const BUTTONS = {
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 680, modes: 680, stats: 760, options: 620, pauseOptions: 620, help: 560, garage: 580, practiceSelect: 540, trialSelect: 540, sandbox: 680, sandboxTweaks: 640, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
+export const TALL_H = { title: 680, modes: 680, stats: 760, options: 620, pauseOptions: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 680, sandboxTweaks: 640, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
-const tallStage = (i) => ({ x: 64 + 80 * (i % 3), y: 80 + 80 * Math.floor(i / 3) });
 
 export const TALL_BUTTONS = {
   title: MENU.map(([label, action], i) => ({ rect: r(60, 262 + 54 * i, 240, 42), label, action, ...T_BIG })),
@@ -333,17 +334,12 @@ export const TALL_BUTTONS = {
       { rect: r(282, 268 + 56 * i, 48, 48), action: `${part}+1` },
     ]),
   ],
-  practiceSelect: [
-    ...Array.from({ length: 9 }, (_, i) => ({ rect: r(tallStage(i).x, tallStage(i).y, 72, 72), action: `stage${i}` })),
-    ...stuntButtons((i) => r(9 + 116 * i, 344, 110, 36), { size: 13 }),
-    ...PRACTICE_OPTIONS.map(([label, action], i) => ({ rect: r(95, 404 + 35 * i, 170, 28), label, action, ...T_SMALL })),
-    { rect: r(80, 490, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
-  ],
   trialSelect: [
-    ...Array.from({ length: 9 }, (_, i) => ({ rect: r(tallTrialCard(i).x, tallTrialCard(i).y, 100, 80), action: `trial${i}` })),
-    { rect: r(20, 360, 320, 52), action: `trial${TRIAL_ALL}` },
-    { rect: r(95, 428, 170, 28), label: (g) => `Ghost: ${onOff(g.ghostOn)}`, action: 'ghostOn', ...T_SMALL },
-    { rect: r(80, 476, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
+    ...Array.from({ length: 9 }, (_, i) => ({ rect: tallTrialCard(i), action: `trial${i}` })),
+    { rect: TALL_TRIAL_ALL_CARD, action: `trial${TRIAL_ALL}` },
+    ...Array.from({ length: STUNTS }, (_, i) => ({ rect: tallStuntCard(i), action: `trial${TRIAL_STUNTS + i}`, show: (g) => (g.stunts?.length ?? 0) > i })),
+    ...TRIAL_OPTIONS.map(([label, action], i) => ({ rect: r(20 + 165 * (i % 2), 450 + 36 * Math.floor(i / 2), 155, 28), label, action, ...T_SMALL })),
+    { rect: r(80, 560, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
   ],
   sandbox: sandboxButtons(true, false),
   stageEditor: stageEditorButtons(true),
@@ -367,7 +363,10 @@ export function buttonsFor(screen, tall = false) {
 export function runName(game) {
   if (game.mode === 'endless') return `Endless  ·  ${game.metres} m`;
   if (game.mode === 'sandbox') return `Sandbox  ·  ${game.onCourse ? `Endless  ·  ${game.metres} m` : game.sandboxCustom ? game.customLevel.name : game.stageName(game.level)}`;
-  if (game.mode === 'trial') return `Time Trial  ·  ${trialName(game, game.track)}`;
+  if (game.mode === 'trial') {
+    const rules = [game.rules.classic && 'Classic rules', !game.rules.damage && 'no damage', game.rules.tricks === false && !game.rules.classic && 'no tricks'].filter(Boolean);
+    return `Time Trial  ·  ${trialName(game, game.track)}${rules.length ? `  (${rules.join(', ')})` : ''}`;
+  }
   if (game.mode === 'custom') {
     const rules = [game.rules.classic && 'Classic rules', !game.rules.damage && 'no damage'].filter(Boolean);
     return `${game.customLevel.name}${rules.length ? `  (${rules.join(', ')})` : ''}`;
@@ -393,7 +392,7 @@ export function reachedLine(game) {
 }
 
 /** A Time Trial track's name: a stage's, or All Nine. */
-export function trialName(game, track) { return track === TRIAL_ALL ? 'All Nine' : game.stageName(track); }
+export function trialName(game, track) { return track === TRIAL_ALL ? 'All Nine' : track >= TRIAL_STUNTS ? game.stageName(9 + track - TRIAL_STUNTS) : game.stageName(track); }
 
 /** A button's rect (some, like Sandbox's list of choices, depend on the game). */
 export const rectOf = (b, game) => (typeof b.rect === 'function' ? b.rect(game) : b.rect);
@@ -988,7 +987,8 @@ export class Renderer {
       this.text(`▼ ${formatHeight(game.altitude, game.imperial)}`, 13.1, ya + 29, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic', color: 'rgba(255,255,255,0.9)' });
     }
     const hud = { size: 12.85, font: HUD_FONT, weight: '800', align: 'right' };
-    if (game.mode === 'trial') { this.trialHud(game, R, hud); return; }
+    // (Time Trial's stunt tracks have no clock: their HUD is the score, as anywhere else)
+    if (game.mode === 'trial' && !game.isStunt) { this.trialHud(game, R, hud); return; }
     this.text('score', R + 0.5, 9, { size: 12.5, font: HUD_FONT, weight: '800', align: 'right' });
     this.text(String(game.score), R, 22, hud);
     let y2 = 34;
@@ -1019,6 +1019,16 @@ export class Renderer {
     }
     const best = game.trialBests[game.track];
     if (best) this.text(`best ${formatTime(best)}`, R, 62, { ...hud, size: 11, color: 'rgba(255,255,255,0.85)' });
+    // with tricks on, their score (and a chain being built) under it
+    if (game.rules.tricks !== false && !game.rules.classic) {
+      let y = best ? 76 : 62;
+      if (game.score > 0) { this.text(`${game.score.toLocaleString('en-US')} pts`, R, y, { ...hud, size: 11, color: 'rgba(255,255,255,0.85)' }); y += 13; }
+      const chain = game.tricks.chain;
+      if (chain.length && game.screen !== 'gameOver') {
+        const m = game.tricks.multiplier;
+        this.text(`+${game.tricks.chainPoints}${m > 1 ? `  x${m}` : ''}`, R, y, { ...hud, size: 11, color: 'rgba(255,255,255,0.6)' });
+      }
+    }
     this.trickNames(game);
     if (game.tickerTimer > 0 && game.screen !== 'gameOver') this.text(game.ticker, this.hudW / 2, 82 + this.hudDrop, { size: 15, font: HUD_FONT, weight: '800' });
   }
@@ -1220,28 +1230,6 @@ export class Renderer {
     this.buttons('garage', game);
   }
 
-  practiceSelect(game) {
-    if (this.tall) {
-      this.text('Choose a Stage', TALL_W / 2, 38, { size: 19, weight: '700' });
-      for (let i = 0; i < 9; i++) {
-        const { x, y } = tallStage(i);
-        this.box('screen_practice.png', 136, 228, 32, 32, x, y, 72, 72, 10);
-        this.text(String(i + 1), x + 36, y + 22, { size: 28, weight: '700' });
-      }
-      if (game.stunts.length) this.text('Stunt Tracks', TALL_W / 2, 318, { size: 17, weight: '700' });
-      this.buttons('practiceSelect', game);
-      return;
-    }
-    this.text('Choose a Stage', STAGE_W / 2, 164, { size: 14, weight: '700' });
-    for (let i = 0; i < 9; i++) {
-      const x = 136 + 34 * i;
-      this.box('screen_practice.png', 136, 228, 32, 32, x, 228, 32, 32);
-      this.text(String(i + 1), x + 16, 234.5, { size: 17, weight: '700' });
-    }
-    if (game.stunts.length) this.text('Stunt Tracks', 288, 272, { size: 13, weight: '700' });
-    this.buttons('practiceSelect', game);
-  }
-
   /** The Options screen: each option as a button, with a line on what it does. */
   options(game, screen = 'options') {
     const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
@@ -1261,25 +1249,37 @@ export class Renderer {
     this.options(game, 'pauseOptions');
   }
 
-  /** Time Trial's stage list: a card per stage with its best time, then all nine in a row. */
+  /**
+   * Time Trial's screen: a card per stage with its best time, all nine in a row, then the stunt
+   * tracks with their best trick scores, and the switches (with a note on whether times count).
+   */
   trialSelect(game) {
     const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
     const best = (t) => (game.trialBests[t] ? formatTime(game.trialBests[t]) : '—');
-    const card = (x, y, w, h, big, small, bigSize, smallSize) => {
+    const score = (t) => (game.stuntBests?.[t] ? `${game.stuntBests[t].toLocaleString('en-US')} pts` : '—');
+    const card = ({ x, y, w, h }, big, small, bigSize, smallSize) => {
       this.roundRect(x, y, w, h, tall ? 8 : 6, BUTTON_FILL);
-      this.text(big, x + w / 2, y + h * 0.16, { size: bigSize, weight: '800' });
-      this.text(small, x + w / 2, y + h * 0.62, { size: smallSize, weight: '700', color: small === '—' ? 'rgba(255,255,255,0.6)' : '#fff' });
+      this.fitText(big, x + w / 2, y + h * 0.14, w - 10, { size: bigSize, weight: '800' });
+      this.fitText(small, x + w / 2, y + h * 0.6, w - 8, { size: smallSize, weight: '700', color: small === '—' ? 'rgba(255,255,255,0.6)' : '#fff' });
     };
+    const note = { weight: '600', color: 'rgba(255,255,255,0.8)' };
+    const stunts = Math.min(STUNTS, game.stunts?.length ?? 0);
     if (tall) {
-      this.text('Time Trial', cx, 18, { size: 22, weight: '800' });
-      this.text('Race the clock, and your best run\'s ghost', cx, 48, { size: 13, weight: '600', color: 'rgba(255,255,255,0.8)' });
-      for (let i = 0; i < 9; i++) { const { x, y } = tallTrialCard(i); card(x, y, 100, 80, String(i + 1), best(i), 26, 14); }
-      card(20, 360, 320, 52, 'All Nine', best(TRIAL_ALL), 17, 14);
+      this.text('Time Trial', cx, 14, { size: 22, weight: '800' });
+      this.text('Race the clock and your ghost, or score tricks', cx, 44, { ...note, size: 13 });
+      for (let i = 0; i < 9; i++) card(tallTrialCard(i), String(i + 1), best(i), 24, 14);
+      card(TALL_TRIAL_ALL_CARD, 'All Nine', best(TRIAL_ALL), 16, 13);
+      if (stunts) this.text('Stunt Tracks', cx, 344, { size: 15, weight: '700' });
+      for (let i = 0; i < stunts; i++) card(tallStuntCard(i), game.stageName(9 + i), score(TRIAL_STUNTS + i), 13, 12);
+      this.text(trialNote(game), cx, 522, { ...note, size: 12 });
     } else {
-      this.text('Time Trial', 258, 16, { size: 20, weight: '800' });
-      this.text('Race the clock, and your best run\'s ghost', 258, 42, { size: 12, weight: '600', color: 'rgba(255,255,255,0.8)' });
-      for (let i = 0; i < 9; i++) { const { x, y } = trialCard(i); card(x, y, 92, 58, String(i + 1), best(i), 19, 12); }
-      card(112, 274, 292, 40, 'All Nine', best(TRIAL_ALL), 14, 11);
+      this.text('Time Trial', 258, 10, { size: 20, weight: '800' });
+      this.text('Race the clock and your best run\'s ghost, or score tricks on the stunt tracks', 258, 36, { ...note, size: 11 });
+      for (let i = 0; i < 9; i++) card(trialCard(i), String(i + 1), best(i), 18, 12);
+      card(TRIAL_ALL_CARD, 'All Nine', best(TRIAL_ALL), 13, 11);
+      if (stunts) this.text('Stunt Tracks', 258, 270, { size: 12.5, weight: '700' });
+      for (let i = 0; i < stunts; i++) card(stuntCard(i), game.stageName(9 + i), score(TRIAL_STUNTS + i), 12, 11);
+      this.wrapText(trialNote(game), 494, 202, 132, { ...note, size: 10.5 }, 13);
     }
     this.buttons('trialSelect', game);
   }
@@ -1453,10 +1453,18 @@ export class Renderer {
       : game.mode === 'sandbox' ? [`Time: ${formatTime(game.clock)}`, `Score: ${game.lastScore}`]
       : [`Score: ${game.lastScore}`, game.rules.damage ? `Best: ${game.bestForRules}` : ''];
     let gapColor = null;
-    if (game.mode === 'trial') {
+    if (game.mode === 'trial' && game.isStunt) {
+      // a stunt track: the trick score, and the track's best (kept with damage on)
+      const r = game.stuntResult, best = game.stuntBests[game.track];
+      if (r?.record) title = 'New Best!';
+      lines = [`Score: ${game.lastScore.toLocaleString('en-US')}`, !game.stuntCounts ? 'Damage off: not kept as a best' : best ? `Best: ${best.toLocaleString('en-US')}` : ''];
+    } else if (game.mode === 'trial') {
       const r = game.trialResult, best = game.trialBests[game.track];
       if (!r) lines = ['Did not finish', best ? `Best: ${formatTime(best)}` : ''];
-      else {
+      else if (!r.counts) {
+        title = 'Finished';
+        lines = [`Time: ${formatTime(r.time)}`, game.rules.classic ? 'Classic rules: not a record' : 'Damage off: not a record'];
+      } else {
         title = r.record ? 'New Record!' : 'Finished';
         const gap = r.best === null ? 'Your first time on the board'
           : r.time < r.best ? `${formatGap(r.best - r.time).slice(1)} s faster than your best`
@@ -1534,7 +1542,6 @@ export class Renderer {
         case 'help': this.help(game); break;
         case 'options': this.options(game); break;
         case 'garage': this.garage(game, v); break;
-        case 'practiceSelect': this.practiceSelect(game); break;
         case 'trialSelect': this.trialSelect(game); break;
         case 'sandbox': this.sandboxScreen(game, 'sandbox'); break;
         case 'stageEditor': this.stageEditor(game); break;

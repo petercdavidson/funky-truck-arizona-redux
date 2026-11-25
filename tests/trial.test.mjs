@@ -2,12 +2,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Game, TILE } from '../src/game.js';
+import { Game, TILE, unpackLevel } from '../src/game.js';
 import { TRIAL_ALL, POSE, formatTime, formatGap, encodePoses, decodePoses, loadGhost, validBests } from '../src/trial.js';
 import { memoryStore } from './helpers.mjs';
 import { drive } from './bot.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
+data.stunts = JSON.parse(readFileSync(new URL('../assets/stunts.json', import.meta.url))).map(unpackLevel);
 
 test('times read as m:ss.cc, and gaps as signed seconds', () => {
   assert.equal(formatTime(0), '0:00.00');
@@ -39,7 +40,10 @@ test('saved Time Trial data is checked before use', () => {
 function runStageOne(store) {
   const g = new Game(data, { store });
   g.startTrial(0);
-  g.rules = { ...g.rules, damage: false }; // the simulated driver isn't careful enough for damage
+  // The simulated driver isn't careful enough for damage, so it drives without; a time without
+  // damage doesn't count, so the run is let count anyway (that rule has a test of its own).
+  g.rules = { ...g.rules, damage: false };
+  Object.defineProperty(g, 'timeCounts', { get: () => true });
   drive(g, { steps: 6000 });
   for (let i = 0; i < 400 && g.screen === 'playing'; i++) g.step();
   return g;
@@ -150,9 +154,79 @@ test('quitting Practice or Time Trial goes back to its list of stages', () => {
   g.startTrial(2);
   assert.equal(g.quitScreen, 'trialSelect');
   g.startPractice(4);
-  assert.equal(g.quitScreen, 'practiceSelect');
+  assert.equal(g.quitScreen, 'trialSelect', 'Practice is part of Time Trial now');
   g.startCampaign();
   assert.equal(g.quitScreen, 'title');
   g.startEndless();
   assert.equal(g.quitScreen, 'title');
+});
+
+test('Time Trial without damage, or by Classic rules, shows the time but sets no record', () => {
+  for (const which of ['damage', 'classic']) {
+    const store = memoryStore();
+    const g = new Game(data, { store });
+    if (which === 'damage') g.toggle('practiceDamage'); else g.toggle('practiceClassic');
+    g.startTrial(0);
+    assert.equal(g.timeCounts, false);
+    drive(g, { steps: 6000 });
+    for (let i = 0; i < 400 && g.screen === 'playing'; i++) g.step();
+    assert.equal(g.screen, 'gameOver');
+    if (!g.finished) continue; // (Classic's ceiling can stop the simulated driver)
+    assert.ok(g.trialResult && g.trialResult.time > 0 && !g.trialResult.record && !g.trialResult.counts, which);
+    assert.equal(store.get('trialBests'), null, `${which}: no best time saved`);
+    assert.equal(store.get('ghost0'), null, `${which}: no ghost saved`);
+  }
+});
+
+test('Time Trial tricks can be switched off; with them on, tricks score on a timed stage', async () => {
+  const { turnOver } = await import('./helpers.mjs');
+  for (const on of [true, false]) {
+    const g = new Game(data, { store: memoryStore() });
+    if (!on) g.toggle('trialTricks');
+    g.startTrial(0);
+    assert.equal(g.rules.tricks, on);
+    for (let i = 0; i < 150; i++) g.step();
+    // a big drop with a flip
+    const t = g.truck;
+    for (let i = 0; i < 10; i += 2) { t.T[i + 1] -= 700; t.P[i + 1] = t.T[i + 1]; t.P[i] = t.T[i]; }
+    t.probePrev = null; t.addSpin(0.09);
+    let named = 0;
+    for (let i = 0; i < 400; i++) { g.step(); if (g.tricks.show) named++; }
+    if (on) assert.ok(named > 0 && g.score > 0, `tricks scored (${g.score})`);
+    else assert.ok(named === 0 && g.score === 0, 'no tricks with them off');
+    void turnOver;
+  }
+});
+
+test('Time Trial\'s stunt tracks: no clock, and the best trick score is kept when the run ends', async () => {
+  const { TRIAL_STUNTS } = await import('../src/trial.js');
+  const store = memoryStore();
+  const g = new Game(data, { store });
+  g.startTrial(TRIAL_STUNTS);
+  assert.equal(g.levelData.name, data.stunts[0].name);
+  assert.ok(g.isStunt && !g.timeCounts && g.stuntCounts);
+  assert.equal(g.hasNextTrial, true, 'on to the next stunt track');
+  for (let i = 0; i < 200; i++) g.step();
+  g.score = 4321;
+  g.togglePause();
+  g.showMenu(g.quitScreen);
+  assert.equal(g.screen, 'trialSelect');
+  assert.equal(store.get('stuntBests')[TRIAL_STUNTS], 4321);
+  // a lower score doesn't replace it; a wreck ends the run and keeps a better one
+  g.startTrial(TRIAL_STUNTS);
+  g.score = 100;
+  g.restart();
+  assert.equal(store.get('stuntBests')[TRIAL_STUNTS], 4321);
+  g.score = 9000;
+  g.damage = 1000;
+  for (let i = 0; i < 400 && g.screen === 'playing'; i++) g.step();
+  assert.equal(g.screen, 'gameOver');
+  assert.equal(new Game(data, { store }).stuntBests[TRIAL_STUNTS], 9000);
+  assert.ok(g.stuntResult.record);
+  // without damage it isn't kept
+  g.toggle('practiceDamage');
+  g.startTrial(TRIAL_STUNTS + 1);
+  g.score = 50000;
+  g.showMenu('trialSelect');
+  assert.equal(store.get('stuntBests')[TRIAL_STUNTS + 1], undefined);
 });

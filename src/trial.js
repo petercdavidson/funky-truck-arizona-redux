@@ -10,9 +10,13 @@
 
 import { STEP_HZ } from './game.js';
 
-/** Track numbers: 0-8 are the nine stages; TRIAL_ALL is all nine in a row. */
+/**
+ * Track numbers: 0-8 are the nine stages; TRIAL_ALL is all nine in a row (these have times and
+ * ghosts: TRIAL_TRACKS of them); then the stunt tracks from TRIAL_STUNTS, which have trick scores.
+ */
 export const TRIAL_ALL = 9;
 export const TRIAL_TRACKS = 10;
+export const TRIAL_STUNTS = 10;
 /** Steps between recorded ghost poses (the renderer interpolates between them). */
 export const GHOST_EVERY = 2;
 /** Numbers per recorded pose: the stage, then the truck's 5 points (x, y each). */
@@ -67,6 +71,18 @@ export function validBests(v) {
     for (let t = 0; t < TRIAL_TRACKS; t++) {
       const n = v[t];
       if (Number.isInteger(n) && n > 0 && n < 1e8) out[t] = n;
+    }
+  }
+  return out;
+}
+
+/** The stunt tracks' best trick scores, as saved: { track: points }. */
+export function validStuntBests(v) {
+  const out = {};
+  if (v && typeof v === 'object') {
+    for (const [k, n] of Object.entries(v)) {
+      const t = Number(k);
+      if (Number.isInteger(t) && t >= TRIAL_STUNTS && t < TRIAL_STUNTS + 20 && Number.isInteger(n) && n > 0 && n < 1e10) out[t] = n;
     }
   }
   return out;

@@ -602,8 +602,8 @@ test('the tall menu layouts keep every button on the page, apart from the others
     const actions = (l) => new Set(l.map((b) => b.action));
     assert.deepEqual(actions(TALL_BUTTONS[screen]), actions(BUTTONS[screen]), screen);
   }
-  const practice = TALL_BUTTONS.modes.find((b) => b.action === 'practice').rect;
-  assert.equal(hitButton('modes', practice.x + 5, practice.y + 5, g, true).action, 'practice');
+  const trial = TALL_BUTTONS.modes.find((b) => b.action === 'trial').rect;
+  assert.equal(hitButton('modes', trial.x + 5, trial.y + 5, g, true).action, 'trial');
 });
 
 test('the chassis bottoming out on a hard landing is no scrape outside Classic; Classic still counts it', () => {

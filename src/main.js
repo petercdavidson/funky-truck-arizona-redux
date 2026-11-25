@@ -182,7 +182,7 @@ function doAction(a) {
     return;
   }
   sound.play('click');
-  if (['oneButton', 'practiceDamage', 'practiceClassic', 'customDamage', 'customClassic', 'dynamicCamera', 'crashCam', 'ghostOn', 'showFps', 'imperial'].includes(a)) { game.toggle(a); return; }
+  if (['oneButton', 'practiceDamage', 'practiceClassic', 'trialTricks', 'customDamage', 'customClassic', 'dynamicCamera', 'crashCam', 'ghostOn', 'showFps', 'imperial'].includes(a)) { game.toggle(a); return; }
   if (a === 'play') game.showMenu('modes');
   else if (a === 'back') game.showMenu('title');
   else if (a === 'stats') game.showMenu('stats');
@@ -214,10 +214,9 @@ function doAction(a) {
   else if (a === 'tweaks') game.openTweaks();
   else if (a === 'tweaksBack') game.closeTweaks();
   else if (a === 'endRun') game.endRun();
-  else if (a === 'practice') game.showMenu('practiceSelect');
   else if (a === 'trial') game.showMenu('trialSelect');
   else if (a === 'options') game.showMenu('options');
-  else if (/^trial\d$/.test(a)) game.startTrial(Number(a.slice(5)));
+  else if (/^trial\d+$/.test(a)) game.startTrial(Number(a.slice(5)));
   else if (a === 'garage') game.showMenu('garage');
   else if (a === 'help') game.showMenu('help');
   else if (a === 'menu') goMenu();
@@ -225,7 +224,6 @@ function doAction(a) {
   else if (a === 'again') game.restart();
   else if (a === 'nextStage') { if (game.mode === 'trial') game.nextTrial(); else game.nextPractice(); }
   else if (a === 'resume') game.togglePause();
-  else if (a.startsWith('stage')) game.startPractice(Number(a.slice(5)));
   else {
     const m = /^(body|paint|tyre|hub)([+-]1)$/.exec(a);
     if (m) game.cycleLook(m[1], Number(m[2]));
@@ -602,7 +600,7 @@ function applyTestParams() {
     Object.assign(game.look, { body, tyre, hub, paint: Number.isInteger(paint) ? paint : body });
   }
   const frames = Number(q.get('frames')) || 0;
-  const screens = { garage: 'garage', help: 'help', practice: 'practiceSelect', trials: 'trialSelect', sandboxSetup: 'sandbox', title: 'title', modes: 'modes', stats: 'stats', options: 'options' };
+  const screens = { garage: 'garage', help: 'help', practice: 'trialSelect', trials: 'trialSelect', sandboxSetup: 'sandbox', title: 'title', modes: 'modes', stats: 'stats', options: 'options' };
   if (screens[test]) {
     game.showMenu(screens[test]);
     for (let i = 0; i < 300; i++) game.step();

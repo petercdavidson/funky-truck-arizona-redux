@@ -57,7 +57,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   the clock (from first landing to the finish line) and records the ghost; ghosts are poses, not
   inputs, so they survive physics changes.
 - `src/version.js`: the version on the title screen (the Pages deploy stamps in the commit).
-- `assets/stunts.json`: Practice's stunt tracks (after the nine stages), built by
+- `assets/stunts.json`: the stunt tracks (after the nine stages; in Time Trial as tracks TRIAL_STUNTS on), built by
   `node tools/make-stunts.mjs` from the stages' own column shapes and joins, stored a column at a
   time (`unpackLevel` in `game.js`). Edit the designs in that script and rerun it; don't hand-edit
   the JSON. They have no finish line; one with `loop` repeats for ever (`Game.updateLoop` shifts the
@@ -101,16 +101,22 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - The mode called Standard in the game is `mode: 'campaign'` with `RULES.play` in the code.
 - `src/stats.js` (no DOM): the High Scores screen's records and totals, counted through
   `TrickTracker`'s `onTrick` / `onBank` hooks and saved as `funkytruck.stats`.
-- Esc easter egg (`Game.selfWreck`): outside Classic rules and Time Trial, Esc wrecks the truck
+- Esc easter egg (`Game.selfWreck`): outside Classic rules and a Time Trial run that could set a time, Esc wrecks the truck
   with no game over; Esc again leaves. Not in the README on purpose.
 - "Classic" means the original gameplay, before the added features. A run's rules are
-  `game.rules = { classic, damage }`. Play, Endless, Time Trial and Practice share the new features; Classic
+  `game.rules = { classic, damage, tricks? }` (`tricks` false: Time Trial's Tricks switch off). Play,
+  Endless, Time Trial and Sandbox share the new features; Classic
   has none of them (no tricks, ragdoll, one-button controls or flip-upright, and it keeps the
   ceiling and the original flip bonus). Display fixes and quality-of-life touches are fine in Classic.
 - New features go in every mode except Classic unless the user says otherwise. General options go
   on the Options screen (`OPTIONS` in `render.js`); an option for one mode goes in the small on/off
   switches at the side of that mode's screen (`option()`).
-- Quitting a Practice or Time Trial run goes back to its stage list (`Game.quitScreen`).
+- Practice was merged into Time Trial (`mode: 'trial'`, `startTrial`): its screen (`trialSelect`) has the
+  stages, All Nine, the stunt tracks and the Tricks / Damage / Classic / Ghost switches. A time only
+  counts with damage on by the new rules (`timeCounts`); stunt tracks keep a best trick score
+  (`stuntBests`). `mode: 'practice'` (`startPractice`) is still there, with no menu of its own: the
+  tests and `?test=play` use it for a plain one-stage run.
+- Quitting a Time Trial run goes back to its stage list (`Game.quitScreen`).
 
 ## Rules that keep the game feeling right
 
