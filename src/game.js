@@ -28,6 +28,8 @@ export const METRES_PER_TILE = 2.5;
 /** The speedometer: km/h for a speed of one pixel per step (70 steps a second, 2.5 m a tile). */
 export const KMH_PER_PX_STEP = STEP_HZ * METRES_PER_TILE / TILE * 3.6;
 const POINTS_PER_TILE = 10;
+/** The fastest anything goes (only Sandbox gets near it): 9999 km/h, in px per step. */
+export const MAX_SPEED = 9999 / KMH_PER_PX_STEP;
 /** How many choices Sandbox setting `key` has. */
 
 // ---------------------------------------------------------------------------------------------
@@ -583,6 +585,8 @@ export const CAMERA = {
  * (times the zoom), and `easeIn` the steps it takes to take over from the driving camera.
  */
 export const CRASH_CAM = { maxZoom: 8, margin: 70, maxRate: 0.03, easeIn: 90 };
+/** Above this speed (px a step, about 100 km/h) the camera keeps pace with the truck (Game.updateCamera). */
+export const PACE_FROM = 12;
 /** Steps the High Scores reset waits before its Yes can be pressed (5 s). */
 export const RESET_WAIT = 350;
 
@@ -689,6 +693,7 @@ export class Game {
     this.crashCam = flag('crashCam', true);
     this.ghostOn = flag('ghost', true);
     this.showFps = flag('showFps', false);
+    this.imperial = flag('imperial', false);   // speeds in mph, heights in ft and mi (units.js)
     // Time Trial: the best time on each track (see trial.js), and the run under way.
     this.trialBests = validBests(this.store.get('trialBests'));
     this.track = 0;                   // which track (0-8 a stage, TRIAL_ALL all nine)
@@ -803,7 +808,7 @@ export class Game {
 
   /** Flip an on/off option and save it: 'soundOn', 'oneButton', 'practiceDamage', 'practiceClassic', 'dynamicCamera', 'crashCam', 'ghostOn', 'showFps'. */
   toggle(option) {
-    const key = { soundOn: 'sound', oneButton: 'oneButton', practiceDamage: 'practiceDamage', practiceClassic: 'practiceClassic', customDamage: 'customDamage', customClassic: 'customClassic', dynamicCamera: 'dynamicCamera', crashCam: 'crashCam', ghostOn: 'ghost', showFps: 'showFps' }[option];
+    const key = { soundOn: 'sound', oneButton: 'oneButton', practiceDamage: 'practiceDamage', practiceClassic: 'practiceClassic', customDamage: 'customDamage', customClassic: 'customClassic', dynamicCamera: 'dynamicCamera', crashCam: 'crashCam', ghostOn: 'ghost', showFps: 'showFps', imperial: 'imperial' }[option];
     if (!key) return;
     this[option] = !this[option];
     this.store.set(key, this[option]);
@@ -1060,6 +1065,7 @@ export class Game {
     this.speedKmh = 0;
     this.zoom = 1; this.zoomV = 0; this.ground = 0; this.groundV = 0; this.camSpeed = 0; this.camSpeedV = 0;
     this.back = 0; this.backV = 0;
+    this.lastFocus = null; this.pace = [0, 0];
     this.camX = Math.min(Math.max(s[0] - this.camAnchorX, 0), this.maxCamX);       // s4833
     this.camY = s[1] - this.viewH / 2;
     if (this.rules.classic) this.camY = Math.min(Math.max(this.camY, 0), this.maxCamY);
@@ -1190,6 +1196,7 @@ export class Game {
     for (const d of this.dirt) { d.x -= dx; d.y -= dy; }
     if (this.battle) this.battle.shift(dx, dy);
     this.camX -= dx; this.camY -= dy;
+    if (this.lastFocus) { this.lastFocus[0] -= dx; this.lastFocus[1] -= dy; }
     this.shiftCount++;
     this.lastShift = dx; this.lastShiftY = dy;
   }
@@ -1295,6 +1302,11 @@ export class Game {
       this.crashFrom = [this.truck.T[0] - c[0], this.truck.T[1] - c[1]];
     }
     let [bx, by] = this.focus;
+    // How fast what it follows is moving (px a step), for keeping pace at high speed (below).
+    // (Not across the moment the truck is wrecked: what's followed jumps to the wreck's body.)
+    const lf = this.lastFocus?.[2] === !!this.wreck ? this.lastFocus : null;
+    const fvx = lf ? bx - lf[0] : 0, fvy = lf ? by - lf[1] : 0;
+    this.lastFocus = [bx, by, !!this.wreck];
     if (crash && this.crashFrom) { bx += this.crashFrom[0] * (1 - ease); by += this.crashFrom[1] * (1 - ease); }
     const fx = crash ? bx + (crash.centre[0] - bx) * ease : bx;
     const fy = crash ? by + (crash.centre[1] - by) * ease : by;
@@ -1324,8 +1336,19 @@ export class Game {
     const lim = this.rules.classic ? TILE * z : Math.max(TILE * z, 1.5 * Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]));
     // (The crash cam keeps the pieces in the middle.)
     const anchorX = this.camAnchorX + (this.viewW / 2 - this.camAnchorX) * ease;
-    const dx = Math.max(Math.min((fx - anchorX * z - this.camX) * 0.2, lim), -lim);
-    const dy = Math.max(Math.min((fy - this.viewH * z / 2 - this.camY) * 0.2, lim), -lim);
+    let dx = Math.max(Math.min((fx - anchorX * z - this.camX) * 0.2, lim), -lim);
+    let dy = Math.max(Math.min((fy - this.viewH * z / 2 - this.camY) * 0.2, lim), -lim);
+    // Following a fifth of the way each step, the camera trails five steps' travel behind: fine at
+    // the original's speeds, but at Sandbox's (a boost, no gravity) the truck would leave the
+    // screen. Outside Classic it also moves with whatever is followed beyond PACE_FROM px a step,
+    // so the trail never gets longer than at that speed.
+    // (That speed is smoothed, so bumps and landings don't jolt the camera.)
+    if (!this.rules.classic) {
+      const over = (v) => Math.sign(v) * Math.max(0, Math.abs(v) - PACE_FROM);
+      const P = (this.pace ||= [0, 0]);
+      P[0] += (over(fvx) - P[0]) * 0.08; P[1] += (over(fvy) - P[1]) * 0.08;
+      dx += P[0]; dy += P[1];
+    }
     this.camX = Math.min(Math.max(this.camX + dx, 0), this.maxCamX);
     // Classic stays inside the level. Elsewhere the camera follows the truck up and down wherever
     // it goes: above the level there's sky, and below it the renderer keeps drawing dirt (every
@@ -1641,6 +1664,7 @@ export class Game {
       case 'playing':
         if (!this.world) return;
         if (this.wreck) this.stepWreck(); else this.stepTruck(this.world);
+        this.capSpeed();
         if (this.battle) this.battle.step();
         if (this.mode === 'sandbox') { stepTraffic(this); if (this.landed && this.endTimer === 0 && !this.wreck) this.clock++; }
         this.updateSpeedometer();
@@ -1733,6 +1757,30 @@ export class Game {
       this.stats.topSpeed = Math.max(this.stats.topSpeed, this.speedKmh);
       if (this.airSteps === 0) this.stats.distance += t.speed * METRES_PER_TILE / TILE;
     }
+  }
+
+  /**
+   * Nothing goes faster than MAX_SPEED: your truck as a whole (its points keep their speeds
+   * relative to each other), and a wreck's pieces each. Only Sandbox's boost and gravity get near.
+   */
+  capSpeed() {
+    const cap = (T, P, whole) => {
+      if (whole) {
+        let vx = 0, vy = 0;
+        for (let i = 0; i < T.length; i += 2) { vx += T[i] - P[i]; vy += T[i + 1] - P[i + 1]; }
+        const n = T.length / 2, v = Math.hypot(vx / n, vy / n);
+        if (v <= MAX_SPEED) return;
+        const k = MAX_SPEED / v;
+        for (let i = 0; i < T.length; i++) P[i] = T[i] - (T[i] - P[i]) * k;
+        return;
+      }
+      for (let i = 0; i < T.length; i += 2) {
+        const v = Math.hypot(T[i] - P[i], T[i + 1] - P[i + 1]);
+        if (v > MAX_SPEED) { const k = MAX_SPEED / v; P[i] = T[i] - (T[i] - P[i]) * k; P[i + 1] = T[i + 1] - (T[i + 1] - P[i + 1]) * k; }
+      }
+    };
+    if (this.wreck) cap(this.wreck.T, this.wreck.P, false);
+    else cap(this.truck.T, this.truck.P, true);
   }
 
   /** Toggle pause directly (for touch/gamepad buttons, which are taps rather than held keys). */

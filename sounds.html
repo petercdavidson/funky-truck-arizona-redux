@@ -51,10 +51,12 @@ import { Sound } from './src/audio.js';
 const sound = new Sound();
 let scrape = { on: false, speed: 0 };
 let engine = { on: false };
+let boost = { on: false };
 
 function tick() {
   sound.updateScrape(scrape, true);
   sound.updateEngine(engine, true);
+  sound.updateBoost(boost, true);
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
@@ -88,6 +90,14 @@ button('Scrape with engine', () => {
   engine = { on: true, throttle: 1, speed: 0.6, airborne: false };
   slide(400, 1300);
   setTimeout(() => { engine = { on: false }; }, 2200);
+});
+button('Rocket boost (held)', () => {
+  sound.play('boost', {}, true);
+  boost = { on: true, speed: 0.3 };
+  const t0 = performance.now();
+  const up = () => { if (!boost.on) return; boost = { on: true, speed: Math.min(1, 0.3 + (performance.now() - t0) / 2500) }; requestAnimationFrame(up); };
+  up();
+  setTimeout(() => { boost = { on: false }; }, 2500);
 });
 button('Rolling (tyres on ground)', () => {
   engine = { on: true, throttle: 0, speed: 0.9, airborne: false };

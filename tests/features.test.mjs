@@ -258,7 +258,7 @@ test('the pause menu\'s Options shows only the options that apply', async () => 
   for (const layout of [BUTTONS, TALL_BUTTONS]) {
     const shown = (game) => layout.pauseOptions.filter((b) => b.show(game)).map((b) => b.action);
     g.startCampaign();
-    assert.deepEqual(shown(g), ['sound', 'oneButton', 'dynamicCamera', 'crashCam', 'showFps', 'pauseBack']);
+    assert.deepEqual(shown(g), ['sound', 'oneButton', 'dynamicCamera', 'crashCam', 'imperial', 'showFps', 'pauseBack']);
     g.startCampaign(true);
     assert.deepEqual(shown(g), ['sound', 'showFps', 'pauseBack'], 'Classic: no controls or cameras');
   }

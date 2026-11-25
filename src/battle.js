@@ -666,7 +666,7 @@ export class Battle {
     const g = this.game, left = g.camX - 350, bottom = g.levelData.height * TILE + 400;
     this.enemies = this.enemies.filter((e) => {
       const [x, y] = e.centre;
-      if (e.wreck) return e.wreckAge < 900 && x > left - 300;
+      if (e.wreck) return (e.wreckAge < 900 || this.onScreen(e)) && x > left - 300; // (an old wreck goes once out of sight)
       if (y > bottom) return false;
       if (x < left) {
         // It got past you (or you got past it).

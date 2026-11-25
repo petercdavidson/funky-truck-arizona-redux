@@ -249,6 +249,40 @@ function scrapeVoice(k) {
   };
 }
 
+/**
+ * The rocket boost, held: a roar of filtered noise with a low rumble under it, which flutters a
+ * little, as a rocket's flame does. update({ on, speed }) each frame (speed 0..1 brightens it).
+ */
+function boostVoice(k) {
+  const { ctx } = k;
+  const out = ctx.createGain(); out.gain.value = 0;
+  out.connect(k.out);
+  const roar = ctx.createBufferSource(); roar.buffer = k.noise; roar.loop = true;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 700; bp.Q.value = 0.6;
+  const hiss = ctx.createBiquadFilter(); hiss.type = 'highpass'; hiss.frequency.value = 2500;
+  const hg = ctx.createGain(); hg.gain.value = 0.18;
+  roar.connect(bp).connect(out);
+  roar.connect(hiss).connect(hg).connect(out);
+  roar.start(0, Math.random() * 1.5);
+  const rumble = voice(k, { type: 'sawtooth', dest: out });
+  rumble.o.frequency.value = 48; rumble.g.gain.value = 0.22;
+  // the flutter: a slow wobble on the roar's loudness and pitch
+  const lfo = ctx.createOscillator(), lg = ctx.createGain();
+  lfo.frequency.value = 13; lg.gain.value = 160;
+  lfo.connect(lg).connect(bp.frequency); lfo.start();
+  let on = false;
+  return {
+    update({ on: now, speed = 0 }) {
+      if (now !== on) { on = now; smooth(out.gain, now ? 0.32 : 0, k, now ? 0.03 : 0.12); }
+      if (on) { smooth(bp.frequency, 600 + 900 * speed, k, 0.2); smooth(rumble.o.frequency, 46 + 30 * speed, k, 0.2); }
+    },
+    stop() {
+      smooth(out.gain, 0, k, 0.08);
+      setTimeout(() => { for (const n of [roar, rumble.o, lfo]) { try { n.stop(); } catch { /* already stopped */ } } out.disconnect(); }, 500);
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------------------------
 
 export class Sound {
@@ -257,6 +291,8 @@ export class Sound {
     this.enabled = false;
     this.engine = null;
     this.scrape = null;          // the live scrape voice
+    this.boost = null;           // the live rocket boost voice
+    this.boostIdle = 0;          // frames it has been silent
     this.volume = 0.8;
   }
 
@@ -284,7 +320,7 @@ export class Sound {
 
   setEnabled(on) {
     this.enabled = !!on;
-    if (!this.enabled) { this.stopEngine(); this.stopScrape(); }
+    if (!this.enabled) { this.stopEngine(); this.stopScrape(); this.stopBoost(); }
   }
 
   /** Play a one-shot cue. `force` plays it even with sound switched off (for the preview page). */
@@ -313,6 +349,18 @@ export class Sound {
   }
 
   stopScrape() { this.scrape = null; }
+
+  /** Keep the rocket boost's roar in step with it: { on, speed } (speed 0..1). */
+  updateBoost(state, force = false) {
+    if ((!this.enabled && !force) || !this.ready) { this.stopBoost(); return; }
+    if (!state.on && !this.boost) return;
+    if (!this.boost) this.boost = boostVoice(this.kit);
+    this.boost.update(state);
+    // Silent for a while: let it go (made again the next time the boost is lit).
+    if (state.on) this.boostIdle = 0; else if (++this.boostIdle > 120) this.stopBoost();
+  }
+
+  stopBoost() { if (this.boost) { this.boost.stop(); this.boost = null; } }
 
   /** Pause or resume all sound (when the page is hidden, say). */
   suspend(on) {

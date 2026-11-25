@@ -143,6 +143,8 @@ test('sandbox on Endless and the stunt tracks: cars that drop out of sight come 
     g.startSandbox();
     for (let i = 0; i < 100; i++) g.step();
     const b = g.battle;
+    // (On a short track, enemies that drive past you are gone until they come back: wait for one.)
+    for (let i = 0; i < 100 && !(b.racers.length && b.enemies.length); i++) g.step();
     // send one of each a long way off
     for (const e of [b.racers[0], b.enemies[0]]) {
       const ids = new Set(b.bots.map((o) => o.id));
@@ -283,4 +285,29 @@ test('the truck is kept between the side walls even above the top of the level',
   t.probePrev = null;
   for (let s = 0; s < 60; s++) { g.step(); for (let i = 0; i < 10; i += 2) assert.ok(t.T[i] <= W, `step ${s}`); }
   assert.ok(t.T[0] - t.P[0] < 1, 'its speed into the wall is gone');
+});
+
+test('sandbox cars never appear or vanish in view: rivals come in to your right, and ones taken away go once out of sight', () => {
+  for (const course of [0, 1, 11]) {
+    const g = new Game(data, { random: seeded(31) });
+    g.sandbox = { ...defaultSandbox(), course, rivals: 4, enemies: 3 };
+    g.startSandbox();
+    const right = () => g.camX + g.viewW * g.zoom;
+    const inView = (e) => e.centre[0] > g.camX - 60 && e.centre[0] < right() + 60 && e.centre[1] > g.camY - 60 && e.centre[1] < g.camY + g.viewH * g.zoom + 60;
+    for (const e of g.battle.racers) assert.ok(e.centre[0] > right(), `course ${course}: a rival starts out of view to the right`);
+    let seen = new Set(g.battle.bots.map((e) => e.id)), popped = 0, vanished = 0;
+    let before = new Map(g.battle.bots.map((e) => [e.id, inView(e)]));
+    for (let i = 0; i < 1500; i++) {
+      g.keys.up = true; g.keys.boost = i % 300 < 120;
+      if (i === 600) g.setSandbox('rivals', 1);   // fewer rivals, part-way through
+      g.step();
+      const now = new Map(g.battle.bots.map((e) => [e.id, inView(e)]));
+      for (const [id, vis] of now) if (!seen.has(id) && vis) popped++;
+      for (const [id, vis] of before) if (vis && !now.has(id)) vanished++;
+      for (const id of now.keys()) seen.add(id);
+      before = now;
+    }
+    assert.equal(popped, 0, `course ${course}: no car appeared in view`);
+    assert.equal(vanished, 0, `course ${course}: no car vanished in view`);
+  }
 });

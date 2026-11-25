@@ -182,7 +182,7 @@ function doAction(a) {
     return;
   }
   sound.play('click');
-  if (['oneButton', 'practiceDamage', 'practiceClassic', 'customDamage', 'customClassic', 'dynamicCamera', 'crashCam', 'ghostOn', 'showFps'].includes(a)) { game.toggle(a); return; }
+  if (['oneButton', 'practiceDamage', 'practiceClassic', 'customDamage', 'customClassic', 'dynamicCamera', 'crashCam', 'ghostOn', 'showFps', 'imperial'].includes(a)) { game.toggle(a); return; }
   if (a === 'play') game.showMenu('modes');
   else if (a === 'back') game.showMenu('title');
   else if (a === 'stats') game.showMenu('stats');
@@ -548,6 +548,7 @@ function frame(now) {
   if (game.screen !== 'playing') { engineState = { on: false }; scrapeState = { on: false, speed: 0 }; }
   sound.updateEngine(engineState);
   sound.updateScrape(scrapeState);
+  sound.updateBoost({ on: game.screen === 'playing' && !!game.battle?.boosting, speed: Math.min(1, game.speedKmh / 300) });
   // Tell the page which screen this is before drawing, so the on-screen controls always match it.
   const ds = document.body.dataset;
   if (ds.screen !== game.screen) ds.screen = game.screen;

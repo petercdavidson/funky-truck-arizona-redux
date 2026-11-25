@@ -47,11 +47,17 @@ frame back when the truck keeps up a good speed (mostly: full pull-back from spe
 closes in tighter than the original view. The pull-back moves like a spring and reacts to smoothed
 speed and height (height fades in over the first second in the air), so bumps and short hops don't
 move it. While the truck rolls backwards, the frame also eases back a little (up to 100 units) to
-show where it's going. The settings are `CAMERA` in `src/game.js`.
+show where it's going. At very high speeds (beyond about 120 km/h) it also moves with the truck, so
+the truck never outruns it. The settings are `CAMERA` in `src/game.js`.
 
-Outside Classic the HUD has a **speedometer** in km/h (64 px of the stage is 2.5 m). It reads the
-speed of the truck's centre of mass, so it stays steady while the truck turns over in the air. It
-reads 0 while the truck is being dropped in at the start of a stage, until it first lands.
+Outside Classic the HUD has a **speedometer** in km/h, or mph with the **Units** option (64 px of
+the stage is 2.5 m). Its bar is quasi-logarithmic: it moves at everyday speeds and is full at
+300 km/h. It reads the speed of the truck's centre of mass, so it stays steady while the truck
+turns over in the air, and reads 0 while the truck is being dropped in at the start of a stage,
+until it first lands. Nothing goes faster than 9999 km/h (only Sandbox gets near).
+
+On a phone held upright the HUD is drawn bigger, and the stage's name, trick names and milestones
+come up lower down, nearer the truck.
 
 The game-over box says how far the run got: the stage reached (Standard and Classic), the stage
 (Practice), or the distance (Endless).
@@ -115,7 +121,8 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Sandbox: boost (hold) | C or Shift | boost button (right) | RB |
 
 **Options** (on the title screen) has the switches for sound, the controls (Standard / Pedals or
-One Button), the dynamic camera, the dynamic crash cam, and **Show Frame Rate** (frames per second
+One Button), the dynamic camera, the dynamic crash cam, **Units** (metric, or imperial: mph, and
+heights in feet, then miles past a mile), and **Show Frame Rate** (frames per second
 in the bottom left corner). Options for one mode stay on that
 mode's screen (Practice's Damage and Classic, Time Trial's Ghost). The speaker button in the top
 right corner of the title screen switches the sound on and off too.
@@ -159,6 +166,8 @@ Boost, jumps and missiles never run out, and there's no damage. On a stage, the 
 spread out along it, and the finish line still ends the run, with your time (the clock runs from
 the first landing, as in Time Trial). On Endless's course and the stunt tracks there's no finish,
 and the cars loop: one that's been out of sight for two seconds comes back just out of view.
+Cars never appear or vanish in view: new rival cars come in just out of view to your right, and
+cars taken away in Tweaks go once they're out of sight. Holding the boost roars like a rocket.
 Nothing done in Sandbox counts towards High Scores. Slow motion runs fewer steps a second, not
 slower ones, so the physics is exactly the same, only slower. `SANDBOX_ROWS` in `src/sandbox.js`.
 

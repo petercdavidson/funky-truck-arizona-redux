@@ -12,6 +12,7 @@ import { TRIAL_ALL, formatTime, formatGap } from './trial.js';
 import { battleBack, battleFront, battleHud } from './render-battle.js';
 import { circles } from './battle.js';
 import { SANDBOX_ROWS, SANDBOX_ROW, sandboxValue } from './sandbox.js';
+import { formatSpeed, formatDistance, speedoShare } from './units.js';
 
 const DEG = Math.PI / 180;
 const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'sandboxTweaks', 'gameOver']);
@@ -19,7 +20,6 @@ const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'help', 'gar
 const AHEAD = '#8ff0a4', BEHIND = '#ffb0a0'; // Time Trial gaps: ahead of / behind your best
 const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
-const SPEEDO_MAX = 160;  // km/h at which the speedometer's bar is full
 const BOX_FILL = 'rgba(140,97,79,0.96)', BOX_EDGE = 'rgba(255,255,255,0.6)'; // the game-over box and the mode picker
 const MILESTONE_GOLD = '#ffe27a';
 /** The HUD in a tall view: how much bigger, how far down from the top (stage units), and where the middle's news goes (a share of the view's height). */
@@ -56,9 +56,10 @@ const OPTIONS = [
   [(g, r) => `Controls: ${controlsName(g, r)}`, 'oneButton', controlsAbout, notClassic],
   [(g) => `Dynamic Camera: ${onOff(g.dynamicCamera)}`, 'dynamicCamera', () => 'Pulls back to show more when you go fast or fly high', notClassic],
   [(g) => `Dynamic Crash Cam: ${onOff(g.crashCam)}`, 'crashCam', () => 'Pulls back to keep every piece of a wrecked truck in view', notClassic],
+  [(g) => `Units: ${g.imperial ? 'Imperial' : 'Metric'}`, 'imperial', (g) => (g.imperial ? 'Speeds in mph, heights in feet and miles' : 'Speeds in km/h, heights in metres and kilometres'), notClassic],
   [(g) => `Show Frame Rate: ${onOff(g.showFps)}`, 'showFps', () => 'Frames per second, in the bottom left corner'],
 ];
-const optionRow = (i, tall) => (tall ? r(50, 92 + 90 * i, 260, 40) : r(178, 70 + 62 * i, 220, 26));
+const optionRow = (i, tall) => (tall ? r(50, 90 + 78 * i, 260, 40) : r(178, 66 + 54 * i, 220, 26));
 const optionAbout = (action) => OPTIONS.find((o) => o[1] === action)?.[2];
 
 /** The pause menu's Options: the options that apply, by Classic rules or not, then Back. */
@@ -413,7 +414,7 @@ export function statsColumns(game) {
   const S = game.stats, n = (v) => Math.round(v).toLocaleString('en-US');
   const secs = (steps) => `${(steps / STEP_HZ).toFixed(1)} s`;
   const none = '—', or = (v, f) => (v > 0 ? f(v) : none);
-  const dist = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
+  const dist = (m) => formatDistance(m, game.imperial);
   const mins = Math.floor(S.driveSteps / STEP_HZ / 60);
   const time = mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h ${mins % 60} min`;
   const T = S.tricks;
@@ -425,7 +426,7 @@ export function statsColumns(game) {
     ['Time Trial (All Nine)', game.trialBests[TRIAL_ALL] ? formatTime(game.trialBests[TRIAL_ALL]) : none],
     ['Records'],
     ['Longest airtime', or(S.maxAir, secs)],
-    ['Top speed', or(S.topSpeed, (v) => `${n(v)} km/h`)],
+    ['Top speed', or(S.topSpeed, (v) => formatSpeed(v, game.imperial))],
     ['Most flips in one jump', or(S.mostFlips, n)],
     ['Longest wheelie', or(S.longestWheelie, secs)],
     ['Best trick chain', or(S.bestChain, (v) => `${n(v)} pts`)],
@@ -951,8 +952,8 @@ export class Renderer {
     const R = this.hudW - 10;
     let y = 7.5;
     if (game.rules.damage) { this.meter('damage', game.damage / 1000, y); y += 34; }
-    // Outside Classic: the speedometer, in km/h (the bar is full at SPEEDO_MAX).
-    if (!game.rules.classic) this.meter('speed', game.speedKmh / SPEEDO_MAX, y, `${Math.round(game.speedKmh)} km/h`);
+    // Outside Classic: the speedometer (the bar's scale squeezes high speeds: units.js).
+    if (!game.rules.classic) this.meter('speed', speedoShare(game.speedKmh), y, formatSpeed(game.speedKmh, game.imperial));
     const hud = { size: 12.85, font: HUD_FONT, weight: '800', align: 'right' };
     if (game.mode === 'trial') { this.trialHud(game, R, hud); return; }
     this.text('score', R + 0.5, 9, { size: 12.5, font: HUD_FONT, weight: '800', align: 'right' });
