@@ -388,6 +388,11 @@ export const rectOf = (b, game) => (typeof b.rect === 'function' ? b.rect(game) 
 const showing = (b, game, picker = !!game?.sandboxPick) => (!b.show || b.show(game)) && !!b.picker === picker;
 
 /** The button at (x, y) in menu coordinates (see Renderer.toMenu), or null. */
+/** The buttons a controller can move between on a screen: showing, not greyed out, not the picker's backdrop. */
+export function navButtons(screen, game, tall = false) {
+  return buttonsFor(screen, tall).filter((b) => showing(b, game) && !b.noHover && !b.disabled?.(game));
+}
+
 export function hitButton(screen, x, y, game, tall = false) {
   return buttonsFor(screen, tall).find((b) => {
     if (!showing(b, game)) return false;
@@ -648,7 +653,7 @@ export class Renderer {
         this.centredLabel(label.toUpperCase(), x + w / 2, y + h / 2, w - 8, { size, weight: '800' });
       }
       if (off) this.ctx.restore();
-      else if (this.hover === b && !b.noHover) this.roundRect(x, y, w, h, this.tall ? 6 : 4, 'rgba(255,255,255,0.16)');
+      else if (this.hover === b && !b.noHover) this.roundRect(x, y, w, h, this.tall ? 6 : 4, 'rgba(255,255,255,0.16)', this.padHover ? '#fff' : null, this.tall ? 3 : 2);
     }
   }
 

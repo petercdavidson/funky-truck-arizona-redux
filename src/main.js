@@ -3,7 +3,7 @@
 
 import { Game, STEP_HZ, STAGES_PER_PAGE, emptyKeys } from './game.js';
 import { loadAssets } from './assets.js';
-import { Renderer, hitButton, buttonsFor } from './render.js';
+import { Renderer, hitButton, buttonsFor, navButtons, rectOf } from './render.js';
 import { Sound } from './audio.js';
 import { SoundWatcher } from './sound-events.js';
 import { lerpBattle } from './battle.js';
@@ -71,7 +71,40 @@ const modeButtons = () => buttonsFor('modes', renderer.tall);
 function moveModeChoice(delta) {
   const list = modeButtons(), i = list.indexOf(renderer.hover);
   renderer.hover = list[i < 0 ? 0 : (i + delta + list.length) % list.length];
+  renderer.padHover = true;
 }
+/**
+ * A controller's menu highlight: move it to the nearest button in direction (dx, dy), measured
+ * between button centres, preferring ones straight in line. With nothing highlighted, the first.
+ */
+function moveMenuHighlight(dx, dy) {
+  const list = navButtons(game.screen, game, renderer.tall);
+  if (!list.length) return;
+  renderer.padHover = true;               // outlined, so it shows from across the room
+  if (!list.includes(renderer.hover)) { renderer.hover = list[0]; return; }
+  const c = (b) => { const R = rectOf(b, game); return [R.x + R.w / 2, R.y + R.h / 2]; };
+  const [x0, y0] = c(renderer.hover);
+  let best = null, bestScore = Infinity;
+  for (const b of list) {
+    if (b === renderer.hover) continue;
+    const [x, y] = c(b);
+    const along = (x - x0) * dx + (y - y0) * dy, across = Math.abs((x - x0) * dy - (y - y0) * dx);
+    if (along <= 2) continue;
+    const score = along + 2.5 * across;
+    if (score < bestScore) { bestScore = score; best = b; }
+  }
+  if (!best) {
+    // Off the edge: wrap round to the furthest button the other way, in line if there's one.
+    for (const b of list) {
+      const [x, y] = c(b);
+      const along = (x - x0) * dx + (y - y0) * dy, across = Math.abs((x - x0) * dy - (y - y0) * dx);
+      const score = along + 2.5 * across;
+      if (along < -2 && score < bestScore) { bestScore = score; best = b; }
+    }
+  }
+  if (best) renderer.hover = best;
+}
+
 /** Start the mode highlighted in the mode picker (Standard if none is). */
 function chooseMode() {
   const b = modeButtons().includes(renderer.hover) ? renderer.hover : null;
@@ -224,6 +257,7 @@ canvas.addEventListener('pointermove', (e) => {
   const [x, y] = stagePoint(e);
   const b = hitButton(game.screen, x, y, game, renderer.tall);
   renderer.hover = b;
+  renderer.padHover = false;
   canvas.style.cursor = b || onTitleTruck(x, y) ? 'pointer' : '';
 });
 
@@ -328,11 +362,14 @@ let padPauseWasDown = false;
 let padStartWasDown = false;
 let padUpWasDown = false, padDownWasDown = false;
 let padFireWasDown = false, padJumpWasDown = false;
+let padSelectWasDown = false, padBackWasDown = false;
+let padDir = '', padDirNext = 0;          // the stick / d-pad direction held in menus, and when it repeats
 
 function pollGamepads() {
   const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
   Object.assign(padKeys, emptyKeys());
   let pauseDown = false, startDown = false, upDown = false, downDown = false, fireDown = false, jumpDown = false;
+  let leftDown = false, rightDown = false, selectDown = false, backDown = false;
   for (const p of pads) {
     const b = (i) => !!p.buttons[i]?.pressed;
     const ax = p.axes[0] || 0;
@@ -350,15 +387,32 @@ function pollGamepads() {
     startDown ||= b(0) || b(9);
     upDown ||= b(12) || (p.axes[1] || 0) < -0.5;
     downDown ||= b(13) || (p.axes[1] || 0) > 0.5;
+    leftDown ||= b(14) || ax < -0.5;
+    rightDown ||= b(15) || ax > 0.5;
+    selectDown ||= b(0);
+    backDown ||= b(1) || b(8);                     // B, or Back / Select
   }
   if (pads.length) {
+    const inMenu = game.screen !== 'playing';
     if (pauseDown && !padPauseWasDown && (game.screen === 'playing' || game.screen === 'paused')) game.togglePause();
-    if (startDown && !padStartWasDown && game.screen === 'title') { doAction('play'); moveModeChoice(0); }
-    else if (game.screen === 'modes') {
-      if (startDown && !padStartWasDown) chooseMode();
-      else if (upDown && !padUpWasDown) moveModeChoice(-1);
-      else if (downDown && !padDownWasDown) moveModeChoice(1);
+    else if (startDown && !padStartWasDown && game.screen === 'title' && !navButtons('title', game, renderer.tall).includes(renderer.hover)) { doAction('play'); moveModeChoice(0); }
+    else if (game.screen === 'modes' && startDown && !padStartWasDown && !renderer.hover) chooseMode();
+    else if (inMenu) {
+      // Menus: the stick or d-pad moves the highlight (repeating while held), A presses it, B goes back.
+      const dir = upDown ? 'up' : downDown ? 'down' : leftDown ? 'left' : rightDown ? 'right' : '';
+      const now = performance.now();
+      if (dir && (dir !== padDir || now >= padDirNext)) {
+        padDirNext = now + (dir !== padDir ? 380 : 140);
+        const [dx, dy] = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[dir];
+        moveMenuHighlight(dx, dy);
+      }
+      padDir = dir;
+      const hl = navButtons(game.screen, game, renderer.tall).includes(renderer.hover) ? renderer.hover : null;
+      if (hl) padKeys.restart = false;    // A presses the highlighted button rather than Play Again
+      if (selectDown && !padSelectWasDown && hl) doAction(hl.action);
+      else if (backDown && !padBackWasDown && game.screen !== 'paused' && game.screen !== 'gameOver') escape();
     }
+    if (!inMenu) padDir = '';
     if (fireDown && !padFireWasDown) game.press('fire');
     if (jumpDown && !padJumpWasDown) game.press('jump');
     padKeys.restart = padKeys.restart && game.screen === 'gameOver';
@@ -370,6 +424,8 @@ function pollGamepads() {
   padDownWasDown = downDown;
   padFireWasDown = fireDown;
   padJumpWasDown = jumpDown;
+  padSelectWasDown = selectDown;
+  padBackWasDown = backDown;
 }
 
 // ---------------------------------------------------------------------------------------------

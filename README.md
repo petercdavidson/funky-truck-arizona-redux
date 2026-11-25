@@ -8,7 +8,7 @@ site on GitHub Pages.
 
 The title screen has **Play**, **Change Truck**, **High Scores**, **Options** and **How to Play**.
 **Play** dims the title and opens a box of the modes (below); tap one, or **Back** or anywhere
-outside the box to close it (on a keyboard: ↑ / ↓ and Space or Enter; on a gamepad: d-pad and A).
+outside the box to close it (on a keyboard: ↑ / ↓ and Space or Enter; on a gamepad: stick or d-pad and A).
 **High Scores** shows each mode's best and your records and totals across all your runs: longest
 airtime, top speed, most flips in one jump, longest wheelie, best and longest trick chain, distance
 and time driven, runs, stages finished, flips, each trick, bails and wrecks (`src/stats.js`).
@@ -106,6 +106,7 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Pause | P | ⏸ button | Start |
 | Flip upright (when offered) | R | Flip button | Y |
 | Play again (game over) | Space, Enter or Ctrl | Play Again button | A |
+| Menus: move / choose / back | ↑ ↓ / Enter / Esc, or the mouse | tap | stick or d-pad / A / B |
 | Back to menu | Esc | Menu button | |
 | Sound on / off | | Sound switch (Options screen or pause menu) | |
 | Full screen | F | | |
