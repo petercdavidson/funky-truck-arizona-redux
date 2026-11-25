@@ -585,6 +585,8 @@ export const CAMERA = {
  * (times the zoom), and `easeIn` the steps it takes to take over from the driving camera.
  */
 export const CRASH_CAM = { maxZoom: 8, margin: 70, maxRate: 0.03, easeIn: 90 };
+/** The slowest a scraping cab or body throws up dirt (px a step). */
+const SCRAPE_DIRT_FROM = 1.5;
 /** Above this speed (px a step, about 100 km/h) the camera keeps pace with the truck (Game.updateCamera). */
 export const PACE_FROM = 12;
 /** Steps the High Scores reset waits before its Yes can be pressed (5 s). */
@@ -1063,9 +1065,10 @@ export class Game {
     this.truck.reset(s[0], s[1]);
     this.truck.rearWheelRot = 0; this.truck.frontWheelRot = 0;
     this.speedKmh = 0;
+    this.altitude = null;
     this.zoom = 1; this.zoomV = 0; this.ground = 0; this.groundV = 0; this.camSpeed = 0; this.camSpeedV = 0;
     this.back = 0; this.backV = 0;
-    this.lastFocus = null; this.pace = [0, 0];
+    this.lastFocus = null; this.pace = [0, 0]; this.shiftTotal = [0, 0];
     this.camX = Math.min(Math.max(s[0] - this.camAnchorX, 0), this.maxCamX);       // s4833
     this.camY = s[1] - this.viewH / 2;
     if (this.rules.classic) this.camY = Math.min(Math.max(this.camY, 0), this.maxCamY);
@@ -1197,6 +1200,8 @@ export class Game {
     if (this.battle) this.battle.shift(dx, dy);
     this.camX -= dx; this.camY -= dy;
     if (this.lastFocus) { this.lastFocus[0] -= dx; this.lastFocus[1] -= dy; }
+    // How far everything has moved in all (the backdrop moves by where the camera really is).
+    this.shiftTotal[0] += dx; this.shiftTotal[1] += dy;
     this.shiftCount++;
     this.lastShift = dx; this.lastShiftY = dy;
   }
@@ -1442,14 +1447,30 @@ export class Game {
   }
 
   kickDirt(spin, wheel, n) { // T77F5 (one wheel)
+    this.kickDirtAt(this.truck.T[wheel * 2], this.truck.T[wheel * 2 + 1], spin, n);
+  }
+
+  /** A wheel centred at (cx, cy), spinning `spin` degrees a step, on ground with normal n: dirt off its tyre. */
+  kickDirtAt(cx, cy, spin, n) {
     let s = Math.max(Math.min(spin, 10), -10);
     if (Math.abs(s) <= 5) return;
     s *= 0.3;
-    const x = this.truck.T[wheel * 2] - n[0] * this.truck.wheelRadius;
-    const y = this.truck.T[wheel * 2 + 1] - n[1] * this.truck.wheelRadius;
+    const x = cx - n[0] * this.truck.wheelRadius;
+    const y = cy - n[1] * this.truck.wheelRadius;
     const a = (-10 - this.random() * 35) * 0.017453292519943295;
     const c = Math.cos(a), sn = Math.sin(a);
     this.spawnDirt(x, y, (n[0] * c - n[1] * sn) * s, (n[0] * sn + n[1] * c) * Math.abs(s));
+  }
+
+  /**
+   * Outside Classic: the cab or body scraping along the ground at (x, y) (ground normal (nx, ny)),
+   * moving at (vx, vy) px a step, throws dirt up off the ground and on the way it's going.
+   */
+  scrapeDirt(x, y, nx, ny, vx, vy) {
+    const sp = Math.hypot(vx, vy);
+    if (sp < SCRAPE_DIRT_FROM) return;
+    const k = Math.min(sp, 12) * 0.3, up = 1 + this.random() * 1.6;
+    this.spawnDirt(x, y, vx / sp * k + nx * up + (this.random() - 0.5), vy / sp * k + ny * up);
   }
 
   updateDirt() { // e4a81
@@ -1504,6 +1525,10 @@ export class Game {
     // the body doesn't count: that's the chassis bottoming out, not the cab scraping.
     const touching = type !== null && type !== 1 && (this.rules.classic || !this.underside(t));
     this.scraping = touching; // heard even after the finish line
+    if (touching && !this.rules.classic) {
+      const h = t.probeHit, B = w.offset ?? 0;
+      this.scrapeDirt(h.x - h.nx * B, h.y - h.ny * B, h.nx, h.ny, t.T[0] - t.P[0], t.T[1] - t.P[1]);
+    }
     // It only damages the truck or bails a chain before the stage is over.
     const scraped = touching && this.endTimer === 0;
     if (scraped && this.rules.damage) this.damage = Math.min(1000, this.damage + 6);
@@ -1676,6 +1701,7 @@ export class Game {
         else this.updateLoop();
         if (!this.wreck && !this.rules.classic) this.keepInside();
         this.updateCamera();
+        this.updateAltitude();
         this.updateDirt();
         if (this.mode === 'trial') this.updateTrial();
         this.checkStageEnd();
@@ -1738,6 +1764,16 @@ export class Game {
   /** The wrecked truck's pieces, and (wrecked on purpose, with damage on) the damage to its cab. */
   stepWreck() {
     this.wreck.step();
+    // Dirt: off the loose wheels' tyres as they spin on the ground, and from the body scraping along.
+    const W = this.wreck, T = W.T, P = W.P;
+    W.wheels.forEach((wh, n) => {
+      const h = W.wheelHit?.[n];
+      if (h) this.kickDirtAt(T[wh.p * 2], T[wh.p * 2 + 1], wh.spin, [h.nx, h.ny]);
+    });
+    if (W.bodyHit) {
+      const { i, h } = W.bodyHit, B = this.thinWorld.offset;
+      this.scrapeDirt(h.x - h.nx * B, h.y - h.ny * B, h.nx, h.ny, T[i * 2] - P[i * 2], T[i * 2 + 1] - P[i * 2 + 1]);
+    }
     if (this.selfWrecked && this.rules.damage && this.endTimer === 0 && this.wreck.bodyTouching) {
       this.damage = Math.min(1000, this.damage + SELF_WRECK_DAMAGE);
     }
@@ -1781,6 +1817,25 @@ export class Game {
     };
     if (this.wreck) cap(this.wreck.T, this.wreck.P, false);
     else cap(this.truck.T, this.truck.P, true);
+  }
+
+  /**
+   * The altimeter (outside Classic): how high the truck is above the ground under it, in metres,
+   * while that ground is out of sight below the view; otherwise null. (With no ground under it at
+   * all, past a level's side, also null.)
+   */
+  updateAltitude() {
+    this.altitude = null;
+    if (this.rules.classic || this.wreck || !this.landed) return;
+    const t = this.truck, x = (t.T[2] + t.T[4]) / 2, y = Math.min(t.T[3], t.T[5]);
+    const bottom = this.camY + this.viewH * this.zoom;
+    if (y > bottom) return;
+    // (from just below the view's bottom edge: ground any nearer would be in sight)
+    const max = this.levelData.height * TILE + 200 - y;
+    if (max <= 0) return;
+    const h = this.world.collide(x, Math.max(y, bottom - this.world.offset), x, y + max);
+    if (!h || h.y < bottom - this.world.offset) return;
+    this.altitude = Math.max(0, (h.y - y) / TILE * METRES_PER_TILE);
   }
 
   /** Toggle pause directly (for touch/gamepad buttons, which are taps rather than held keys). */

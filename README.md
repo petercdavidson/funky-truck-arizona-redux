@@ -56,6 +56,12 @@ the stage is 2.5 m). Its bar is quasi-logarithmic: it moves at everyday speeds a
 turns over in the air, and reads 0 while the truck is being dropped in at the start of a stage,
 until it first lands. Nothing goes faster than 9999 km/h (only Sandbox gets near).
 
+When the truck is so high that the ground below it is out of sight, an **altitude** reading
+(▼ metres or feet to the ground) comes up under the speedometer. Outside Classic the backdrop moves
+a little too: sideways as you travel, and down as you climb, so the mountains sink away below a
+truck flying high. Dirt flies from a cab scraping along the ground, and from a wrecked truck's
+loose wheels and body.
+
 On a phone held upright the HUD is drawn bigger, and the stage's name, trick names and milestones
 come up lower down, nearer the truck.
 

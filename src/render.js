@@ -12,7 +12,7 @@ import { TRIAL_ALL, formatTime, formatGap } from './trial.js';
 import { battleBack, battleFront, battleHud } from './render-battle.js';
 import { circles } from './battle.js';
 import { SANDBOX_ROWS, SANDBOX_ROW, sandboxValue } from './sandbox.js';
-import { formatSpeed, formatDistance, speedoShare } from './units.js';
+import { formatSpeed, formatDistance, formatHeight, speedoShare } from './units.js';
 
 const DEG = Math.PI / 180;
 const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'sandboxTweaks', 'gameOver']);
@@ -22,6 +22,11 @@ const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
 const BOX_FILL = 'rgba(140,97,79,0.96)', BOX_EDGE = 'rgba(255,255,255,0.6)'; // the game-over box and the mode picker
 const MILESTONE_GOLD = '#ffe27a';
+/**
+ * How the backdrop moves outside Classic: the share of the camera's travel it moves across and
+ * down (stage units), and the most it moves up (minY) or down (maxY).
+ */
+const BACKDROP = { x: 0.06, y: 0.06, minY: -50, maxY: 420 };
 /** The HUD in a tall view: how much bigger, how far down from the top (stage units), and where the middle's news goes (a share of the view's height). */
 const HUD_TALL = { k: 1.5, top: 12, middle: 0.2 };
 
@@ -795,32 +800,54 @@ export class Renderer {
    * The backdrop, scaled up evenly to cover a taller or wider view, and centred. Scaling the photo
    * over the whole window with high-quality smoothing every frame was the heaviest thing the game
    * drew (it halved the frame rate on a big Retina screen), so it is scaled once, into a canvas
-   * the size of the screen, and that is copied unscaled each frame.
+   * the size of the screen (with a mirror image of it alongside, so it can scroll round without a
+   * seam), and that is copied unscaled each frame.
+   *
+   * Outside Classic it moves a little as you go (`BACKDROP`): sideways with the distance travelled,
+   * and down as the camera rises above where the stage starts, so the mountains sink away below a
+   * truck flying high. Above and below the picture its top and bottom rows carry on.
    */
-  backdrop() {
+  backdrop(game, v) {
     const c = this.canvas, key = `${c.width}x${c.height}:${this.scale}:${this.offX},${this.offY}:${this.viewW}x${this.viewH}`;
+    const bg = this.a.images['bg.jpg'], k = Math.max(1, this.viewH / STAGE_H, this.viewW / STAGE_W);
     if (this.bgKey !== key) {
       this.bgKey = key;
       this.bgCache ||= document.createElement('canvas');
-      const b = this.bgCache;
-      b.width = c.width; b.height = c.height;
+      const b = this.bgCache, w = Math.ceil(STAGE_W * k * this.scale), h = Math.ceil(STAGE_H * k * this.scale);
+      b.width = 2 * w; b.height = h;
       const bctx = b.getContext('2d');
       bctx.imageSmoothingEnabled = true;
       bctx.imageSmoothingQuality = 'high';
-      bctx.setTransform(this.scale, 0, 0, this.scale, this.offX, this.offY);
-      const bg = this.a.images['bg.jpg'], k = Math.max(1, this.viewH / STAGE_H, this.viewW / STAGE_W);
-      bctx.drawImage(bg, (this.viewW - STAGE_W * k) / 2, (this.viewH - STAGE_H * k) / 2, STAGE_W * k, STAGE_H * k);
+      bctx.drawImage(bg, 0, 0, w, h);
+      bctx.save(); bctx.translate(2 * w, 0); bctx.scale(-1, 1); bctx.drawImage(bg, 0, 0, w, h); bctx.restore();
+      this.bgW = w; this.bgH = h;
     }
-    const ctx = this.ctx;
+    const ctx = this.ctx, b = this.bgCache, W = 2 * this.bgW, H = this.bgH, sc = this.scale;
+    // where the picture goes when it doesn't move: centred in the view
+    let x = this.offX + (this.viewW - STAGE_W * k) / 2 * sc, y = this.offY + (this.viewH - STAGE_H * k) / 2 * sc;
+    const moving = game && v && !game.rules.classic && FILL_SCREENS.has(game.screen);
+    if (moving) {
+      const z = v.zoom || 1, B = BACKDROP;
+      const along = v.camX + (game.shiftTotal?.[0] || 0);
+      const above = (game.levelData.start[1] - (game.shiftTotal?.[1] || 0)) - (v.camY + this.viewH * z / 2);
+      x -= (((along * B.x * sc) % W) + W) % W;
+      y += Math.max(B.minY, Math.min(B.maxY, above * B.y)) * sc;
+    }
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(this.bgCache, 0, 0);
+    x = Math.floor(x); y = Math.round(y);
+    for (let cx = x; cx < c.width; cx += W) {
+      if (cx + W <= 0) continue;
+      ctx.drawImage(b, cx, y);
+      if (y > 0) ctx.drawImage(b, 0, 0, W, 1, cx, 0, W, y + 1);                 // the sky carries on up
+      if (y + H < c.height) ctx.drawImage(b, 0, H - 1, W, 1, cx, y + H - 1, W, c.height - y - H + 1); // the desert down
+    }
     ctx.restore();
   }
 
   world(game, v) {
     const ctx = this.ctx;
-    this.backdrop();
+    this.backdrop(game, v);
     const zoom = game.rules.classic ? 1 : v.zoom || 1;
     this.tiles(game.levelData, v.camX, v.camY, zoom, game.mode === 'custom' || !!game.sandboxCustom);
     ctx.save();
@@ -954,6 +981,12 @@ export class Renderer {
     if (game.rules.damage) { this.meter('damage', game.damage / 1000, y); y += 34; }
     // Outside Classic: the speedometer (the bar's scale squeezes high speeds: units.js).
     if (!game.rules.classic) this.meter('speed', speedoShare(game.speedKmh), y, formatSpeed(game.speedKmh, game.imperial));
+    // ...and the altimeter, while the ground under the truck is out of sight below.
+    if (game.altitude != null && game.screen === 'playing') {
+      const ya = y + (this.hudW < 420 ? 50 : 36);
+      this.text('altitude', 13.1, ya + 13, { size: 15, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic' });
+      this.text(`▼ ${formatHeight(game.altitude, game.imperial)}`, 13.1, ya + 29, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic', color: 'rgba(255,255,255,0.9)' });
+    }
     const hud = { size: 12.85, font: HUD_FONT, weight: '800', align: 'right' };
     if (game.mode === 'trial') { this.trialHud(game, R, hud); return; }
     this.text('score', R + 0.5, 9, { size: 12.5, font: HUD_FONT, weight: '800', align: 'right' });

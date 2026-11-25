@@ -427,6 +427,11 @@ export class Wreck {
     }
     // Whether the body is touching the ground (any side of it) or resting on a wheel, for damage to a truck wrecked on purpose.
     this.bodyTouching = this.wheelOnBody || this.body.some((i) => touched[i]);
+    // What the game kicks dirt up from (it reads these, and never changes the pieces): each
+    // wheel's ground contact, and the body's first point on the ground, { i, h }.
+    this.wheelHit = this.wheels.map((w) => touched[w.p]);
+    const bi = this.body.find((i) => touched[i]);
+    this.bodyHit = bi === undefined ? null : { i: bi, h: touched[bi] };
     // Bounce and friction for the points that touched the ground.
     for (let i = 0; i < touched.length; i++) {
       const h = touched[i];

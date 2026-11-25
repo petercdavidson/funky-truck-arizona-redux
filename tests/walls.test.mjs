@@ -38,3 +38,34 @@ test('in Classic, the side wall counts as the original game had it', () => {
   assert.equal(t.rearDown || t.frontDown, true);
   assert.equal(t.airborne, false);
 });
+
+test('dirt flies from a wrecked truck\'s wheels and body, and from a cab scraping along (not in Classic)', async () => {
+  const { turnOver } = await import('./helpers.mjs');
+  const live = (g) => g.dirt.filter((d) => d.life > 0).length;
+  // a wreck at speed
+  let g = new Game(data);
+  g.practiceDamage = false;
+  g.startPractice(2);
+  g.keys.up = true;
+  for (let i = 0; i < 280; i++) g.step();
+  g.keys.up = false;
+  for (const d of g.dirt) d.life = 0;
+  g.selfWreck();
+  let most = 0;
+  for (let i = 0; i < 120; i++) { g.step(); most = Math.max(most, live(g)); }
+  assert.ok(most > 0, 'a wreck kicks up dirt');
+  // a cab sliding on its roof
+  for (const classic of [false, true]) {
+    g = new Game(data);
+    g.practiceDamage = false; g.practiceClassic = classic;
+    g.startPractice(0);
+    for (let i = 0; i < 150; i++) g.step();
+    turnOver(g.truck);
+    for (let i = 0; i < 10; i += 2) g.truck.P[i] -= 5;     // sliding along
+    let scraped = 0; most = 0;
+    for (let i = 0; i < 45; i++) { g.step(); if (g.scraping) scraped++; most = Math.max(most, live(g)); }
+    assert.ok(scraped > 0, 'the cab scraped');
+    if (classic) assert.equal(most, 0, 'Classic: no dirt from the cab');
+    else assert.ok(most > 0, 'dirt from the scraping cab');
+  }
+});
