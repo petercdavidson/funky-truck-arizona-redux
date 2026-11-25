@@ -59,7 +59,9 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
   Swap ground side reverses the points. While a point is dragged the look pass waits for the drop.
 - Paths: `L.paths = [{ id, pts, closed?, delta, chain }]` (`chain`: the cells of its ground
   pieces), `L.ap` the one being edited (-1 none; right-click away from the points or Esc finishes
-  it). `layPath` lays a path's ground (a shorter search while dragging, `quick`); the look pass
+  it). `layPath` lays a path's ground (a shorter search while dragging, `quick`), in a background thread
+  when it can (`editor/path-worker.js`, its own kit; one request per path at a time, the latest shape
+  sent when it comes back; `applyLay` puts the result in; without a worker it's done on the page); the look pass
   waits till things are still (`idleWork`, which also lays again paths over columns that changed:
   `stale`). Points have handles (`ix, iy, ox, oy`) unless `auto`; `broken` points (Alt-dragged
   handles) move their handles separately until Alt-clicked. `closed` paths (shapes, `shapePts`) run

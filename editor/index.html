@@ -1198,23 +1198,73 @@
     let lastLay = null, idleTimer = 0;
     const stale = new Set();
     let layCost = 0;      // how long the last lay took (ms): drags lay no more often than that allows
+    // The search runs in a background thread (path-worker.js) when it can, so the page never stalls:
+    // a path's tiles arrive a moment after it's changed. One request per path at a time; changes made
+    // meanwhile are laid when it comes back (the latest shape only).
+    let worker = null, wseq = 0;
+    const wreqs = new Map(), busy = new Set(), again = new Map();
+    try {
+      worker = new Worker(new URL('./path-worker.js', import.meta.url), { type: 'module' });
+      worker.postMessage({ op: 'init', rules: artRules() });
+      worker.onmessage = (e) => fromWorker(e.data);
+      worker.onerror = () => { worker = null; wreqs.clear(); busy.clear(); again.clear(); };
+    } catch { worker = null; }
+    /** Lay path g's tiles over the layers below it (its old ones go); returns drawPath's result, or undefined while the worker does it. */
     function layPath(g, look = false, quick = false) {
       const i = L.paths.indexOf(g);
       if (i < 0) return null;
-      const t0 = performance.now();
-      const old = g.delta, base = below(i);
       // (while dragging, a shorter search: the full one when it's dropped)
-      const r = g.pts.length > 1 ? drawPath({ width: L.width, height: L.height, tiles: base }, guideLine(g.pts), kit, { smooth: 2, look, closed: !!g.closed, ...(quick ? { limit: 60000 } : {}) }) : null;
+      const opts = { smooth: 2, look, closed: !!g.closed, ...(quick ? { limit: 60000 } : {}) };
+      if (g.pts.length < 2) { applyLay(g, null, below(i), look, quick, gen); return null; }
+      if (worker) {
+        if (busy.has(g)) { again.set(g, { look, quick }); return undefined; }
+        const seq = ++wseq;
+        busy.add(g);
+        const base = below(i);
+        wreqs.set(seq, { g, base, look, quick, gen, t0: performance.now() });
+        worker.postMessage({ op: 'lay', seq, level: { width: L.width, height: L.height, tiles: base }, line: guideLine(g.pts), opts });
+        return undefined;
+      }
+      const t0 = performance.now(), base = below(i);
+      const r = drawPath({ width: L.width, height: L.height, tiles: base }, guideLine(g.pts), kit, opts);
       layCost = performance.now() - t0;
-      if (quick && !r && g.pts.length > 1) return null;
+      return applyLay(g, r, base, look, quick, gen);
+    }
+    /** A lay's result put in: path g's tiles, the columns made again, and what's to do when things are still. */
+    function applyLay(g, r, base, look, quick, g0, seq = 0) {
+      const i = L.paths.indexOf(g);
+      if (i < 0 || (quick && !r && g.pts.length > 1)) return null;
+      const old = g.delta;
       setDelta(g, r, base);
       recompose(old, g.delta);
       const [a0, a1] = spanOf(old), [b0, b1] = spanOf(g.delta), x0 = Math.min(a0, b0), x1 = Math.max(a1, b1);
       for (let j = i + 1; j < L.paths.length; j++) { const [c0, c1] = spanOf(L.paths[j].delta); if (c0 < x1 && c1 > x0) stale.add(L.paths[j]); }
       if (lastLay && lastLay.g !== g) stale.add(lastLay.g);
-      lastLay = r && !look ? { g, r, base, gen } : null;
+      lastLay = r && !look ? { g, r, base, gen: g0, seq } : null;
       soon();
+      if (g === AP()) report(g, r);
+      drawOver();
       return r;
+    }
+    function fromWorker(m) {
+      const q = wreqs.get(m.seq);
+      wreqs.delete(m.seq);
+      if (!q) return;
+      // (a level resized or shifted since: that lay is no use)
+      if (q.base.length !== L.height || q.base[0].length !== L.width) { busy.delete(q.g); again.delete(q.g); return; }
+      if (m.op === 'laid') {
+        busy.delete(q.g);
+        layCost = performance.now() - q.t0;
+        applyLay(q.g, m.r, q.base, q.look, q.quick, q.gen, m.seq);
+        if (q.look) save();
+        const more = again.get(q.g);
+        again.delete(q.g);
+        if (more && L.paths.includes(q.g)) layPath(q.g, more.look, more.quick);
+      } else if (m.op === 'looked' && m.tiles && L.paths.includes(q.g) && q.gen === gen && !busy.has(q.g)) {
+        const old = q.g.delta;
+        setDelta(q.g, { ...q.r, tiles: m.tiles }, q.base);
+        recompose(old, q.g.delta); drawOver(); save();
+      }
     }
     /** Path g's tiles: where r (drawPath's) differs from what it was laid over, and its ground pieces. */
     function setDelta(g, r, base) {
@@ -1231,15 +1281,21 @@
     const soon = () => { clearTimeout(idleTimer); idleTimer = setTimeout(idleWork, 300); };
     /** When things are still: the look pass for the path laid last, then paths laid over changed ground. */
     function idleWork() {
-      if (dragging) { soon(); return; }
+      if (dragging || busy.size) { soon(); return; }
       const ll = lastLay;
       lastLay = null;
       if (ll && L.paths.includes(ll.g)) {
         if (ll.gen === gen) {
-          lookPath(ll.r, kit);
-          const old = ll.g.delta;
-          setDelta(ll.g, ll.r, ll.base);
-          recompose(old, ll.g.delta); save();
+          if (worker && ll.seq) {
+            // the worker kept that lay: it does the look pass, and fromWorker puts it in
+            wreqs.set(ll.seq, { g: ll.g, base: ll.base, r: ll.r, gen: ll.gen });
+            worker.postMessage({ op: 'look', seq: ll.seq });
+          } else {
+            lookPath(ll.r, kit);
+            const old = ll.g.delta;
+            setDelta(ll.g, ll.r, ll.base);
+            recompose(old, ll.g.delta); save();
+          }
           if (stale.size) soon();
           return;
         }
@@ -1250,19 +1306,20 @@
       if (!g) return;
       stale.delete(g);
       const t0 = gen;
-      layPath(g, true);
-      lastLay = null;
-      if (t0 === gen) save();
+      if (layPath(g, true) !== undefined) { lastLay = null; if (t0 === gen) save(); }
       if (stale.size) soon();
+    }
+    /** What the path being edited came to, in the status line. */
+    function report(g, r) {
+      say(r ? `${g.pts.length} points · ${r.chain.length} ground pieces over columns ${r.x0} to ${r.x1 - 1}`
+        : g.pts.length > 1 ? 'No ground fits that curve: keep it inside the level.' : 'Click to add the next point.');
     }
     /** Lay the tiles for the path being edited. */
     function layGuide(quick = false) {
       const g = AP();
       if (!g) return;
-      const r = layPath(g, false, quick);
+      layPath(g, false, quick);
       drawOver();
-      say(r ? `${g.pts.length} points · ${r.chain.length} ground pieces over columns ${r.x0} to ${r.x1 - 1}`
-        : g.pts.length > 1 ? 'No ground fits that curve: keep it inside the level.' : 'Click to add the next point.');
     }
     /** Edit path k. */
     function activate(k) { if (L.ap !== k) { L.ap = k; pathSel = -1; } }
@@ -1548,7 +1605,7 @@
       const r = layPath(g);
       drawOver(); save();
       const kind = document.querySelector('input[name=shapeKind]:checked').value;
-      say(r ? `A ${kind} of ${r.chain.length} ground pieces. Reshape it with the Path tool (G); draw another, or pick another tool.` : 'No ground fits that shape: keep it inside the level.');
+      say(r === null ? 'No ground fits that shape: keep it inside the level.' : `A ${kind}. Reshape it with the Path tool (G); draw another, or pick another tool.`);
     }
 
     /**
