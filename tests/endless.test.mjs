@@ -130,3 +130,54 @@ test('Endless never builds a climb too tall and steep to drive up, but keeps its
   assert.ok(steepest <= MAX_RISE, `climbed ${steepest} tiles within ${RISE_SPAN} columns`);
   assert.ok(hills / cols > 0.04, `still hilly (${(hills / cols * 100).toFixed(1)}% of columns end a real climb)`);
 });
+
+test('the course goes on for ever to the left too, built from the same joins, and stays the same when you drive back', async () => {
+  const { MAX_RISE, RISE_SPAN } = await import('../src/endless.js');
+  const topOf = (c, x) => { let r = 0; while (r < ENDLESS_HEIGHT && c.tiles[r][x] === 0) r++; return r; };
+  let steepest = 0;
+  for (let seed = 1; seed <= 6; seed++) {
+    const c = new EndlessCourse(grammar, data.levels, seeded(seed));
+    const tops = [];   // the ground's tops, walking left from the start
+    for (let k = 0; k < 12; k++) {
+      c.scrollBack(ENDLESS_SHIFT);
+      for (let x = ENDLESS_SHIFT - 1; x >= 0; x--) tops.push(topOf(c, x));
+      for (const row of c.tiles) {
+        assert.equal(row.length, ENDLESS_WIDTH);
+        for (let x = 0; x + 1 < row.length; x++) assert.ok(authoredPairs.has(`${row[x]},${row[x + 1]}`), `seed ${seed}: ${row[x]} next to ${row[x + 1]} is not in any stage`);
+      }
+      for (let x = 0; x < ENDLESS_WIDTH; x++) { const t = topOf(c, x); assert.ok(t >= 10 && t <= 41, `seed ${seed}: ground top ${t} stays in the band`); }
+    }
+    // (driving left, a climb is the ground rising to the left)
+    for (let x = RISE_SPAN; x < tops.length; x++) steepest = Math.max(steepest, Math.max(...tops.slice(x - RISE_SPAN, x)) - tops[x]);
+    // there and back: the same course both ways
+    const snap = c.tiles.map((r) => r.slice());
+    const d0 = c.dropped;
+    for (let k = 0; k < 5; k++) c.scroll(ENDLESS_SHIFT);
+    for (let k = 0; k < 5; k++) c.scrollBack(ENDLESS_SHIFT);
+    assert.equal(c.dropped, d0);
+    assert.deepEqual(c.tiles, snap, `seed ${seed}: the same course after driving away and back`);
+  }
+  assert.ok(steepest <= MAX_RISE + 1, `climbed ${steepest} tiles within ${RISE_SPAN} columns going left`);
+});
+
+test('an endless run scrolls back when you drive left, and counts the ground behind the start', () => {
+  const g = new Game(data, { random: seeded(9), store: memoryStore() });
+  g.startEndless();
+  g.step();
+  for (let lap = 0; lap < 3; lap++) {
+    const col = 39;
+    let top = 0;
+    while (g.levelData.tiles[top][col] === 0) top++;
+    const dx = col * TILE + 32 - g.truck.T[0], dy = (top - 2) * TILE - g.truck.T[1];
+    for (let i = 0; i < 10; i += 2) { g.truck.T[i] += dx; g.truck.P[i] += dx; g.truck.T[i + 1] += dy; g.truck.P[i + 1] += dy; }
+    g.truck.probePrev = null;
+    const shifts = g.shiftCount, dropped = g.course.dropped;
+    g.step();
+    assert.equal(g.shiftCount, shifts + 1, 'the world scrolled');
+    assert.equal(g.course.dropped, dropped - ENDLESS_SHIFT);
+    assert.ok(g.truck.T[0] > 80 * TILE, 'the truck moved right with the world');
+  }
+  for (let i = 0; i < 30; i++) g.step();
+  assert.ok(g.distanceBack > 2 * ENDLESS_SHIFT, `ground behind the start counted (${g.distanceBack} columns)`);
+  assert.equal(g.metres, Math.floor((g.distance + g.distanceBack) * 2.5));
+});

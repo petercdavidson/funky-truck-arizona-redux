@@ -17,7 +17,9 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   DOM/browser APIs so it runs under Node. Storage and randomness are injected (`opts.store`,
   `opts.random`).
 - `src/endless.js`: Endless Mode's course generator (learns tile joins from `levels.json`). Also
-  free of DOM APIs. The game scrolls the world left as the course moves (`Game.scrollWorld`).
+  free of DOM APIs. The game scrolls the world left as the course moves (`Game.scrollWorld`), or
+  right when you drive back past the start: the course goes on for ever both ways (`back` joins,
+  the left `Walker`), and columns scrolled off either side are kept.
 - `src/tricks.js`: trick detection and chain scoring (no DOM). It reads the truck and never
   changes it; flips still come from `Truck.trackFlip`.
 - `src/render.js`: canvas drawing, plus `BUTTONS`, the clickable areas for each screen.

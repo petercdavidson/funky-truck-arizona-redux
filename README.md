@@ -187,13 +187,15 @@ out as they were designed; now and then it matches only the last one, which is w
 turns into something new. The ground is kept inside a fixed height band, and the joins are weighted
 by the stage they came from, so a course starts like Stage One and drifts towards the later stages
 the further you get. The course lives in a window of 128 columns that scrolls as you drive
-(`src/endless.js`).
+(`src/endless.js`). It goes on for ever to the left too, behind the start: that way is built from
+the same joins read right to left. Ground that scrolls off either side is remembered (up to about
+50 km of it), so turning back finds the course as you left it.
 
 The course never climbs more than 5 tiles within 4 columns, and the generator looks ahead so it
 never wanders into a valley that can only be left by a steeper wall: every hill can be driven up.
 
-Score: 10 points for every new tile of ground, plus tricks as usual. The HUD shows the
-distance in metres. **Milestones** are celebrated as you pass them, in gold with a burst of
+Score: 10 points for every new tile of ground, either way, plus tricks as usual. The HUD shows the
+distance covered in metres (ahead of the start and behind it, added up). **Milestones** are celebrated as you pass them, in gold with a burst of
 confetti in the trucks' paint colours and a fanfare: 100, 250, 500, 750 and 1,000 m, then every 500 m; 5,000, 10,000, 25,000,
 50,000, 100,000, 250,000, 500,000 and 1,000,000 points; and beating your best distance.
 

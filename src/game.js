@@ -849,7 +849,7 @@ export class Game {
   newCourse() {
     if (!this.grammar) this.grammar = buildGrammar(this.data.levels);
     this.course = new EndlessCourse(this.grammar, this.data.levels, this.random);
-    this.distance = 0;
+    this.distance = 0; this.distanceBack = 0;
     this.nextMetres = 0; this.nextScore = 0;
     this.milestone = null; this.milestones = [];
   }
@@ -1113,21 +1113,27 @@ export class Game {
     if (this.metres > this.bestEndless) { this.bestEndless = this.metres; this.store.set('bestEndless', this.bestEndless); }
   }
 
-  /** Endless Mode: metres travelled so far. */
-  get metres() { return Math.floor(this.distance * METRES_PER_TILE); }
+  /**
+   * Endless Mode: metres of course covered so far, both ways (the course goes on for ever to the
+   * left too: ground behind the start counts as well).
+   */
+  get metres() { return Math.floor((this.distance + (this.distanceBack || 0)) * METRES_PER_TILE); }
 
-  /** Endless Mode: score new ground, and scroll the world when the truck nears the window's end. */
+  /** Endless Mode: score new ground (either way), and scroll the world when the truck nears either end of the window. */
   updateEndless() {
     // (A truck wrecked on purpose still counts the ground its pieces tumble over.)
     const x = this.focus[0];
     const col = Math.floor(x / TILE) + this.course.dropped;
-    if (col > this.distance) {
-      if (this.endTimer === 0) this.score += (col - this.distance) * POINTS_PER_TILE;
-      this.stats.endlessMetres += (col - this.distance) * METRES_PER_TILE;
-      this.distance = col;
-    }
+    const add = (cols) => {
+      if (this.endTimer === 0) this.score += cols * POINTS_PER_TILE;
+      this.stats.endlessMetres += cols * METRES_PER_TILE;
+    };
+    if (col > this.distance) { add(col - this.distance); this.distance = col; }
+    // (behind the start: the opening's first column is column 0)
+    if (-col > (this.distanceBack || 0)) { add(-col - (this.distanceBack || 0)); this.distanceBack = -col; }
     if (this.mode === 'endless') this.checkMilestones();
     if (x > (ENDLESS_WIDTH - 40) * TILE) this.scrollWorld(ENDLESS_SHIFT);
+    else if (x < 40 * TILE) this.scrollWorld(-ENDLESS_SHIFT);
   }
 
   /** The distance of Endless milestone `i`: the listed ones, then every MILESTONES.every metres. */
@@ -1169,9 +1175,9 @@ export class Game {
     else if (m.timer <= 0) this.milestone = null;
   }
 
-  /** Drop `n` columns off the left of the course and move everything left to match. */
+  /** Drop `n` columns off the left of the course and move everything left to match (n < 0: the other way). */
   scrollWorld(n) {
-    this.course.scroll(n);
+    if (n > 0) this.course.scroll(n); else this.course.scrollBack(-n);
     this.shiftWorld(n * TILE, 0);
     this.world = this.makeWorld(); this.thin = null;
     // A wreck tumbling across the scroll goes on in the new world.
