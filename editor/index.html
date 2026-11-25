@@ -430,6 +430,18 @@
         }
       }
       for (let y = 0; y < H; y++) for (let x = x0; x < x1; x++) { const p = L.paint[y][x]; if (p !== NONE) { raw[y][x] = p; rawSrc[y][x] = 2; } }
+      // a path's own ground pieces show over anything painted there, so a path never has a gap in
+      // its ground (painting over them breaks the path instead: cutPaths)
+      for (const g of L.paths) {
+        if (!g.chain.length) continue;
+        const on = new Set(g.chain), d = g.delta;
+        for (let i = 0; i < d.length; i += 2) {
+          const k = d[i], x = k % W;
+          if (x < x0 || x >= x1 || !on.has(k)) continue;
+          const y = (k - x) / W;
+          if (L.paint[y][x] !== NONE) { raw[y][x] = d[i + 1]; rawSrc[y][x] = 1; }
+        }
+      }
       const t = raw.map((r) => r.slice());
       const r = fillRuns(t, kit, (x, y) => L.paint[y][x] === SKY);
       bad.clear();
@@ -1268,15 +1280,15 @@
     }
     /** Path g's tiles: where r (drawPath's) differs from what it was laid over, and its ground pieces. */
     function setDelta(g, r, base) {
-      const W = L.width, d = [];
+      const W = L.width, d = [], onChain = new Set(r ? r.chain.map((c) => c.y * W + c.x) : []);
       if (r) {
         for (let y = 0; y < L.height; y++) for (let x = Math.max(0, r.x0 - 2); x < Math.min(W, r.x1 + 2); x++) {
           const t = r.tiles[y][x];
-          if (t !== base[y][x] || (t !== SKY && L.paint[y][x] !== NONE)) d.push(y * W + x, t);
+          if (t !== base[y][x] || (t !== SKY && L.paint[y][x] !== NONE) || onChain.has(y * W + x)) d.push(y * W + x, t);
         }
       }
       g.delta = d;
-      g.chain = r ? r.chain.map((c) => c.y * W + c.x) : [];
+      g.chain = r ? [...onChain] : [];
     }
     const soon = () => { clearTimeout(idleTimer); idleTimer = setTimeout(idleWork, 300); };
     /** When things are still: the look pass for the path laid last, then paths laid over changed ground. */

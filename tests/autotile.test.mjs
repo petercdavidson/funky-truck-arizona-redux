@@ -426,3 +426,21 @@ test('a rule for a situation (tools/match-review.html) picks its art, and holds 
   lookAroundAll(right, kit2, [[2, 2]]);
   assert.equal(right[2][2], 21 + 256);
 });
+
+const sidesOfTile = (v) => sidesOf(artKit, v).surface;
+test("the look pass agrees with most of the user's own fixes (tests/fixtures/art-examples.json)", () => {
+  const { examples } = JSON.parse(readFileSync(new URL('./fixtures/art-examples.json', import.meta.url)));
+  const F = { '': 0, '→': 1, '↓': 2, '←': 3 };
+  const id = (s) => { if (s === '.') return 0; const m = s.match(/^(\d+)(.*)$/); return +m[1] + 256 * F[m[2]]; };
+  const grid = (rows) => rows.map((r) => r.split(' ').map(id));
+  let agree = 0, total = 0;
+  for (const { pass, fixed } of examples) {
+    // start from plain dirt where the art goes, and let the pass choose it all
+    const t = grid(pass), want = grid(fixed), cells = [];
+    t.forEach((r, y) => r.forEach((v, x) => { if (v && !sidesOfTile(v)) { t[y][x] = 1; cells.push([x, y]); } }));
+    lookAroundAll(t, artKit, cells, { rounds: 4 });
+    want.forEach((r, y) => r.forEach((v, x) => { if (v && !sidesOfTile(v)) { total++; if (t[y][x] === v) agree++; } }));
+  }
+  // (1.24.14: 64 of 83; most of the rest are near-twin corner tiles or cells left as plain dirt)
+  assert.ok(agree >= 60, `${agree} of ${total}`);
+});

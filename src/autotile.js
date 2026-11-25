@@ -262,6 +262,9 @@ function sheetRules(kit, edges, sets = null) {
   const genericSet = new Set(genericForms.slice(1));
   const artForms = [];
   for (const a of art) for (let f = 0; f < 4; f++) artForms.push(makeId(a, f));
+  // the art for inside corners (sets.corners), any way round; without the list, the general-purpose art
+  const cornerForms = [];
+  for (const a of sets?.corners || generic) if (art.has(a)) for (let f = 0; f < 4; f++) cornerForms.push(makeId(a, f));
   /** Whether a and b, the same way round, sit as they do in a set on the sheet: a left of b (dir 0) or above it (1). */
   const sheetJoin = (a, b, dir) => {
     if (a <= DIRT || b <= DIRT) return false;
@@ -274,7 +277,7 @@ function sheetRules(kit, edges, sets = null) {
   /** How badly a and b meet (dir 0: a left of b; 1: a above b): nothing for a join the sheet has. */
   // (a little more for any other join of two tiles with art: the sheet's own are the sure ones)
   const join = (a, b, dir) => (sheetJoin(a, b, dir) ? 0 : seam(a, b, dir) + (a > DIRT && b > DIRT ? 0.05 : 0));
-  return { art, partners, generic, genericForms, genericSet, artForms, sheetJoin, join };
+  return { art, partners, generic, genericForms, genericSet, artForms, cornerForms, sheetJoin, join };
 }
 
 /** Offsets of the cells (relative to the one a point belongs to) that touch a point on its edge. */
@@ -806,7 +809,7 @@ const turnBy = (t, r) => (t <= DIRT || formOf(t) > 3 ? t : makeId(baseOf(t), (fo
  * marked in tools/match-review.html) when there is one; otherwise the partners of the pieces beside
  * it (the art joined to them on their ground side on the sheet, turned as they are), the
  * general-purpose art any way round, and plain dirt. An inside corner (ground facing it from two
- * sides) takes general-purpose art or the art that best meets the pieces there: a partner goes with
+ * sides) takes corner art (TILE_SETS.corners, any way round): a partner goes with
  * one piece, not two (unless it meets the other one as well as its own, or, at a cost, the sheet
  * joins it on another side too once the tiles round it are chosen).
  */
@@ -818,7 +821,7 @@ export function artChoices(tiles, kit, x, y, opts = {}) {
     return v && v.length > 1 ? { cand: v.map((b) => makeId(b, f)), pref: new Set([id]), pen: null } : null;
   }
   if (!kit.partners) return null;
-  const MISFIT = opts.misfit ?? 0.15;
+  const MISFIT = opts.misfit ?? 0.2;
   const sit = situation(tiles, kit, x, y), rule = kit.rules?.[sit.key];
   if (rule?.good !== undefined) { const t = turnBy(rule.good, 4 - sit.turn); return { cand: [t], pref: new Set([t]), pen: null, key: sit.key, rule }; }
   const sugg = new Map(), facing = [];
@@ -834,12 +837,9 @@ export function artChoices(tiles, kit, x, y, opts = {}) {
   // how a tile t here meets piece q, which is (wx, wy) back from it
   const meets = (t, q, wx, wy) => (wx ? (wx > 0 ? kit.seam(q, t, 0) : kit.seam(t, q, 0)) : (wy > 0 ? kit.seam(q, t, 1) : kit.seam(t, q, 1)));
   const corner = facing.length >= 2;
-  const fits = [...sugg].filter(([t, own]) => !corner || facing.every(([q, wx, wy]) => q === own || meets(t, q, wx, wy) < 0.03)).map(([t]) => t);
-  let extra = [];
-  if (corner) {
-    const score = (t) => facing.reduce((s, [q, wx, wy]) => s + meets(t, q, wx, wy), 0);
-    extra = kit.artForms.filter((t) => !sugg.has(t) || fits.includes(t)).map((t) => [t, score(t)]).sort((p, q) => p[1] - q[1]).slice(0, 10).map(([t]) => t);
-  }
+  const fits = corner ? [] : [...sugg.keys()];
+  // an inside corner takes corner art (the sheet's corner tiles, any way round)
+  const extra = corner ? kit.cornerForms : [];
   const misfits = [...sugg.keys()].filter((t) => !fits.includes(t));
   const bad = new Set((rule?.bad || []).map((t) => turnBy(t, 4 - sit.turn)));
   const cand = [...new Set([...fits, ...misfits, ...kit.genericForms, ...extra])].filter((t) => !bad.has(t));

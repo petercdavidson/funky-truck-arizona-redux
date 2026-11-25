@@ -19,7 +19,7 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
   up to the first sky, so an overhang above a gap is left alone. A path that goes back on itself or
   up a wall is laid by `drawPathFree` (pieces turned any way, ground on the right-hand side of the
   way the path runs). `sidesOf` says which side of each tile is ground (the editor fills dirt in
-  with it, `compose`); `lookAround` is the look pass around given cells (Smooth path edges).
+  with it, `compose`); `lookAround` is the look pass around given cells (Smooth path edges); see "The art" below.
 - `../src/tile-forms.js`: tiles turned and flipped (walls, ceilings, overhangs) and the mirrors:
   ids `base + 256 * form`, `mirrorId` / `flipUpId` / `turnId` for one tile, `flipTiles` /
   `flipTilesUp` / `turnTiles` for an area, `formCollision`, `tileLabel` (e.g. `2→`, `24↓`). The
@@ -107,3 +107,40 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
 - Files: **Save file** / **Open file** use the same JSON, plus `layers` ({ base, paint: [cell,
   tile, ...] }) and `paths`. The game's Load Stage
   screen can load these files too.
+
+## The art: how tiles are chosen (where it stands, 1.24.14)
+
+Worked out with the user over 1.24.8 to 1.24.14 from their hand fixes (screenshots), kept as data
+in `tests/fixtures/art-examples.json` (a test checks the look pass agrees with most of them). The
+nine stages are only a check, not the source of the rules: they were made by hand and may hold
+mistakes. The rules come from the tile sheet itself and from the user's fixes.
+
+- **Layers**, not one grid: a path's tiles are its own (`g.delta`), so moving or deleting it leaves
+  nothing behind. A path's ground pieces (`g.chain`) always show, even under painted tiles: a path
+  never has a gap in its collision (1.24.14; painting over them breaks the path instead).
+- **Ground fill** (`fillRuns`): straight out from each surface's ground side: up or down only from
+  tiles whose collision runs the full width, sideways only from tiles whose collision runs the full
+  height (the user's rule). Runs pass through dirt and art. Then any patch of sky that ground closes
+  in on every side is filled (a hole's surroundings). A run that meets ground facing away from it
+  is a problem, marked in red (half strength).
+- **The tile sheet is 10 wide and drawn in sets** (`src/tile-sets.js`, marked by the user in
+  `tools/sheet-sets.html`): tiles side by side in a set join exactly as they sit (`sheetJoin`,
+  costed 0). Different sets can still go together; the sheet just doesn't say so. Ground pieces
+  join any piece whose collision meets theirs at the edge, whatever the set.
+- **Partners**: the art joined to a piece in its set, on the piece's ground side, goes on that side
+  of it in the level, turned the same way (`toSheet` turns a world direction into the sheet's). In
+  the stages the partner is what's there 77% of the time it could be.
+- **Inside corners** (ground facing a cell from two sides) take corner art (`TILE_SETS.corners`,
+  the sheet's top-left block, any way round); a piece's partner only wins one at a cost
+  (`misfit`, 0.2), which in practice means when the sheet joins it on a second side too (226→
+  between 216→ and 225→).
+- **Edge pixels** (`src/tile-art.js`, `seam`) only settle what the rules leave open: they're noisy
+  (94 and 95, a perfect join on the sheet, score 0.143), so never rely on them alone.
+- The look pass waits till things are still and runs in the worker; `artChoices` gives each cell's
+  choices (rules by hand from `src/tile-rules.js` first, then partners, corner art, dirt).
+- Tools: `tools/sheet-sets.html` (the sets), `tools/match-review.html` (rules by situation: the
+  user found spot-checking screenshots better, so it's there but not the main way).
+
+Open: twin corner tiles (21/22, 10/20, 11/12, 14/15) are still a near coin-toss; more of the
+user's fixes will settle them. Ideas the user liked: decide art by rules and lookups rather than
+pixel comparison wherever the sheet can say.
