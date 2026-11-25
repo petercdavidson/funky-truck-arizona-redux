@@ -106,10 +106,10 @@ export function buildKit(collision, levels, T = 64, opts = {}) {
   const used = new Set(levels.flatMap((l) => l.tiles.flat()));
   const shape = (p) => p.pts.map((q) => q.join(',')).join(' ');
   const variants = new Map();
-  for (const p of pieces) variants.set(p.id, pieces.filter((q) => used.has(q.id) && shape(q) === shape(p)).map((q) => q.id));
+  for (const p of pieces) variants.set(p.id, pieces.filter((q) => shape(q) === shape(p)).map((q) => q.id));
   const fills = [...used].filter((id) => id !== SKY && !isPiece.has(id)).sort((p, q) => p - q);
   const kit = { T, pieces, byId, byEntry, isPiece, joins, fillPick, variants, fills, collision };
-  if (opts.edges) Object.assign(kit, artOf(opts.edges));
+  if (opts.edges) { Object.assign(kit, artOf(opts.edges)); Object.assign(kit, sheetRules(kit, opts.edges, opts.sheetCols ?? 10)); }
   // every piece turned each way (forms 0 to 3): for paths that run any way round
   const turn = ([x, y]) => [c(T - y), c(x)];
   const turnIn = ([x, y]) => [T - y, x];
@@ -214,6 +214,56 @@ function artOf(edges) {
   return { seam, seamTotal };
 }
 
+// ---- the tile sheet's own joins
+//
+// The sheet was drawn as pictures: tiles next to each other on it join up exactly, and next to
+// nearly every piece of ground is the art that goes with it on its ground side (its partner). So
+// two tiles the same way round that sit side by side on the sheet the way they do in the level
+// join perfectly (`join` costs them nothing), and the art for a cell next to a piece starts from
+// that piece's partner. The art that's nobody's partner is the general-purpose corners and joins.
+
+/** A world direction [dx, dy] as it is on the sheet, for a tile turned `f` quarters clockwise. */
+const toSheet = ([x, y], f) => { for (let i = 0; i < ((4 - f) & 3); i++) [x, y] = [-y, x]; return [x, y]; };
+
+function sheetRules(kit, edges, COLS) {
+  const n = edges.length;
+  // (a tile with only a few faint pixels round its edges counts as empty)
+  const opaque = (id) => { const s = edges[id]; if (!s) return false; let n = 0; for (let e = 0; e < 4; e++) for (let k = 0; k < 32; k++) if (B64.indexOf(s[e * 64 + k]) > 20) n++; return n >= 8; };
+  const art = new Set();
+  for (let id = DIRT + 1; id < n; id++) if (!kit.isPiece.has(id) && opaque(id)) art.add(id);
+  const DIRS = [[1, 0, 'right'], [-1, 0, 'left'], [0, 1, 'bottom'], [0, -1, 'top']];
+  const nextTo = (id, sx, sy) => (sx && Math.floor((id + sx) / COLS) !== Math.floor(id / COLS) ? -1 : id + sx + COLS * sy);
+  // each piece's partners: the art beside it on the sheet, on a side of it that's ground
+  const partners = new Map(), partnered = new Set();
+  for (const p of kit.isPiece) {
+    for (const [sx, sy, side] of DIRS) {
+      const a = nextTo(p, sx, sy);
+      if (!art.has(a)) continue;
+      partnered.add(a);
+      if (sidesOf(kit, p)[side] < 0.5) continue;
+      if (!partners.has(p)) partners.set(p, []);
+      partners.get(p).push({ sx, sy, art: a });
+    }
+  }
+  const generic = [...art].filter((a) => !partnered.has(a));
+  const genericForms = [DIRT];
+  for (const a of generic) for (let f = 0; f < 4; f++) genericForms.push(makeId(a, f));
+  const genericSet = new Set(genericForms.slice(1));
+  /** Whether a and b, the same way round, sit as they do on the sheet: a left of b (dir 0) or above it (1). */
+  const sheetJoin = (a, b, dir) => {
+    if (a <= DIRT || b <= DIRT) return false;
+    const f = formOf(a);
+    if (f !== formOf(b) || f > 3) return false;
+    const [sx, sy] = toSheet(dir ? [0, 1] : [1, 0], f);
+    return nextTo(baseOf(a), sx, sy) === baseOf(b);
+  };
+  const seam = kit.seam;
+  /** How badly a and b meet (dir 0: a left of b; 1: a above b): nothing for a join the sheet has. */
+  // (a little more for any other join of two tiles with art: the sheet's own are the sure ones)
+  const join = (a, b, dir) => (sheetJoin(a, b, dir) ? 0 : seam(a, b, dir) + (a > DIRT && b > DIRT ? 0.05 : 0));
+  return { art, partners, generic, genericForms, genericSet, sheetJoin, join };
+}
+
 /** Offsets of the cells (relative to the one a point belongs to) that touch a point on its edge. */
 function cellsAt(x, y, T) {
   const xs = x === 0 ? [-1, 0] : x === T ? [0, 1] : [0];
@@ -312,7 +362,7 @@ export function drawPath(level, sketch, kit, opts = {}) {
   const band = opts.band ?? 3 * T;
   const UNSEEN = opts.unseenJoin ?? 1.5, PER = opts.perPiece ?? 0.05;
   // with the tiles' art (kit.seam), a join whose art doesn't meet costs more
-  const { seam } = kit, ART = opts.art ?? 3;
+  const seam = kit.join || kit.seam, ART = opts.art ?? 3;
   const joinSeam = (last, X, Y, p, cx, cy) => {
     const q = byId.get(last), lx = (X - q.outX) / T, ly = (Y - q.outY) / T;
     if (ly === cy && lx + 1 === cx) return seam(last, p.id, 0);
@@ -454,55 +504,37 @@ function fillKeysFor(up, left, right, isPiece) { return fillKeys(up, left, right
  * dirt. Changes `tiles` in place.
  */
 function polish(tiles, chain, x0, x1, kit, tops, rounds = 3) {
-  const { seam, isPiece, variants, fills } = kit;
-  const H = tiles.length, W = tiles[0].length;
-  const PRIOR = 0.04;        // choosing other than the stages' usual tile there
-  const onChain = new Set(chain.map((c) => c.y * W + c.x));
-  // the choices for each cell (null: it stays as it is) and what it was to begin with
-  const cand = new Map(), first = new Map();
-  const nearSurface = (x, y) => {
-    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
-      const t = tiles[y + dy]?.[x + dx];
-      if (t === SKY || onChain.has((y + dy) * W + x + dx)) return true;
-    }
-    return false;
-  };
-  for (let x = x0; x < x1; x++) for (let y = tops[x - x0]; y < H; y++) {
-    const id = tiles[y][x];
-    if (id === SKY) continue;
-    if (onChain.has(y * W + x)) { const v = variants.get(id); if (v && v.length > 1) cand.set(y * W + x, v); }
-    else if (!isPiece.has(id) && nearSurface(x, y)) cand.set(y * W + x, fills);
-    if (cand.has(y * W + x)) first.set(y * W + x, id);
-  }
-  solveLook(tiles, cand, first, kit, rounds);
+  lookAround(tiles, kit, chain.map((c) => [c.x, c.y]), { rounds });
 }
 
 /**
  * The look pass's solver: each cell in `cand` (y * W + x -> the tiles it may be) gets one of its
- * choices so the art joins up, `first` (y * W + x -> tile) being the one to prefer a little. Each
- * column, then each row, of cells with choices is solved exactly (a shortest path through its
- * choices) with the tiles either side held, a few times over. Changes `tiles` in place.
+ * choices so the art joins up (kit.join, or kit.seam), the ones in `pref` (y * W + x -> a set of
+ * tiles) a little preferred. Each column, then each row, of cells with choices is solved exactly (a
+ * shortest path through its choices) with the tiles either side held, a few times over. Changes
+ * `tiles` in place.
  */
-function solveLook(tiles, cand, first, kit, rounds = 3) {
-  const { seam } = kit;
+function solveLook(tiles, cand, pref, kit, rounds = 3) {
+  const seam = kit.join || kit.seam;
   const H = tiles.length, W = tiles[0].length;
-  const PRIOR = 0.04;        // choosing other than the stages' usual tile there
+  const PRIOR = 0.04;        // choosing other than a preferred tile there
   if (!cand.size) return;
   let x0 = W, x1 = 0;
   for (const k of cand.keys()) { const x = k % W; x0 = Math.min(x0, x); x1 = Math.max(x1, x + 1); }
   const at = (x, y) => (x < 0 || y < 0 || x >= W || y >= H ? -1 : tiles[y][x]);
   const sm = (a, b, dir) => (a < 0 || b < 0 ? 0 : seam(a, b, dir));
+  const unary = (k, t) => { const p = pref.get(k); return p?.size ? (p.has(t) ? 0 : PRIOR) : 0; };
   // one line of cells (a column or a row) solved exactly, the cells beside it held
   const line = (cells, dir) => {
     // dir 1: a column (cells top to bottom; the sides are left and right); 0: a row
     const opts = cells.map(([x, y]) => cand.get(y * W + x) || [tiles[y][x]]);
     const cost = [], back = [];
     cells.forEach(([x, y], i) => {
-      const o = opts[i], k0 = first.get(y * W + x);
+      const o = opts[i];
       const [ax, ay, bx, by] = dir ? [x - 1, y, x + 1, y] : [x, y - 1, x, y + 1];
       const c = new Float64Array(o.length), b = new Int32Array(o.length);
       o.forEach((t, j) => {
-        let u = (k0 !== undefined && t !== k0 ? PRIOR : 0);
+        let u = unary(y * W + x, t);
         u += dir ? sm(at(ax, ay), t, 0) + sm(t, at(bx, by), 0) : sm(at(ax, ay), t, 1) + sm(t, at(bx, by), 1);
         if (i === 0) {
           const [px, py] = dir ? [x, y - 1] : [x - 1, y];
@@ -628,38 +660,65 @@ export function spansOf(kit, id) {
 }
 
 /**
- * Ground filled in, straight out from each surface's ground side across the sky to the next tile
- * (or the edge of the level): down from ground facing up and up from ground facing down, for
- * tiles whose collision runs from their left edge to their right; left or right from walls, tiles
- * whose collision runs from top to bottom (a slope corner to corner does both). Only sky is filled
- * (with dirt), and not where `blocked(x, y)` (sky kept on purpose). A run that ends at ground
- * facing away from it (ground facing up over ground facing up, say) can't be worked out: it isn't
- * filled, and its cells and the tile it ends at are problems. Changes `tiles`; returns
- * { filled: [[x, y], ...], problems: [[x, y], ...] }.
+ * Ground filled in. First straight out from each surface's ground side, across sky (and through
+ * dirt and art, which are ground already) to the next surface or the edge of the level: down from
+ * ground facing up and up from ground facing down, for tiles whose collision runs from their left
+ * edge to their right; left or right from walls, tiles whose collision runs from top to bottom (a
+ * slope corner to corner does both). Then any stretch of sky left that ground closes in on every
+ * side it's closed in (nothing beside it facing it with sky) is filled too: the ground round a
+ * hole, say. Only sky is filled (with dirt), and not where `blocked(x, y)` (sky kept on purpose).
+ * A run that ends at ground facing away from it (ground facing up over ground facing up, say)
+ * can't be worked out: it isn't filled, and its cells and the tile it ends at are problems.
+ * Changes `tiles`; returns { filled: [[x, y], ...], problems: [[x, y], ...] }.
  */
 export function fillRuns(tiles, kit, blocked = () => false) {
   const H = tiles.length, W = tiles[0].length, filled = [], problems = [];
   const open = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+  const surface = (id) => id > DIRT && sidesOf(kit, id).surface;
   const run = (x, y, dx, dy, facing) => {
-    const cells = [];
+    const sky = [], passed = [];
     let cx = x + dx, cy = y + dy;
-    while (open(cx, cy) && tiles[cy][cx] === SKY && !blocked(cx, cy)) { cells.push([cx, cy]); cx += dx; cy += dy; }
-    if (open(cx, cy) && tiles[cy][cx] !== SKY) {
-      const s = sidesOf(kit, tiles[cy][cx]);
-      if (s.surface && s[facing] <= 0.4) { if (cells.length) problems.push(...cells, [cx, cy]); return; }
+    while (open(cx, cy) && !blocked(cx, cy) && !surface(tiles[cy][cx])) {
+      passed.push([cx, cy]);
+      if (tiles[cy][cx] === SKY) sky.push([cx, cy]);
+      cx += dx; cy += dy;
     }
-    for (const [fx, fy] of cells) { tiles[fy][fx] = DIRT; filled.push([fx, fy]); }
+    if (open(cx, cy) && !blocked(cx, cy) && sidesOf(kit, tiles[cy][cx])[facing] <= 0.4) { if (passed.length) problems.push(...passed, [cx, cy]); return; }
+    for (const [fx, fy] of sky) { tiles[fy][fx] = DIRT; filled.push([fx, fy]); }
   };
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const id = tiles[y][x];
-    if (id === SKY || id === DIRT) continue;
-    const s = sidesOf(kit, id);
-    if (!s.surface) continue;
-    const sp = spansOf(kit, id);
+    if (!surface(id)) continue;
+    const s = sidesOf(kit, id), sp = spansOf(kit, id);
     if (sp.h && s.bottom >= GROUND) run(x, y, 0, 1, 'top');
     if (sp.h && s.top >= GROUND) run(x, y, 0, -1, 'bottom');
     if (sp.v && s.right >= GROUND) run(x, y, 1, 0, 'left');
     if (sp.v && s.left >= GROUND) run(x, y, -1, 0, 'right');
+  }
+  // the sky left, in stretches: each filled when everything round it says ground
+  const bad = new Set(problems.map(([x, y]) => y * W + x));
+  const seen = new Uint8Array(W * H);
+  const SIDES = [[1, 0, 'left'], [-1, 0, 'right'], [0, 1, 'top'], [0, -1, 'bottom']];
+  for (let y0 = 0; y0 < H; y0++) for (let x0 = 0; x0 < W; x0++) {
+    if (seen[y0 * W + x0] || tiles[y0][x0] !== SKY || blocked(x0, y0)) continue;
+    const cells = [[x0, y0]];
+    seen[y0 * W + x0] = 1;
+    let ground = 0, sky = false;
+    for (let i = 0; i < cells.length; i++) {
+      const [x, y] = cells[i];
+      if (bad.has(y * W + x)) sky = true;
+      for (const [dx, dy, side] of SIDES) {
+        const nx = x + dx, ny = y + dy;
+        if (!open(nx, ny)) continue;
+        const t = tiles[ny][nx];
+        if (t === SKY) {
+          if (blocked(nx, ny)) sky = true;
+          else if (!seen[ny * W + nx]) { seen[ny * W + nx] = 1; cells.push([nx, ny]); }
+        } else if (!surface(t)) ground++;
+        else { const g = sidesOf(kit, t)[side]; if (g >= GROUND) ground++; else if (g <= 0.4) sky = true; }
+      }
+    }
+    if (ground && !sky) for (const [x, y] of cells) { tiles[y][x] = DIRT; filled.push([x, y]); }
   }
   return { filled, problems };
 }
@@ -690,17 +749,8 @@ export function paintFill(tiles, kit, x, y) {
 export function lookAround(tiles, kit, cells, opts = {}) {
   if (!kit.seam || !cells.length) return;
   const H = tiles.length, W = tiles[0].length, keep = opts.keep;
-  const cand = new Map(), first = new Map(), seen = new Set();
-  const formsNear = (x, y) => {
-    const f = new Set();
-    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
-      const t = tiles[y + dy]?.[x + dx];
-      if (t !== undefined && sidesOf(kit, t).surface) f.add(formOf(t) & 3);
-    }
-    if (!f.size) f.add(0);
-    return f;
-  };
-  const fillsFor = (fs) => { const out = new Set(); for (const r of fs) for (const t of kit.fills) out.add(makeId(t, r)); return [...out]; };
+  const cand = new Map(), pref = new Map(), seen = new Set();
+  const sheet = !!kit.partners;
   for (const [cx, cy] of cells) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const x = cx + dx, y = cy + dy, k = y * W + x;
     if (x < 0 || y < 0 || x >= W || y >= H || seen.has(k)) continue;
@@ -708,11 +758,35 @@ export function lookAround(tiles, kit, cells, opts = {}) {
     const id = tiles[y][x];
     if (id === SKY || keep?.has(k)) continue;
     if (sidesOf(kit, id).surface) {
+      // a piece may be swapped for another of the same shape
       const f = formOf(id), v = f < 4 ? kit.variants.get(baseOf(id)) : null;
-      if (v && v.length > 1) { cand.set(k, v.map((b) => makeId(b, f))); first.set(k, id); }
-    } else { cand.set(k, fillsFor(formsNear(x, y))); first.set(k, id); }
+      if (v && v.length > 1) { cand.set(k, v.map((b) => makeId(b, f))); pref.set(k, new Set([id])); }
+      continue;
+    }
+    if (!sheet) continue;
+    // fill: the partners of the pieces beside it (the art on their ground side on the sheet, turned
+    // as they are), and the general-purpose art any way round, and plain dirt
+    // An inside corner (ground facing it from two sides) takes general-purpose art: a partner
+    // goes with one piece, not two.
+    // (A partner may still go in a corner when it meets the other piece there as well as its own.)
+    const sugg = new Map(), facing = [];
+    for (const [wx, wy, side] of [[1, 0, 'right'], [-1, 0, 'left'], [0, 1, 'bottom'], [0, -1, 'top']]) {
+      const q = tiles[y - wy]?.[x - wx];
+      if (q === undefined || q <= DIRT || !sidesOf(kit, q).surface) continue;
+      if (sidesOf(kit, q)[side] >= 0.5) facing.push([q, wx, wy]);
+      const f = formOf(q);
+      if (f > 3 || !kit.isPiece.has(baseOf(q))) continue;
+      const [sx, sy] = toSheet([wx, wy], f);
+      for (const p of kit.partners.get(baseOf(q)) || []) if (p.sx === sx && p.sy === sy) sugg.set(makeId(p.art, f), q);
+    }
+    // how a tile t here meets piece q, which is (wx, wy) back from it
+    const meets = (t, q, wx, wy) => (wx ? (wx > 0 ? kit.seam(q, t, 0) : kit.seam(t, q, 0)) : (wy > 0 ? kit.seam(q, t, 1) : kit.seam(t, q, 1)));
+    const corner = facing.length >= 2;
+    const fits = [...sugg].filter(([t, own]) => !corner || facing.every(([q, wx, wy]) => q === own || meets(t, q, wx, wy) < 0.03)).map(([t]) => t);
+    cand.set(k, [...new Set([...fits, ...kit.genericForms])]);
+    pref.set(k, fits.length ? new Set(fits) : corner ? kit.genericSet : new Set([DIRT]));
   }
-  solveLook(tiles, cand, first, kit, opts.rounds ?? 2);
+  solveLook(tiles, cand, pref, kit, opts.rounds ?? 3);
 }
 
 // ---- paths any way round: walls, overhangs, ceilings
@@ -815,13 +889,14 @@ function drawPathFree(level, sketch, kit, opts = {}) {
     cache.set(key, out);
     return out;
   };
+  const seamOf = kit.join || kit.seam;
   const joinSeam = (q, X, Y, p, cx, cy) => {
-    if (!kit.seam) return 0;
+    if (!seamOf) return 0;
     const lx = (X - q.outX) / T, ly = (Y - q.outY) / T;
-    if (ly === cy && lx + 1 === cx) return kit.seam(q.id, p.id, 0);
-    if (ly === cy && lx - 1 === cx) return kit.seam(p.id, q.id, 0);
-    if (lx === cx && ly === cy + 1) return kit.seam(p.id, q.id, 1);
-    if (lx === cx && ly + 1 === cy) return kit.seam(q.id, p.id, 1);
+    if (ly === cy && lx + 1 === cx) return seamOf(q.id, p.id, 0);
+    if (ly === cy && lx - 1 === cx) return seamOf(p.id, q.id, 0);
+    if (lx === cx && ly === cy + 1) return seamOf(p.id, q.id, 1);
+    if (lx === cx && ly + 1 === cy) return seamOf(q.id, p.id, 1);
     return 0;
   };
 

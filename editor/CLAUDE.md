@@ -46,7 +46,7 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
   stage's or file's tiles; paths draw over it), each path's tiles (`g.delta`, `[cell, tile, ...]`,
   cell = y * width + x, laid over the base and the paths before it: `below(i)`), `L.paint` (painted,
   pasted, moved; NONE none, SKY erased: over the paths), then dirt filled in (`fillRuns` in autotile.js):
-  straight out from each surface's ground side to the next tile or the edge, down or up from tiles
+  straight out from each surface's ground side (through dirt and art) to the next surface or the edge, then any stretch of sky ground closes in on every side; down or up from tiles
   whose collision runs left edge to right edge, sideways from walls whose collision runs top to
   bottom (`spansOf`); never over painted sky. A run that meets ground facing away from it is a
   problem (`bad`, cells), marked in red. `src` says where each cell's tile came from (shown in

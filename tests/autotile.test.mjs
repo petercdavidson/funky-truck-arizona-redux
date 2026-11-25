@@ -153,6 +153,16 @@ function hillSketch(f) {
   return pts;
 }
 
+/** How badly a level's tiles meet, all told (kit.join: joins the tile sheet has cost nothing). */
+function joinTotal(t) {
+  let s = 0;
+  for (let y = 0; y < t.length; y++) for (let x = 0; x < t[0].length; x++) {
+    if (x + 1 < t[0].length) s += artKit.join(t[y][x], t[y][x + 1], 0);
+    if (y + 1 < t.length) s += artKit.join(t[y][x], t[y + 1][x], 1);
+  }
+  return s;
+}
+
 test('the look pass joins the art up without changing the ground', () => {
   let before = 0, after = 0;
   for (const f of [(x) => Math.min(8.5, 3.55 + 0.88 * (x - 6.3) ** 2), (x) => Math.min(8.5, 3.6 + 1.25 * (x - 6.5) ** 2),
@@ -161,11 +171,11 @@ test('the look pass joins the art up without changing the ground', () => {
     const plain = drawPath(level, line, artKit, { smooth: 2, look: false, art: 0 });
     const looked = drawPath(level, line, artKit, { smooth: 2 });
     assertJoined(looked.chain);
-    before += artKit.seamTotal(plain.tiles, 0, 18); after += artKit.seamTotal(looked.tiles, 0, 18);
+    before += joinTotal(plain.tiles); after += joinTotal(looked.tiles);
     // the same ground to drive on: only tiles with the same collision were swapped
     assert.deepEqual(surface({ ...level, tiles: looked.tiles }, 1, 16), surface({ ...level, tiles: plain.tiles }, 1, 16));
   }
-  assert.ok(after < before * 0.85, `seams ${before.toFixed(2)} -> ${after.toFixed(2)}`);
+  assert.ok(after < before * 0.9, `joins ${before.toFixed(2)} -> ${after.toFixed(2)}`);
 });
 
 test('a sharp peak never puts two pieces in one cell', () => {
@@ -356,10 +366,12 @@ test('a closed sketch (the Shape tool) closes up: ground inside it running clock
   }
 });
 
-test('ground fills straight out from its ground side: down and up from floors and ceilings, sideways from walls; the stages need none', () => {
+test('ground fills straight out from its ground side: down and up from floors and ceilings, sideways from walls; the stages have no problems', () => {
+  // (in the stages it fills only sky shut in under the ground, never over it)
   for (const l of data.levels) {
     const r = fillRuns(l.tiles.map((row) => row.slice()), kit);
-    assert.equal(r.filled.length, 0); assert.equal(r.problems.length, 0);
+    assert.equal(r.problems.length, 0);
+    for (const [x, y] of r.filled) assert.ok(l.tiles.slice(0, y).some((row) => row[x] !== 0), `stage ${data.levels.indexOf(l) + 1}: ${x},${y} has ground over it`);
   }
   const sky = () => Array.from({ length: 8 }, () => Array(8).fill(0));
   // a floor (2, flat across) fills down to the bottom, not up
@@ -374,4 +386,23 @@ test('ground fills straight out from its ground side: down and up from floors an
   const r = fillRuns(t, kit);
   assert.deepEqual(t.map((row) => row[4]), [0, 0, 2, 0, 0, 0, 2, 1]);
   assert.deepEqual(r.problems, [[4, 3], [4, 4], [4, 5], [4, 6]]);
+});
+
+test('ground fills a stretch of sky that ground closes in on, and passes through art: the ground round a hole is solid', () => {
+  const W = 24, H = 20, empty = { width: W, height: H, tiles: Array.from({ length: H }, () => Array(W).fill(0)) };
+  const pts = [];
+  for (let i = 0; i <= 120; i++) { const a = -Math.PI / 2 - i / 120 * 2 * Math.PI; pts.push([12 * TILE + Math.cos(a) * 4 * TILE, 10 * TILE + Math.sin(a) * 3 * TILE]); }
+  const r = drawPath(empty, pts, artKit, { smooth: 2, closed: true });
+  const t = r.tiles.map((row) => row.slice());
+  const f = fillRuns(t, artKit);
+  assert.equal(f.problems.length, 0);
+  // every corner of the level is ground; the middle of the hole is sky
+  for (const [x, y] of [[0, 0], [W - 1, 0], [0, H - 1], [W - 1, H - 1]]) assert.notEqual(t[y][x], 0, `corner ${x},${y}`);
+  assert.equal(t[10][12], 0);
+  // a floor that stops short never fills over itself, round its ends
+  const u = Array.from({ length: 10 }, () => Array(10).fill(0));
+  for (let x = 3; x < 7; x++) u[5][x] = 2;
+  fillRuns(u, kit);
+  assert.equal(u[0].filter(Boolean).length, 0);
+  assert.equal(u[5][0], 0);
 });
