@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Game, TILE } from '../src/game.js';
-import { buildKit, drawPath } from '../src/autotile.js';
+import { buildKit, drawPath, fillRuns } from '../src/autotile.js';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
 const kit = buildKit(data.collision, data.levels, TILE);
@@ -354,4 +354,24 @@ test('a closed sketch (the Shape tool) closes up: ground inside it running clock
     assert.equal(r.tiles[10][12] !== 0, dir === 1);
     assert.equal(r.tiles[2][12], dir === 1 ? 0 : 1);
   }
+});
+
+test('ground fills straight out from its ground side: down and up from floors and ceilings, sideways from walls; the stages need none', () => {
+  for (const l of data.levels) {
+    const r = fillRuns(l.tiles.map((row) => row.slice()), kit);
+    assert.equal(r.filled.length, 0); assert.equal(r.problems.length, 0);
+  }
+  const sky = () => Array.from({ length: 8 }, () => Array(8).fill(0));
+  // a floor (2, flat across) fills down to the bottom, not up
+  let t = sky(); t[3][4] = 2; fillRuns(t, kit);
+  assert.deepEqual(t.map((r) => r[4]), [0, 0, 0, 2, 1, 1, 1, 1]);
+  // a wall (183 turned a quarter: collision top to bottom, ground on its left) fills left, not up or down
+  t = sky(); t[3][4] = 183 + 256; fillRuns(t, kit);
+  assert.deepEqual(t[3], [1, 1, 1, 1, 183 + 256, 0, 0, 0]);
+  assert.deepEqual(t.map((r) => r[4]), [0, 0, 0, 183 + 256, 0, 0, 0, 0]);
+  // a floor over a floor: the ground under the upper one meets sky over the lower one, a problem
+  t = sky(); t[2][4] = 2; t[6][4] = 2;
+  const r = fillRuns(t, kit);
+  assert.deepEqual(t.map((row) => row[4]), [0, 0, 2, 0, 0, 0, 2, 1]);
+  assert.deepEqual(r.problems, [[4, 3], [4, 4], [4, 5], [4, 6]]);
 });

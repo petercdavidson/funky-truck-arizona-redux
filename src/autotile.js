@@ -615,6 +615,55 @@ export function fillGround(level, kit, area = null, opts = {}) {
   return { tiles, filled };
 }
 
+/** Whether a tile's collision runs all the way across it: `h` from its left edge to its right, `v` from top to bottom. */
+export function spansOf(kit, id) {
+  const memo = (kit.spans ||= new Map());
+  if (memo.has(id)) return memo.get(id);
+  const d = linesOf(kit, id), T = kit.T;
+  let x0 = T, x1 = 0, y0 = T, y1 = 0;
+  for (let i = 0; i < d.length; i += 5) for (const [x, y] of [[d[i], d[i + 1]], [d[i + 2], d[i + 3]]]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  const out = { h: d.length > 0 && x0 <= 2 && x1 >= T - 2, v: d.length > 0 && y0 <= 2 && y1 >= T - 2 };
+  memo.set(id, out);
+  return out;
+}
+
+/**
+ * Ground filled in, straight out from each surface's ground side across the sky to the next tile
+ * (or the edge of the level): down from ground facing up and up from ground facing down, for
+ * tiles whose collision runs from their left edge to their right; left or right from walls, tiles
+ * whose collision runs from top to bottom (a slope corner to corner does both). Only sky is filled
+ * (with dirt), and not where `blocked(x, y)` (sky kept on purpose). A run that ends at ground
+ * facing away from it (ground facing up over ground facing up, say) can't be worked out: it isn't
+ * filled, and its cells and the tile it ends at are problems. Changes `tiles`; returns
+ * { filled: [[x, y], ...], problems: [[x, y], ...] }.
+ */
+export function fillRuns(tiles, kit, blocked = () => false) {
+  const H = tiles.length, W = tiles[0].length, filled = [], problems = [];
+  const open = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+  const run = (x, y, dx, dy, facing) => {
+    const cells = [];
+    let cx = x + dx, cy = y + dy;
+    while (open(cx, cy) && tiles[cy][cx] === SKY && !blocked(cx, cy)) { cells.push([cx, cy]); cx += dx; cy += dy; }
+    if (open(cx, cy) && tiles[cy][cx] !== SKY) {
+      const s = sidesOf(kit, tiles[cy][cx]);
+      if (s.surface && s[facing] <= 0.4) { if (cells.length) problems.push(...cells, [cx, cy]); return; }
+    }
+    for (const [fx, fy] of cells) { tiles[fy][fx] = DIRT; filled.push([fx, fy]); }
+  };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const id = tiles[y][x];
+    if (id === SKY || id === DIRT) continue;
+    const s = sidesOf(kit, id);
+    if (!s.surface) continue;
+    const sp = spansOf(kit, id);
+    if (sp.h && s.bottom >= GROUND) run(x, y, 0, 1, 'top');
+    if (sp.h && s.top >= GROUND) run(x, y, 0, -1, 'bottom');
+    if (sp.v && s.right >= GROUND) run(x, y, 1, 0, 'left');
+    if (sp.v && s.left >= GROUND) run(x, y, -1, 0, 'right');
+  }
+  return { filled, problems };
+}
+
 /**
  * Painting tile `id` at (x, y): the ground on its far side filled in down the column (or up, for a
  * ceiling), as far as ground facing the other way or the edge of the level. Changes `tiles`;

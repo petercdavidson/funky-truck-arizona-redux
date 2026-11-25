@@ -45,10 +45,11 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
 - The level is in layers (`compose` makes `L.tiles`, the stage, from them): `L.base` (a loaded
   stage's or file's tiles; paths draw over it), each path's tiles (`g.delta`, `[cell, tile, ...]`,
   cell = y * width + x, laid over the base and the paths before it: `below(i)`), `L.paint` (painted,
-  pasted, moved; NONE none, SKY erased: over the paths), then dirt filled in by the surfaces in each
-  column (between ground facing up and ground facing down, to the top or bottom; never over painted
-  sky). Two surfaces in a column that disagree (ground under one but sky over the next, or the other
-  way) are problems (`bad`), marked in red. `src` says where each cell's tile came from (shown in
+  pasted, moved; NONE none, SKY erased: over the paths), then dirt filled in (`fillRuns` in autotile.js):
+  straight out from each surface's ground side to the next tile or the edge, down or up from tiles
+  whose collision runs left edge to right edge, sideways from walls whose collision runs top to
+  bottom (`spansOf`); never over painted sky. A run that meets ground facing away from it is a
+  problem (`bad`, cells), marked in red. `src` says where each cell's tile came from (shown in
   the status bar). A file or a save from before the layers opens with all its tiles as the base.
 - Tiles: `sel` is the chosen tile id (any form). The palette shows the sheet in `palForm`
   (upright, upside down, turned either way); H / V / R change the chosen tile or the selection.
@@ -70,8 +71,9 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
 - Select: `box` is the selected area. Moving, Alt-drag copying, nudging, pasting and Duplicate
   make a floating area, `flt = { tiles, x, y, paint }`: the painted layer is `paint` with
   `flt.tiles` stamped on (its sky shows through), so it can be moved again without wiping what it
-  passed over; `dropFloat()` lets go (clicking outside, Enter, Esc, another tool, saving). Pasted and
-  duplicated areas follow the pointer (`follow`) until a click puts them down; Esc takes them away.
+  passed over; `dropFloat()` lets go (clicking outside, Enter, Esc, another tool, saving). A pasted
+  area follows the pointer (`follow`) until a click puts it down (Esc takes it away); a duplicate
+  floats over the original.
   Clearing (`clearCells`) empties the base and paint there and paints sky over what's left.
 - View settings (zoom, grid, collision, path, problems, numbers) are kept in `funkytruck.editorView`.
 
