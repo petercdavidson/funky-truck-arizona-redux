@@ -1636,6 +1636,7 @@ export class Game {
         if (this.keys.upright) this.upright();
         if (this.onCourse) this.updateEndless();
         else this.updateLoop();
+        if (!this.wreck && !this.rules.classic) this.keepInside();
         this.updateCamera();
         this.updateDirt();
         if (this.mode === 'trial') this.updateTrial();
@@ -1672,6 +1673,28 @@ export class Game {
       default:
         break;
     }
+  }
+
+  /**
+   * Keep your truck between the level's side walls. The walls only reach the top of the level, and
+   * outside Classic there's no ceiling, so a truck high enough (Sandbox's boost, low gravity) could
+   * otherwise fly over them, and one hitting a wall fast could leave its body on the far side.
+   * Pushed back in, it loses its speed into the wall. Inside, it never does anything.
+   */
+  keepInside() {
+    const t = this.truck, T = t.T, P = t.P, W = this.levelData.width * TILE, B = this.world.offset;
+    let dx = 0;
+    for (let i = 0; i < 10; i += 2) {
+      const m = i === 2 || i === 4 ? B : 0;   // wheel centres stay a radius in, as at the walls
+      dx = Math.max(dx, m - T[i]);
+      dx = Math.min(dx, W - m - T[i]);
+    }
+    if (dx === 0) return;
+    for (let i = 0; i < 10; i += 2) {
+      T[i] += dx; P[i] += dx;
+      if ((T[i] - P[i]) * dx < 0) P[i] = T[i];   // moving out: stop
+    }
+    t.probePrev = null;
   }
 
   /** The wrecked truck's pieces, and (wrecked on purpose, with damage on) the damage to its cab. */

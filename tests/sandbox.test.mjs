@@ -245,3 +245,42 @@ test('Sandbox can play a custom stage saved into the game; forgetting it moves t
   g.startSandbox();
   assert.ok(!g.sandboxCustom && g.onCourse);
 });
+
+test('sandbox: boost ×8 never takes the truck out of the level (over the side walls, or under the ground)', () => {
+  for (const course of [0, 1, 4, 10]) for (const run of [0, 1]) {
+    const rnd = seeded(run * 7919 + course * 31 + 1);
+    const g = new Game(data, { store: memoryStore(), random: rnd });
+    g.sandbox = { ...defaultSandbox(), course, boostPower: 4, power: 5 };
+    g.startSandbox(); g.screen = 'playing';
+    let tilt = null, fastest = 0, under = 0;
+    const sunk = (T, j) => { const h = g.world.collide(T[j], T[j + 1] - 400, T[j], T[j + 1]); return h && h.ny < -0.5 && T[j + 1] - h.y > 30; };
+    for (let s = 0; s < 2000 && g.screen === 'playing'; s++) {
+      if (s % 40 === 0) tilt = [null, 'left', 'right'][Math.floor(rnd() * 3)];
+      Object.assign(g.keys, { up: rnd() < 0.8, boost: rnd() < 0.85, left: tilt === 'left', right: tilt === 'right' });
+      if (rnd() < 0.01) g.battle.requests.add('jump');
+      g.step();
+      if (g.wreck) break;
+      const W = g.levelData.width * TILE, H = g.levelData.height * TILE, T = g.truck.T;
+      assert.ok(finite(T));
+      for (let i = 0; i < 10; i += 2) {
+        assert.ok(T[i] >= 0 && T[i] <= W && T[i + 1] <= H, `course ${course}: point ${i / 2} out of the level at step ${s}`);
+      }
+      under = sunk(T, 2) && sunk(T, 4) ? under + 1 : 0;   // a hard landing can dip it in for a moment
+      assert.ok(under < 70, `course ${course}: under the ground for a second at step ${s}`);
+      fastest = Math.max(fastest, g.truck.speed);
+    }
+    assert.ok(fastest > 20, 'it still goes fast');
+  }
+});
+
+test('the truck is kept between the side walls even above the top of the level', () => {
+  const g = new Game(data, { store: memoryStore() });
+  g.sandbox = { ...defaultSandbox(), course: 1, gravity: 0 };
+  g.startSandbox(); g.screen = 'playing';
+  const t = g.truck, W = g.levelData.width * TILE;
+  const dx = W - 100 - t.T[0];
+  for (let i = 0; i < 10; i += 2) { t.T[i] += dx; t.T[i + 1] -= 3000; t.P[i] = t.T[i] - 30; t.P[i + 1] = t.T[i + 1]; } // flying right, fast, high above the level
+  t.probePrev = null;
+  for (let s = 0; s < 60; s++) { g.step(); for (let i = 0; i < 10; i += 2) assert.ok(t.T[i] <= W, `step ${s}`); }
+  assert.ok(t.T[0] - t.P[0] < 1, 'its speed into the wall is gone');
+});
