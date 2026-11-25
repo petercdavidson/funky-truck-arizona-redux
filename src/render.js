@@ -23,10 +23,11 @@ const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
 const BOX_FILL = 'rgba(140,97,79,0.96)', BOX_EDGE = 'rgba(255,255,255,0.6)'; // the game-over box and the mode picker
 const MILESTONE_GOLD = '#ffe27a';
 /**
- * How the backdrop moves outside Classic: the share of the camera's travel it moves across and
- * down (stage units), and the most it moves up (minY) or down (maxY).
+ * How the backdrop moves up and down outside Classic: the share of the camera's height above the
+ * start it moves down (stage units), easing smoothly towards the most it moves up (up) or down
+ * (down) rather than stopping dead at them.
  */
-const BACKDROP = { x: 0.06, y: 0.06, minY: -50, maxY: 420 };
+const BACKDROP = { y: 0.06, up: 80, down: 420 };
 /** The HUD in a tall view: how much bigger, how far down from the top (stage units), and where the middle's news goes (a share of the view's height). */
 const HUD_TALL = { k: 1.5, top: 12, middle: 0.2 };
 
@@ -799,12 +800,13 @@ export class Renderer {
    * The backdrop, scaled up evenly to cover a taller or wider view, and centred. Scaling the photo
    * over the whole window with high-quality smoothing every frame was the heaviest thing the game
    * drew (it halved the frame rate on a big Retina screen), so it is scaled once, into a canvas
-   * the size of the screen (with a mirror image of it alongside, so it can scroll round without a
-   * seam), and that is copied unscaled each frame.
+   * the size of the screen, and that is copied unscaled each frame.
    *
-   * Outside Classic it moves a little as you go (`BACKDROP`): sideways with the distance travelled,
-   * and down as the camera rises above where the stage starts, so the mountains sink away below a
-   * truck flying high. Above and below the picture its top and bottom rows carry on.
+   * Outside Classic it moves as you go. Sideways only on a course with an end, and only when the
+   * picture is wider than the view (a tall screen): it shows its left side at the start of the
+   * course and its right side at the end, never repeating. And down as the camera rises above where
+   * the stage starts (`BACKDROP`), so the mountains sink away below a truck flying high, easing
+   * smoothly into its limits. Above and below the picture its top and bottom rows carry on.
    */
   backdrop(game, v) {
     const c = this.canvas, key = `${c.width}x${c.height}:${this.scale}:${this.offX},${this.offY}:${this.viewW}x${this.viewH}`;
@@ -813,34 +815,34 @@ export class Renderer {
       this.bgKey = key;
       this.bgCache ||= document.createElement('canvas');
       const b = this.bgCache, w = Math.ceil(STAGE_W * k * this.scale), h = Math.ceil(STAGE_H * k * this.scale);
-      b.width = 2 * w; b.height = h;
+      b.width = w; b.height = h;
       const bctx = b.getContext('2d');
       bctx.imageSmoothingEnabled = true;
       bctx.imageSmoothingQuality = 'high';
       bctx.drawImage(bg, 0, 0, w, h);
-      bctx.save(); bctx.translate(2 * w, 0); bctx.scale(-1, 1); bctx.drawImage(bg, 0, 0, w, h); bctx.restore();
       this.bgW = w; this.bgH = h;
     }
-    const ctx = this.ctx, b = this.bgCache, W = 2 * this.bgW, H = this.bgH, sc = this.scale;
+    const ctx = this.ctx, b = this.bgCache, W = this.bgW, H = this.bgH, sc = this.scale;
     // where the picture goes when it doesn't move: centred in the view
-    let x = this.offX + (this.viewW - STAGE_W * k) / 2 * sc, y = this.offY + (this.viewH - STAGE_H * k) / 2 * sc;
+    const room = (STAGE_W * k - this.viewW) * sc; // how much wider than the view the picture is
+    let x = this.offX - room / 2, y = this.offY + (this.viewH - STAGE_H * k) / 2 * sc;
     const moving = game && v && !game.rules.classic && FILL_SCREENS.has(game.screen);
     if (moving) {
       const z = v.zoom || 1, B = BACKDROP;
-      const along = v.camX + (game.shiftTotal?.[0] || 0);
+      const span = game.levelData.width * TILE - this.viewW * z;
+      if (room > 0 && !game.onCourse && !game.levelData.loop && span > 0) {
+        x = this.offX - room * Math.min(1, Math.max(0, v.camX / span));
+      }
       const above = (game.levelData.start[1] - (game.shiftTotal?.[1] || 0)) - (v.camY + this.viewH * z / 2);
-      x -= (((along * B.x * sc) % W) + W) % W;
-      y += Math.max(B.minY, Math.min(B.maxY, above * B.y)) * sc;
+      const d = above * B.y, lim = d < 0 ? B.up : B.down;
+      y += lim * Math.tanh(d / lim) * sc;
     }
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    x = Math.floor(x); y = Math.round(y);
-    for (let cx = x; cx < c.width; cx += W) {
-      if (cx + W <= 0) continue;
-      ctx.drawImage(b, cx, y);
-      if (y > 0) ctx.drawImage(b, 0, 0, W, 1, cx, 0, W, y + 1);                 // the sky carries on up
-      if (y + H < c.height) ctx.drawImage(b, 0, H - 1, W, 1, cx, y + H - 1, W, c.height - y - H + 1); // the desert down
-    }
+    x = Math.round(x); y = Math.round(y);
+    ctx.drawImage(b, x, y);
+    if (y > 0) ctx.drawImage(b, 0, 0, W, 1, x, 0, W, y + 1);                 // the sky carries on up
+    if (y + H < c.height) ctx.drawImage(b, 0, H - 1, W, 1, x, y + H - 1, W, c.height - y - H + 1); // the desert down
     ctx.restore();
   }
 
