@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Art match review</title>
+  <!--
+    Review the Stage Editor's art choices: every situation in a stage where art sits beside a piece
+    of ground (what's next to the cell up, right, down and left), with the tile there now. Mark it
+    good, mark it bad, or click a better tile. Your verdicts are rules for the look pass
+    (src/autotile.js, kit.rules): a situation with a good tile always gets it, a bad tile never goes
+    there. They hold for the same situation turned any way round. Kept in this browser
+    (funkytruck.tileRules, which the editor uses straight away) and saved as tile-rules.json, which
+    goes into src/tile-rules.js. Serve the repo (npm start) and open /tools/match-review.html.
+  -->
+  <style>
+    body { margin: 0; background: #1a1817; color: #efe9e3; font: 14px system-ui, sans-serif; display: flex; height: 100vh; }
+    #side { width: 290px; padding: 14px; box-sizing: border-box; overflow-y: auto; border-right: 1px solid #000; background: #262321; flex: none; }
+    #list { flex: 1; overflow: auto; padding: 12px; display: flex; flex-wrap: wrap; gap: 12px; align-content: flex-start; }
+    h1 { font-size: 16px; color: #f0b43c; margin: 0 0 10px; }
+    p { color: #aaa198; margin: 6px 0; font-size: 13px; line-height: 1.4; }
+    button, select { font: inherit; color: inherit; background: #2f2b28; border: 1px solid #443e39; border-radius: 6px; padding: 4px 9px; cursor: pointer; margin: 3px 3px 3px 0; }
+    button:hover { background: #3b3632; }
+    button.primary { background: #f0b43c; color: #2a1d04; border-color: #f0b43c; font-weight: 600; }
+    button.on { outline: 2px solid #f0b43c; }
+    textarea { width: 100%; height: 100px; box-sizing: border-box; background: #1f1d1b; color: #efe9e3; border: 1px solid #443e39; border-radius: 5px; font: 11px ui-monospace, Menlo, monospace; }
+    .card { background: #2f2b28; border: 1px solid #443e39; border-radius: 10px; padding: 8px; width: 236px; }
+    .card.good { border-color: #3fa45e; } .card.bad { border-color: #e0002a; } .card.picked { border-color: #f0b43c; }
+    .card canvas.ctx { display: block; background: #9cbad1; border-radius: 4px; }
+    .card .info { font-size: 12px; color: #aaa198; margin: 5px 0; }
+    .alts { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+    .alts canvas { width: 36px; height: 36px; background: #8fae7a; cursor: pointer; border-radius: 3px; }
+    .alts canvas:hover { outline: 2px solid #ffd54a; }
+    .alts canvas.chosen { outline: 3px solid #f0b43c; }
+    #status { color: #efe9e3; min-height: 20px; }
+  </style>
+</head>
+<body>
+  <div id="side">
+    <h1>Art match review</h1>
+    <p>Each card is a situation in the stage: the middle tile is the art there now, with what's round it. <b>Good</b> keeps it there always; <b>Bad</b> never puts it there again; click a tile underneath to say that one goes there instead (hover to try it).</p>
+    <p>A verdict holds for the same situation turned any way round. The editor uses them straight away (in this browser).</p>
+    <p>Stage: <select id="source"></select></p>
+    <p><label><input type="checkbox" id="unmarked" checked> only ones not marked yet</label></p>
+    <p id="status"></p>
+    <button class="primary" id="save">Save file</button><button id="copy">Copy</button><button id="undo">Undo</button>
+    <p>Your rules (saved as you go in this browser). Paste some here and press Load to open them:</p>
+    <textarea id="json" spellcheck="false"></textarea>
+    <button id="load">Load</button><button id="clear">Forget them all</button>
+  </div>
+  <div id="list"></div>
+  <script type="module">
+    import { loadAssets, tileImage } from '../src/assets.js';
+    import { TILE } from '../src/game.js';
+    import { buildKit, situation, artChoices, sidesOf } from '../src/autotile.js';
+    import { TILE_EDGES } from '../src/tile-art.js';
+    import { TILE_SETS } from '../src/tile-sets.js';
+    import { TILE_RULES } from '../src/tile-rules.js';
+    import { baseOf, formOf, makeId, tileLabel } from '../src/tile-forms.js';
+    const $ = (id) => document.getElementById(id);
+    const KEY = 'funkytruck.tileRules';
+    const a = await loadAssets('../assets/');
+    const img = (id) => a.tiles[id] || tileImage(a, id);
+    const stages = a.levels.levels;
+    let rules = { ...TILE_RULES };
+    try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && typeof s === 'object') rules = { ...rules, ...s }; } catch { /* none */ }
+    const kit = buildKit(a.levels.collision, stages, TILE, { edges: TILE_EDGES, sets: TILE_SETS });
+    const history = [];
+    const turnBy = (t, r) => (t <= 1 || formOf(t) > 3 ? t : makeId(baseOf(t), (formOf(t) + r) & 3));
+    const say = (t) => { $('status').textContent = t; };
+
+    // the stages to look through: the one being edited, then the nine
+    const sources = [];
+    try { const v = JSON.parse(localStorage.getItem('funkytruck.editorLevel')); if (Array.isArray(v?.tiles)) sources.push(['The stage you’re editing', v.tiles]); } catch { /* none */ }
+    stages.forEach((l, i) => sources.push([`Stage ${i + 1}`, l.tiles]));
+    sources.forEach(([name], i) => $('source').append(new Option(name, i)));
+
+    /** The situations in a stage: art (not sky, not a piece) with a piece of ground beside it. */
+    function situations(tiles) {
+      const H = tiles.length, W = tiles[0].length, by = new Map();
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const id = tiles[y][x];
+        if (id === 0 || sidesOf(kit, id).surface) continue;
+        if (![[0, -1], [1, 0], [0, 1], [-1, 0]].some(([dx, dy]) => { const q = tiles[y + dy]?.[x + dx]; return q > 1 && sidesOf(kit, q).surface; })) continue;
+        const s = situation(tiles, kit, x, y);
+        if (!by.has(s.key)) by.set(s.key, { key: s.key, at: [], tiles: new Map() });
+        const g = by.get(s.key), t = turnBy(id, s.turn);
+        g.at.push([x, y, s.turn]);
+        g.tiles.set(t, (g.tiles.get(t) || 0) + 1);
+      }
+      return [...by.values()].sort((p, q) => q.at.length - p.at.length);
+    }
+
+    function draw() {
+      const tiles = sources[+$('source').value][1].map((r) => r.slice());
+      const list = situations(tiles);
+      $('list').innerHTML = '';
+      let shown = 0;
+      for (const g of list) {
+        if ($('unmarked').checked && rules[g.key]) continue;
+        if (++shown > 150) break;
+        $('list').append(card(tiles, g));
+      }
+      const marked = list.filter((g) => rules[g.key]).length;
+      say(`${list.length} situations in this stage, ${marked} marked. ${Object.keys(rules).length} rules in all.`);
+      $('json').value = JSON.stringify(rules);
+    }
+
+    function card(tiles, g) {
+      const [x, y, turn] = g.at[0], now = tiles[y][x];
+      const el = document.createElement('div');
+      const r = rules[g.key];
+      el.className = `card${r?.good !== undefined ? (turnBy(r.good, 4 - turn) === now ? ' good' : ' picked') : r?.bad ? ' bad' : ''}`;
+      const S = 72, cv = document.createElement('canvas');
+      cv.width = cv.height = 3 * S; cv.className = 'ctx';
+      const ctx = cv.getContext('2d');
+      const paint = (mid) => {
+        ctx.fillStyle = '#9cbad1'; ctx.fillRect(0, 0, 3 * S, 3 * S);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const t = dx || dy ? tiles[y + dy]?.[x + dx] : mid;
+          if (t) ctx.drawImage(img(t), (dx + 1) * S, (dy + 1) * S, S, S);
+        }
+        ctx.strokeStyle = '#ffd54a'; ctx.lineWidth = 2; ctx.strokeRect(S + 1, S + 1, S - 2, S - 2);
+      };
+      paint(now);
+      el.append(cv);
+      const info = document.createElement('div'); info.className = 'info';
+      info.textContent = `${g.at.length} here · now ${tileLabel(now)}${r?.good !== undefined ? ` · rule: ${tileLabel(turnBy(r.good, 4 - turn))}` : ''}${r?.bad ? ` · bad: ${r.bad.map((t) => tileLabel(turnBy(t, 4 - turn))).join(', ')}` : ''}`;
+      el.append(info);
+      const mk = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.onclick = fn; el.append(b); return b; };
+      mk('Good', () => setRule(g.key, { good: turnBy(now, turn) }, `${tileLabel(now)} kept there.`));
+      mk('Bad', () => setRule(g.key, { bad: [...new Set([...(r?.bad || []), turnBy(now, turn)])] }, `${tileLabel(now)} won't go there again.`));
+      if (r) mk('Forget', () => { remember(); delete rules[g.key]; changed('Forgot that rule.'); });
+      // the alternatives: the engine's choices there, cheapest first, then all the art
+      const alts = document.createElement('div'); alts.className = 'alts';
+      const ch = artChoices(tiles, { ...kit, rules: null }, x, y);
+      const join = (t) => [[0, -1, 1, true], [1, 0, 0, false], [0, 1, 1, false], [-1, 0, 0, true]].reduce((s, [dx, dy, dir, before]) => {
+        const q = tiles[y + dy]?.[x + dx];
+        return q === undefined ? s : s + (before ? kit.join(q, t, dir) : kit.join(t, q, dir));
+      }, 0);
+      const ranked = (ch?.cand || []).map((t) => [t, join(t) + (ch.pref.has(t) ? 0 : 0.04) + (ch.pen?.get(t) || 0)]).sort((p, q) => p[1] - q[1]).map(([t]) => t);
+      const addAlt = (t) => {
+        const c = document.createElement('canvas'); c.width = c.height = 72;
+        const cx = c.getContext('2d');
+        if (t > 1) cx.drawImage(img(t), 0, 0, 72, 72); else { cx.fillStyle = '#8b7765'; cx.fillRect(0, 0, 72, 72); }
+        c.title = tileLabel(t);
+        if (r?.good !== undefined && turnBy(r.good, 4 - turn) === t) c.className = 'chosen';
+        c.onmouseenter = () => paint(t); c.onmouseleave = () => paint(now);
+        c.onclick = () => setRule(g.key, { good: turnBy(t, turn) }, `${tileLabel(t)} goes there.`);
+        alts.append(c);
+      };
+      ranked.slice(0, 12).forEach(addAlt);
+      el.append(alts);
+      const more = document.createElement('button'); more.textContent = 'All the art…';
+      more.onclick = () => { more.remove(); for (const t of kit.artForms) if (!ranked.slice(0, 12).includes(t)) addAlt(t); };
+      el.append(more);
+      return el;
+    }
+
+    const remember = () => { history.push(JSON.stringify(rules)); if (history.length > 100) history.shift(); };
+    function setRule(key, r, what) { remember(); rules[key] = r; changed(what); }
+    function changed(what) {
+      try { localStorage.setItem(KEY, JSON.stringify(rules)); } catch { /* none */ }
+      draw();
+      if (what) say(what);
+    }
+    $('source').onchange = draw;
+    $('unmarked').onchange = draw;
+    $('undo').onclick = () => { if (history.length) { rules = JSON.parse(history.pop()); changed('Undone.'); } };
+    $('save').onclick = () => {
+      const url = URL.createObjectURL(new Blob([JSON.stringify(rules, null, 1)], { type: 'application/json' }));
+      const link = Object.assign(document.createElement('a'), { href: url, download: 'tile-rules.json' });
+      link.click(); URL.revokeObjectURL(url);
+    };
+    $('copy').onclick = async () => { try { await navigator.clipboard.writeText(JSON.stringify(rules)); say('Copied.'); } catch { $('json').select(); say('Select the text and copy it.'); } };
+    $('load').onclick = () => { try { const v = JSON.parse($('json').value); if (!v || typeof v !== 'object') throw new Error('not rules'); remember(); rules = v; changed('Loaded.'); } catch (err) { say(`Couldn't load that: ${err.message}`); } };
+    $('clear').onclick = () => { remember(); rules = { ...TILE_RULES }; changed('Back to the rules the game came with. Undo brings yours back.'); };
+    draw();
+  </script>
+</body>
+</html>

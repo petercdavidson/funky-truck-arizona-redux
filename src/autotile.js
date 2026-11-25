@@ -110,6 +110,7 @@ export function buildKit(collision, levels, T = 64, opts = {}) {
   const fills = [...used].filter((id) => id !== SKY && !isPiece.has(id)).sort((p, q) => p - q);
   const kit = { T, pieces, byId, byEntry, isPiece, joins, fillPick, variants, fills, collision };
   if (opts.edges) { Object.assign(kit, artOf(opts.edges)); Object.assign(kit, sheetRules(kit, opts.edges, opts.sets)); }
+  kit.rules = opts.rules || null;   // the look pass's rules by situation (src/tile-rules.js)
   // every piece turned each way (forms 0 to 3): for paths that run any way round
   const turn = ([x, y]) => [c(T - y), c(x)];
   const turnIn = ([x, y]) => [T - y, x];
@@ -762,54 +763,88 @@ export function lookAround(tiles, kit, cells, opts = {}) {
   if (!kit.seam || !cells.length) return;
   const H = tiles.length, W = tiles[0].length, keep = opts.keep;
   const cand = new Map(), pref = new Map(), pen = new Map(), seen = new Set();
-  const sheet = !!kit.partners, MISFIT = opts.misfit ?? 0.15;
   for (const [cx, cy] of cells) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const x = cx + dx, y = cy + dy, k = y * W + x;
     if (x < 0 || y < 0 || x >= W || y >= H || seen.has(k)) continue;
     seen.add(k);
-    const id = tiles[y][x];
-    if (id === SKY || keep?.has(k)) continue;
-    if (sidesOf(kit, id).surface) {
-      // a piece may be swapped for another of the same shape
-      const f = formOf(id), v = f < 4 ? kit.variants.get(baseOf(id)) : null;
-      if (v && v.length > 1) { cand.set(k, v.map((b) => makeId(b, f))); pref.set(k, new Set([id])); }
-      continue;
-    }
-    if (!sheet) continue;
-    // fill: the partners of the pieces beside it (the art on their ground side on the sheet, turned
-    // as they are), and the general-purpose art any way round, and plain dirt
-    // An inside corner (ground facing it from two sides) takes general-purpose art: a partner
-    // goes with one piece, not two.
-    // (A partner may still go in a corner when it meets the other piece there as well as its own.)
-    const sugg = new Map(), facing = [];
-    for (const [wx, wy, side] of [[1, 0, 'right'], [-1, 0, 'left'], [0, 1, 'bottom'], [0, -1, 'top']]) {
-      const q = tiles[y - wy]?.[x - wx];
-      if (q === undefined || q <= DIRT || !sidesOf(kit, q).surface) continue;
-      if (sidesOf(kit, q)[side] >= 0.5) facing.push([q, wx, wy]);
-      const f = formOf(q);
-      if (f > 3 || !kit.isPiece.has(baseOf(q))) continue;
-      const [sx, sy] = toSheet([wx, wy], f);
-      for (const p of kit.partners.get(baseOf(q)) || []) if (p.sx === sx && p.sy === sy) sugg.set(makeId(p.art, f), q);
-    }
-    // how a tile t here meets piece q, which is (wx, wy) back from it
-    const meets = (t, q, wx, wy) => (wx ? (wx > 0 ? kit.seam(q, t, 0) : kit.seam(t, q, 0)) : (wy > 0 ? kit.seam(q, t, 1) : kit.seam(t, q, 1)));
-    const corner = facing.length >= 2;
-    const fits = [...sugg].filter(([t, own]) => !corner || facing.every(([q, wx, wy]) => q === own || meets(t, q, wx, wy) < 0.03)).map(([t]) => t);
-    let extra = [];
-    if (corner) {
-      // a corner may also take the art (of any set, any way round) that best meets the pieces there
-      const score = (t) => facing.reduce((s, [q, wx, wy]) => s + meets(t, q, wx, wy), 0);
-      // (not the partner of a piece here that didn't fit: it goes with that piece alone)
-      extra = kit.artForms.filter((t) => !sugg.has(t) || fits.includes(t)).map((t) => [t, score(t)]).sort((p, q) => p[1] - q[1]).slice(0, 10).map(([t]) => t);
-    }
-    // (a partner that didn't fit the corner may still win it, at a cost, when the sheet joins it on
-    // another side too, once the tiles round it are chosen)
-    const misfits = [...sugg.keys()].filter((t) => !fits.includes(t));
-    cand.set(k, [...new Set([...fits, ...misfits, ...kit.genericForms, ...extra])]);
-    pref.set(k, fits.length ? new Set(fits) : corner ? new Set([...kit.genericSet, ...extra]) : new Set([DIRT]));
-    if (misfits.length) pen.set(k, new Map(misfits.map((t) => [t, MISFIT])));
+    if (tiles[y][x] === SKY || keep?.has(k)) continue;
+    const c = artChoices(tiles, kit, x, y, opts);
+    if (!c) continue;
+    cand.set(k, c.cand); pref.set(k, c.pref);
+    if (c.pen) pen.set(k, c.pen);
   }
   solveLook(tiles, cand, pref, kit, opts.rounds ?? 3, pen);
+}
+
+/**
+ * The situation of cell (x, y) for the art chosen there: what's next to it up, right, down and
+ * left (a piece of ground by its id, 'g' other ground, 's' sky), as a string, turned to the way
+ * round that sorts first (so a situation and the same one turned share a key), and how far it was
+ * turned to get there (quarters clockwise). Rules for the look pass (kit.rules) are kept by it.
+ */
+export function situation(tiles, kit, x, y) {
+  const n = [[0, -1], [1, 0], [0, 1], [-1, 0]].map(([dx, dy]) => {
+    const q = tiles[y + dy]?.[x + dx];
+    return q === undefined || q === SKY ? 's' : q > DIRT && sidesOf(kit, q).surface ? q : 'g';
+  });
+  const turnable = n.every((v) => typeof v !== 'number' || formOf(v) < 4);
+  let best = null, turn = 0;
+  for (let r = 0; r < (turnable ? 4 : 1); r++) {
+    // the picture turned r quarters clockwise: what was on the left is on top, and each piece turned too
+    const t = [0, 1, 2, 3].map((i) => { const v = n[(i - r + 4) & 3]; return typeof v === 'number' ? makeId(baseOf(v), (formOf(v) + r) & 3) : v; });
+    const key = t.join(' ');
+    if (best === null || key < best) { best = key; turn = r; }
+  }
+  return { key: best, turn };
+}
+/** Tile t turned r quarters clockwise (the forms the editor makes, 0 to 3; others as they are). */
+const turnBy = (t, r) => (t <= DIRT || formOf(t) > 3 ? t : makeId(baseOf(t), (formOf(t) + r) & 3));
+
+/**
+ * The look pass's choices for the fill in cell (x, y), or null if it has none: { cand, pref, pen, key, rule }.
+ * A piece may be swapped for another of the same shape. Fill: a rule for its situation (kit.rules,
+ * marked in tools/match-review.html) when there is one; otherwise the partners of the pieces beside
+ * it (the art joined to them on their ground side on the sheet, turned as they are), the
+ * general-purpose art any way round, and plain dirt. An inside corner (ground facing it from two
+ * sides) takes general-purpose art or the art that best meets the pieces there: a partner goes with
+ * one piece, not two (unless it meets the other one as well as its own, or, at a cost, the sheet
+ * joins it on another side too once the tiles round it are chosen).
+ */
+export function artChoices(tiles, kit, x, y, opts = {}) {
+  const id = tiles[y][x];
+  if (id === SKY) return null;
+  if (sidesOf(kit, id).surface) {
+    const f = formOf(id), v = f < 4 ? kit.variants.get(baseOf(id)) : null;
+    return v && v.length > 1 ? { cand: v.map((b) => makeId(b, f)), pref: new Set([id]), pen: null } : null;
+  }
+  if (!kit.partners) return null;
+  const MISFIT = opts.misfit ?? 0.15;
+  const sit = situation(tiles, kit, x, y), rule = kit.rules?.[sit.key];
+  if (rule?.good !== undefined) { const t = turnBy(rule.good, 4 - sit.turn); return { cand: [t], pref: new Set([t]), pen: null, key: sit.key, rule }; }
+  const sugg = new Map(), facing = [];
+  for (const [wx, wy, side] of [[1, 0, 'right'], [-1, 0, 'left'], [0, 1, 'bottom'], [0, -1, 'top']]) {
+    const q = tiles[y - wy]?.[x - wx];
+    if (q === undefined || q <= DIRT || !sidesOf(kit, q).surface) continue;
+    if (sidesOf(kit, q)[side] >= 0.5) facing.push([q, wx, wy]);
+    const f = formOf(q);
+    if (f > 3 || !kit.isPiece.has(baseOf(q))) continue;
+    const [sx, sy] = toSheet([wx, wy], f);
+    for (const p of kit.partners.get(baseOf(q)) || []) if (p.sx === sx && p.sy === sy) sugg.set(makeId(p.art, f), q);
+  }
+  // how a tile t here meets piece q, which is (wx, wy) back from it
+  const meets = (t, q, wx, wy) => (wx ? (wx > 0 ? kit.seam(q, t, 0) : kit.seam(t, q, 0)) : (wy > 0 ? kit.seam(q, t, 1) : kit.seam(t, q, 1)));
+  const corner = facing.length >= 2;
+  const fits = [...sugg].filter(([t, own]) => !corner || facing.every(([q, wx, wy]) => q === own || meets(t, q, wx, wy) < 0.03)).map(([t]) => t);
+  let extra = [];
+  if (corner) {
+    const score = (t) => facing.reduce((s, [q, wx, wy]) => s + meets(t, q, wx, wy), 0);
+    extra = kit.artForms.filter((t) => !sugg.has(t) || fits.includes(t)).map((t) => [t, score(t)]).sort((p, q) => p[1] - q[1]).slice(0, 10).map(([t]) => t);
+  }
+  const misfits = [...sugg.keys()].filter((t) => !fits.includes(t));
+  const bad = new Set((rule?.bad || []).map((t) => turnBy(t, 4 - sit.turn)));
+  const cand = [...new Set([...fits, ...misfits, ...kit.genericForms, ...extra])].filter((t) => !bad.has(t));
+  const pref = fits.length ? new Set(fits) : corner ? new Set([...kit.genericSet, ...extra]) : new Set([DIRT]);
+  return { cand: cand.length ? cand : [DIRT], pref, pen: misfits.length ? new Map(misfits.map((t) => [t, MISFIT])) : null, key: sit.key, rule };
 }
 
 // ---- paths any way round: walls, overhangs, ceilings

@@ -143,6 +143,7 @@ test('a long sketch on a wide level is quick', () => {
 
 import { TILE_EDGES } from '../src/tile-art.js';
 import { TILE_SETS } from '../src/tile-sets.js';
+import { situation, lookAround as lookAroundAll } from '../src/autotile.js';
 import { MIRROR_PAIRS, NO_MIRROR, mirrorOf, flipTiles } from '../src/autotile.js';
 
 const artKit = buildKit(data.collision, data.levels, TILE, { edges: TILE_EDGES, sets: TILE_SETS });
@@ -406,4 +407,22 @@ test('ground fills a stretch of sky that ground closes in on, and passes through
   fillRuns(u, kit);
   assert.equal(u[0].filter(Boolean).length, 0);
   assert.equal(u[5][0], 0);
+});
+
+test('a rule for a situation (tools/match-review.html) picks its art, and holds for the same situation turned', () => {
+  const grid = (put) => { const t = Array.from({ length: 5 }, () => Array(5).fill(1)); put(t); return t; };
+  const kit2 = { ...artKit };
+  // a flat floor piece (2) over the cell: say 21 goes under it
+  const up = grid((t) => { for (let y = 0; y < 2; y++) t[y].fill(0); t[1][2] = 2; });
+  const s = situation(up, kit2, 2, 2);
+  // the rule is kept in the situation's own way round
+  kit2.rules = { [s.key]: { good: 21 + 256 * s.turn } };
+  const r1 = up.map((row) => row.slice());
+  lookAroundAll(r1, kit2, [[2, 2]]);
+  assert.equal(r1[2][2], 21);
+  // the same, turned a quarter clockwise: the floor (turned) to the cell's right, 21 turned with it
+  const right = grid((t) => { for (const row of t) { row[3] = 0; row[4] = 0; } t[2][3] = 2 + 256; });
+  assert.equal(situation(right, kit2, 2, 2).key, s.key);
+  lookAroundAll(right, kit2, [[2, 2]]);
+  assert.equal(right[2][2], 21 + 256);
 });
