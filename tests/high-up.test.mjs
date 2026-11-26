@@ -36,14 +36,16 @@ test('high up, the truck turns at a steady rate while steered and stops when let
   assert.ok(Math.abs(truck[139]) > 0.02, 'down low it keeps spinning');
 });
 
-test('the truck\'s height: above the ground under it', () => {
+test('the truck\'s height: above where the stage starts', () => {
   const g = new Game(data);
   g.startSandbox();
   for (let i = 0; i < 200; i++) g.step();
-  assert.ok(g.height < 5, `on the ground: ${g.height.toFixed(1)} m`);
-  for (let j = 0; j < 10; j++) g.truck.T[j] -= 64 / 2.5 * 2000, g.truck.P[j] -= 64 / 2.5 * 2000;
+  assert.ok(g.height < 30, `near the start: ${g.height.toFixed(1)} m`);
+  // (lift it to 2 km above the start: the lower wheel there)
+  const lift = Math.max(g.truck.T[3], g.truck.T[5]) - (g.levelData.start[1] - g.shiftTotal[1]) + 64 / 2.5 * 2000;
+  for (let j = 1; j < 10; j += 2) g.truck.T[j] -= lift, g.truck.P[j] -= lift;
   g.updateHeight();
-  assert.ok(Math.abs(g.height - 2000) < 20, `${g.height.toFixed(0)} m`);
+  assert.ok(Math.abs(g.height - 2000) < 1, `${g.height.toFixed(0)} m`);
   assert.equal(g.truck.holdTurn, 0);
   g.step();
   assert.equal(g.truck.holdTurn, 1, 'holding its heading at 2 km');

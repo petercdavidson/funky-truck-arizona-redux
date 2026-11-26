@@ -2081,19 +2081,15 @@ export class Game {
   }
 
   /**
-   * `height`: how high the truck (or its wreck) is, in metres, above the ground straight under it,
-   * or with none (past a level's side) above where the stage starts. Outside 2006 Mode the sky
-   * darkens into space by it (`skyAt`), above 1 km the truck steers like a plane (`HOLD_HEADING`)
-   * and the engine fades out by 10 km. (The ground is never above the level's top, so the search
-   * starts there.)
+   * `height`: how high the truck (or its wreck) is, in metres, above where the stage starts (not
+   * the ground under it, so it never jumps as the ground below rises and falls). Outside 2006 Mode
+   * the sky darkens into space by it (`skyAt`), above 1 km the truck steers like a plane
+   * (`HOLD_HEADING`) and the engine fades out by 10 km.
    */
   updateHeight() {
     if (this.rules.retro) { this.height = 0; return; }
-    const t = this.truck, [x, y] = this.wreck ? this.wreck.centre : [(t.T[2] + t.T[4]) / 2, Math.max(t.T[3], t.T[5])];
-    const top = -TILE, bottom = this.levelData.height * TILE + 200;
-    const h = y < bottom ? this.world.down(x, Math.max(y, top), bottom) : null;
-    const under = h ? h.y : this.levelData.start[1] - this.shiftTotal[1];
-    this.height = Math.max(0, (under - y) / TILE * METRES_PER_TILE);
+    const t = this.truck, y = this.wreck ? this.wreck.centre[1] : Math.max(t.T[3], t.T[5]);
+    this.height = Math.max(0, (this.levelData.start[1] - this.shiftTotal[1] - y) / TILE * METRES_PER_TILE);
   }
 
   /** Toggle pause directly (for touch/gamepad buttons, which are taps rather than held keys). */
