@@ -134,12 +134,14 @@ function padMapButtons(tall) {
 }
 
 /** High Scores: Reset and Menu, or while a reset is being confirmed, Yes (once it may) and No. */
-function statsButtons(tall, extra = {}) {
+/** High Scores' buttons, or (`sandbox`) Sandbox Stats': Reset (asked, then confirmed) and the way out. */
+function statsButtons(tall, extra = {}, sandbox = false) {
   const asking = (g) => !!g.resetConfirm, idle = (g) => !g.resetConfirm;
   const left = (g) => Math.ceil(Math.max(0, RESET_WAIT - (g.resetConfirm?.steps ?? 0)) / STEP_HZ);
+  const y = tall ? TALL_H[sandbox ? 'sandboxStats' : 'stats'] - 58 : 0;   // (TALL_H isn't there yet for the usual page's buttons)
   return [
-    { rect: tall ? r(30, 742, 145, 38) : r(160, 412, 120, 25), label: 'Reset', action: 'resetAsk', show: idle, ...extra },
-    { rect: tall ? r(185, 742, 145, 38) : r(296, 412, 120, 25), label: 'Menu', action: 'menu', show: idle, ...extra },
+    { rect: tall ? r(30, y, 145, 38) : r(160, 412, 120, 25), label: 'Reset', action: 'resetAsk', show: idle, ...extra },
+    { rect: tall ? r(185, y, 145, 38) : r(296, 412, 120, 25), label: sandbox ? 'Back' : 'Menu', action: sandbox ? 'sandbox' : 'menu', show: idle, ...extra },
     { rect: tall ? r(50, 404, 125, 44) : r(168, 254, 115, 28), label: (g) => (g.resetReady ? 'Yes, Reset' : `Yes (${left(g)})`), action: 'resetYes',
       show: asking, disabled: (g) => !g.resetReady, ...extra },
     { rect: tall ? r(185, 404, 125, 44) : r(293, 254, 115, 28), label: 'No', action: 'resetNo', show: asking, ...extra },
@@ -374,7 +376,7 @@ export const BUTTONS = {
     ...TRIAL_OPTIONS.map(([label, action], i) => option(96 + 26 * i, label, action)),
   ],
   sandbox: sandboxButtons(false, false),
-  sandboxStats: [{ rect: r(228, 330, 120, 25), label: 'Back', action: 'sandbox' }],
+  sandboxStats: statsButtons(false, {}, true),
   stageEditor: stageEditorButtons(false),
   stageLoad: stageLoadButtons(false),
   sandboxTweaks: sandboxButtons(false, true),
@@ -384,7 +386,7 @@ export const BUTTONS = {
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 680, modes: 680, classicSelect: 600, stats: 800, options: 670, padMap: 640, pauseOptions: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 760, sandboxStats: 460, sandboxTweaks: 720, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
+export const TALL_H = { title: 680, modes: 680, classicSelect: 600, stats: 800, options: 670, padMap: 640, pauseOptions: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 760, sandboxStats: 680, sandboxTweaks: 720, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
@@ -420,7 +422,7 @@ export const TALL_BUTTONS = {
   stageEditor: stageEditorButtons(true),
   stageLoad: stageLoadButtons(true),
   sandboxTweaks: sandboxButtons(true, true),
-  sandboxStats: [{ rect: r(80, 380, 200, 40), label: 'Back', action: 'sandbox', ...T_BIG }],
+  sandboxStats: statsButtons(true, T_BIG, true),
   gameOver: gameOverButtons((i) => ({ ...r(60, 200 + 50 * i, 240, 40), ...T_BIG }),
     (i) => ({ ...r(60 + 125 * (i % 2), 200 + 50 * Math.floor(i / 2), 115, 40), ...T_BIG })),
   paused: pauseButtons((i) => ({ ...r(60, 160 + 48 * i, 240, 40), ...T_BIG })),
@@ -489,17 +491,35 @@ export function hitButton(screen, x, y, game, tall = false) {
   }) || null;
 }
 
-/** Sandbox's own records (its Stats screen, from the Sandbox menu): [label, value] rows. */
-export function sandboxStatRows(game) {
+/** Sandbox's own records (its Stats screen, from the Sandbox menu): [heading] or [label, value] rows, in two columns. */
+export function sandboxStatColumns(game) {
   const S = game.realStats || game.stats, n = (v) => Math.round(v).toLocaleString('en-US');
   const or = (v, f) => (v > 0 ? f(v) : '—');
-  return [
-    ['Birds whacked', n(S.sbBirds)],
-    ['Tumbleweeds tumbled', n(S.sbWeeds)],
+  const secs = (steps) => `${(steps / STEP_HZ).toFixed(1)} s`;
+  return [[
+    ['Records'],
     ['Top speed', or(S.sbTopSpeed, (v) => formatSpeed(v, game.imperial))],
     ['Highest climb', or(S.sbHighest, (v) => formatHeight(v, game.imperial))],
+    ['Longest airtime', or(S.sbMaxAir, secs)],
     ['Most flips in one jump', or(S.sbMostFlips, n)],
-  ];
+    ['Distance driven', formatDistance(S.sbDistance, game.imperial)],
+    ['Birds and Tumbleweeds'],
+    ['Birds whacked', n(S.sbBirds)],
+    ['Birds shot', n(S.sbBirdsShot)],
+    ['Tumbleweeds tumbled', n(S.sbWeeds)],
+    ['Tumbleweeds exploded', n(S.sbWeedsBlown)],
+  ], [
+    ['Missiles'],
+    ['Missiles fired', n(S.sbFired)],
+    ['On target', n(S.sbOnTarget)],
+    ['Accuracy', S.sbFired > 0 ? `${Math.round(100 * Math.min(1, S.sbOnTarget / S.sbFired))}%` : '—'],
+    ['Enemy missiles shot down', n(S.sbIntercepts)],
+    ['Enemy Cars'],
+    ['Taken down', n(S.sbTakedowns)],
+    ['Best takedown combo', or(S.sbBestCombo, (v) => `x${n(v)}`)],
+    ['Stomps', n(S.sbStomps)],
+    ['Got past you', n(S.sbPassed)],
+  ]];
 }
 
 /** The High Scores screen: [heading] or [label, value] rows, in two columns. */
@@ -1477,10 +1497,13 @@ export class Renderer {
     this.buttons('modes', game);
   }
 
-  /** High Scores and stats: two columns on the usual page, one on the tall page. */
-  stats(game) {
-    const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
-    const cols = statsColumns(game);
+  /** High Scores and stats, or Sandbox's (`sandboxStats`): two columns on the usual page, one on the tall page. */
+  stats(game, screen = 'stats') {
+    const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2, sandbox = screen === 'sandboxStats';
+    const cols = sandbox ? sandboxStatColumns(game) : statsColumns(game);
+    const title = sandbox ? 'Sandbox Stats' : 'High Scores';
+    const clears = sandbox ? 'This clears Sandbox\'s stats. It can\'t be undone.'
+      : 'This clears every best score, best time, ghost and stat (Sandbox\'s stats have their own Reset). It can\'t be undone.';
     const head = { weight: '800', align: 'left', color: MILESTONE_GOLD, shadow: 'rgba(38,38,38,0.5)' };
     const label = { weight: '600', align: 'left', color: 'rgba(255,255,255,0.9)' };
     const value = { weight: '800', align: 'right' };
@@ -1497,12 +1520,12 @@ export class Renderer {
       return y;
     };
     if (tall) {
-      this.text('High Scores', cx, 18, { size: 26, weight: '900' });
-      const [h, size] = fit([...cols[0], ...cols[1]], 21, 14, 730 - 62);
+      this.text(title, cx, 18, { size: 26, weight: '900' });
+      const [h, size] = fit([...cols[0], ...cols[1]], 21, 14, TALL_H[screen] - 70 - 62);
       const y = column(cols[0], 30, 330, 62, h, size);
       column(cols[1], 30, 330, y, h, size);
     } else {
-      this.text('High Scores', cx, 12, { size: 22, weight: '900' });
+      this.text(title, cx, 12, { size: 22, weight: '900' });
       const [h, size] = fit(units(cols[0]) > units(cols[1]) ? cols[0] : cols[1], 19.5, 12.5, 402 - 50);
       column(cols[0], 34, 262, 50, h, size);
       column(cols[1], 314, 542, 50, h, size);
@@ -1514,28 +1537,14 @@ export class Renderer {
       if (tall) {
         this.roundRect(30, 250, 300, 220, 12, BOX_FILL, BOX_EDGE);
         this.text('Are you sure?', cx, 272, { size: 26, weight: '900' });
-        this.wrapText('This clears every best score, best time, ghost and stat. It can\'t be undone.', cx, 316, 260, { ...note, size: 14 }, 19);
+        this.wrapText(clears, cx, 316, 260, { ...note, size: 14 }, 19);
       } else {
         this.roundRect(148, 140, 280, 160, 10, BOX_FILL, BOX_EDGE);
         this.text('Are you sure?', cx, 154, { size: 22, weight: '900' });
-        this.wrapText('This clears every best score, best time, ghost and stat. It can\'t be undone.', cx, 192, 250, { ...note, size: 12 }, 16);
+        this.wrapText(clears, cx, 192, 250, { ...note, size: 12 }, 16);
       }
     }
-    this.buttons('stats', game);
-  }
-
-  /** Sandbox's records (`sandboxStatRows`), from the Sandbox menu's Stats. */
-  sandboxStatsScreen(game) {
-    const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
-    this.text('Sandbox Stats', cx, tall ? 40 : 40, { size: tall ? 26 : 22, weight: '900' });
-    const label = { weight: '600', align: 'left', color: 'rgba(255,255,255,0.9)' };
-    const value = { weight: '800', align: 'right' };
-    const [x0, x1, y0, h, size] = tall ? [30, 330, 120, 40, 16] : [138, 438, 110, 36, 15];
-    sandboxStatRows(game).forEach(([name, val], i) => {
-      this.text(name, x0, y0 + h * i, { ...label, size });
-      this.text(val, x1, y0 + h * i, { ...value, size });
-    });
-    this.buttons('sandboxStats', game);
+    this.buttons(screen, game);
   }
 
   /** How to Play: only the control scheme that's chosen (the arrow keys, or One Button). */
@@ -2016,7 +2025,7 @@ export class Renderer {
         case 'classicSelect': this.classicSelect(game); break;
         case 'trialSelect': this.trialSelect(game); break;
         case 'sandbox': this.sandboxScreen(game, 'sandbox'); break;
-        case 'sandboxStats': this.sandboxStatsScreen(game); break;
+        case 'sandboxStats': this.stats(game, 'sandboxStats'); break;
         case 'stageEditor': this.stageEditor(game); break;
         case 'stageLoad': this.stageLoad(game); break;
         case 'sandboxTweaks': this.overlayDim(0.55); this.sandboxScreen(game, 'sandboxTweaks'); break;

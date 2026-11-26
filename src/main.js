@@ -128,8 +128,8 @@ function escape() {
   if (game.sandboxPick) { doAction('sbPickClose'); return; }
   if (game.screen === 'pauseOptions') { doAction('pauseBack'); return; }
   if (game.screen === 'sandboxTweaks') { doAction('tweaksBack'); return; }
+  if ((game.screen === 'stats' || game.screen === 'sandboxStats') && game.resetConfirm) { doAction('resetNo'); return; }
   if (game.screen === 'sandboxStats') { doAction('sandbox'); return; }
-  if (game.screen === 'stats' && game.resetConfirm) { doAction('resetNo'); return; }
   if (game.screen !== 'title') goMenu();
 }
 

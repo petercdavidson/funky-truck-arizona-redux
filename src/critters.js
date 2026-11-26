@@ -153,8 +153,12 @@ export class Critters {
     this.feathers = [];
     this.wantBirds = 0;
     this.wantWeeds = 0;
-    this.whacked = 0;   // birds knocked out of the sky, and tumbleweeds hit or blasted, all told (for the stats)
+    // (for the stats) birds knocked out of the sky and tumbleweeds hit, by the truck or its loose
+    // pieces; and those your own missiles' blasts got (`blast` with `yours`)
+    this.whacked = 0;
     this.tumbled = 0;
+    this.shot = 0;
+    this.exploded = 0;
     this.events = [];  // this step's hits: { kind: 'bird' (the truck hit it, or a blast: `blast`) | 'weed' (the truck hit it) | 'weedBounce' (a tumbleweed off the ground or another), x, y, speed } (for sounds; tumbleweeds' only in sight)
   }
 
@@ -258,8 +262,12 @@ export class Critters {
     }
   }
 
-  /** An explosion at (x, y): birds within `radius` are knocked out, tumbleweeds thrown. */
-  blast(x, y, radius, power) {
+  /**
+   * An explosion at (x, y): birds within `radius` are knocked out, tumbleweeds thrown. `yours`: one
+   * of your missiles (counted in `shot` and `exploded`). Returns how many birds it knocked out.
+   */
+  blast(x, y, radius, power, yours = false) {
+    let got = 0;
     let heard = false;   // (one bird hit sound for the blast, however many birds it gets)
     for (const b of this.birds) {
       const dx = b.x - x, dy = b.y - y, d = Math.hypot(dx, dy) || 1;
@@ -267,7 +275,7 @@ export class Critters {
       const k = power * (1 - d / radius) + 1;
       if (!b.hit) {
         this.knock(b, dx / d * k, dy / d * k - 1);
-        this.whacked++;
+        got++;
         if (!heard) this.events.push({ kind: 'bird', x: b.x, y: b.y, speed: k, blast: true });
         heard = true;
       }
@@ -277,10 +285,13 @@ export class Critters {
       const dx = w.x - x, dy = w.y - y, d = Math.hypot(dx, dy) || 1;
       if (d > radius) continue;
       const k = power * CRITTERS.weedBlast * (1 - d / radius) + 2;
-      w.sleep = false; w.still = 0; this.tumbled++;
+      w.sleep = false; w.still = 0;
+      if (yours) this.exploded++;
       w.vx += dx / d * k; w.vy += dy / d * k - k * 0.6;
       w.spin = (w.spin || 0) + (this.random() - 0.5) * 0.02 * k + Math.sign(dx) * 0.01 * k;
     }
+    if (yours) this.shot += got;
+    return got;
   }
 
   /** A tumbleweed within `r` of (x, y), if any (what a missile blows up on; they never home in on one). */

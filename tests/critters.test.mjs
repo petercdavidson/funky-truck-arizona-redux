@@ -171,6 +171,8 @@ test('missiles blow up on tumbleweeds (never aiming for one), and a bird a missi
   let booms = 0;
   for (let i = 0; i < 30; i++) { g.step(); booms += B.events.filter((e) => e.type === 'boom').length; }
   assert.ok(booms >= 1, 'blew up on the tumbleweed');
+  assert.ok(C.exploded >= 1 && g.realStats.sbWeedsBlown >= 1, 'a tumbleweed exploded');
+  assert.equal(B.onTarget, 0, 'a tumbleweed isn\'t a target');
   // a bird blown up by a missile: the sound watcher hears it
   const sw = new SoundWatcher();
   sw.observe(g);
@@ -179,6 +181,12 @@ test('missiles blow up on tumbleweeds (never aiming for one), and a bird a missi
   let heard = 0;
   for (let i = 0; i < 30; i++) { g.step(); heard += sw.observe(g).events.filter((e) => e.type === 'bird').length; }
   assert.equal(heard, 1, 'the bird hit sound');
+  assert.deepEqual([C.shot, C.whacked, B.onTarget, g.realStats.sbBirdsShot, g.realStats.sbBirds], [1, 0, 1, 1, 0], 'shot, not whacked, and on target');
+  // fired from the truck: counted
+  B.requests.add('fire');
+  g.step();
+  assert.equal(B.fired, 1);
+  assert.equal(g.realStats.sbFired, 1);
 });
 
 test('a blast that gets several birds plays the bird hit sound once', () => {

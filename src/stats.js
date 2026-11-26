@@ -5,13 +5,22 @@
 // now and then (Game.saveStats). Anything read back is checked: a field that isn't a sensible
 // number starts again from 0.
 
+/**
+ * Sandbox's own stats (see Game.sandboxStats; its runs count into throwaway stats, so these go
+ * straight into the saved ones): birds and tumbleweeds hit by the truck (`sbBirds`, `sbWeeds`) or by
+ * your missiles, missiles fired and on target, and so on. Its own Reset, on its Stats screen, clears
+ * them; High Scores' Reset leaves them be.
+ */
+export const SANDBOX_KEYS = ['sbBirds', 'sbWeeds', 'sbTopSpeed', 'sbHighest', 'sbMostFlips',
+  'sbBirdsShot', 'sbWeedsBlown', 'sbMaxAir', 'sbDistance', 'sbFired', 'sbOnTarget', 'sbIntercepts',
+  'sbTakedowns', 'sbStomps', 'sbBestCombo', 'sbPassed'];
+
 /** Records (the most in one go) and totals. Times are in 1/70 s steps, distances in metres. */
 export const STAT_KEYS = [
   'maxAir', 'topSpeed', 'mostFlips', 'longestWheelie', 'bestChain', 'longestChain',
   'distance', 'driveSteps', 'runs', 'stages', 'wrecks', 'selfWrecks', 'bails', 'endlessMetres', 'takedowns', 'rallyWins',
   'classicStage', // the highest stage (1-9) beaten in Classic
-  // Sandbox's own (its runs count into throwaway stats, so these go straight into the saved ones)
-  'sbBirds', 'sbWeeds', 'sbTopSpeed', 'sbHighest', 'sbMostFlips',
+  ...SANDBOX_KEYS,
 ];
 
 /** The tricks counted one by one (by kind: no counts or airtimes in the name). */

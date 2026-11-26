@@ -200,6 +200,9 @@ export class Battle {
     this.boosting = false;
     this.fireCooldown = 0; this.jumpCooldown = 0;
     this.takedowns = 0; this.passed = 0;
+    // (for Sandbox's stats) your missiles fired, and those that got something they aim for (a bird,
+    // or a car: not a tumbleweed or the ground); enemy missiles you shot down; stomps; the best combo
+    this.fired = 0; this.onTarget = 0; this.intercepts = 0; this.stomps = 0; this.bestCombo = 0;
     this.combo = 0; this.lastTakedown = -1e9;
     this.steps = 0;
     this.callout = null;          // { text, timer, gold }: a takedown, a stomp...
@@ -283,6 +286,7 @@ export class Battle {
     }, mx, my);
     if (!this.tune.unlimited) this.missilesLeft--;
     this.fireCooldown = this.tune.fireCooldown;
+    this.fired++;
     this.events.push({ type: 'missile' });
   }
 
@@ -457,6 +461,7 @@ export class Battle {
     this.takedowns++;
     this.combo = this.steps - this.lastTakedown < BATTLE.comboFor ? this.combo + 1 : 1;
     this.lastTakedown = this.steps;
+    this.bestCombo = Math.max(this.bestCombo, this.combo);
     const points = BATTLE.points.takedown * this.combo;
     if (g.endTimer === 0) g.score += points;
     const name = ['Takedown!', 'Double Takedown!', 'Triple Takedown!'][this.combo - 1] || `Takedown x${this.combo}!`;
@@ -561,6 +566,7 @@ export class Battle {
     if (stomp) { them *= R.stomp; you *= 0.3; }
     this.hurtYou(you);
     const e = E.e;
+    if (stomp && them > 150) this.stomps++;
     if (stomp && them > 150 && them < e.health) this.say('Stomp!');
     this.hit(e, them);
   }
@@ -608,7 +614,7 @@ export class Battle {
       if (a.dead || a.owner !== 'you') continue;
       for (const b of this.missiles) {
         if (b.dead || b.owner !== 'enemy' || Math.hypot(a.x - b.x, a.y - b.y) > 16) continue;
-        this.blowMissile(a, a.x, a.y, 0.8); b.dead = true;
+        this.blowMissile(a, a.x, a.y, 0.8); b.dead = true; this.intercepts++;
         this.say('Intercepted!');
         break;
       }
@@ -618,13 +624,14 @@ export class Battle {
   blowMissile(m, x, y, scale = 1) {
     m.dead = true;
     const B = BATTLE.blast;
-    if (m.owner === 'you') this.explode(x, y, { radius: B.radius * scale, power: B.power * scale, hurtEnemies: BATTLE.missile.hurt * scale, yours: true });
+    if (m.owner === 'you') { if (this.explode(x, y, { radius: B.radius * scale, power: B.power * scale, hurtEnemies: BATTLE.missile.hurt * scale, yours: true })) this.onTarget++; }
     else this.explode(x, y, { radius: B.radius * 0.9 * scale, power: B.power * 0.8 * scale, hurtYou: BATTLE.enemyMissile.hurt * scale, hurtEnemies: 300 * scale });
   }
 
   /**
    * An explosion: it pushes everything near it (your own blast only pushes you a little, and
-   * never hurts you: rocket jumps are allowed), and damages what's close.
+   * never hurts you: rocket jumps are allowed), and damages what's close. Returns whether it got
+   * something a missile aims for: a bird knocked out, or a car (enemy or rival) in its damage.
    */
   explode(x, y, { radius, power, hurtEnemies = 0, hurtYou = 0, yours = false, big = false }) {
     const g = this.game;
@@ -636,7 +643,7 @@ export class Battle {
     }
     for (let n = 0; n < (big ? 10 : 6); n++) this.bit('smoke', x + (this.random - 0.5) * radius * 0.5, y + (this.random - 0.5) * radius * 0.4, (this.random - 0.5) * 1.5, -0.4 - this.random * 0.6, 60 + this.random * 30);
     const you = g.wreck ? null : g.truck;
-    g.critters?.blast(x, y, radius, power);
+    const birds = g.critters?.blast(x, y, radius, power, yours) || 0;
     if (you) blastPoints(you.T, you.P, 1, x, y, radius, power * (yours ? 0.6 : 1));
     if (g.wreck) blastPoints(g.wreck.T, g.wreck.P, 1, x, y, radius, power);
     for (const e of this.bots) {
@@ -647,7 +654,9 @@ export class Battle {
     const near = (T, s) => Math.max(0, Math.min(...circles(T, s).map((c) => Math.hypot(c.x - x, c.y - y) - c.r)));
     const share = (d) => Math.max(0, 1 - d / (radius * 0.75));
     if (hurtYou && you) this.hurtYou(hurtYou * share(near(you.T, 1)));
+    const cars = this.bots.filter((e) => !e.wreck && share(near(e.truck.T, e.s)) > 0);
     if (hurtEnemies) for (const e of this.enemies) if (!e.wreck) this.hit(e, hurtEnemies * share(near(e.truck.T, -1)));
+    return birds > 0 || cars.length > 0;
   }
 
   // ---- particles

@@ -317,6 +317,23 @@ test('High Scores reset: Yes only works after five seconds, and clears every bes
   assert.equal(g.resetConfirm, null);
 });
 
+test('High Scores\' Reset leaves Sandbox\'s stats be, and Sandbox Stats\' Reset clears only them', () => {
+  const store = memoryStore();
+  const g = new Game(data, { store });
+  g.stats.runs = 9; g.stats.sbBirdsShot = 4; g.stats.sbFired = 10;
+  g.showMenu('stats');
+  g.askReset(); settle(g, 350);
+  assert.ok(g.resetScores());
+  assert.deepEqual([g.stats.runs, g.stats.sbBirdsShot, g.stats.sbFired], [0, 4, 10]);
+  assert.equal(store.get('stats').sbFired, 10);
+  g.stats.runs = 3;
+  g.showMenu('sandboxStats');
+  g.askReset(); settle(g, 350);
+  assert.ok(g.resetScores());
+  assert.deepEqual([g.stats.runs, g.stats.sbBirdsShot, g.stats.sbFired], [3, 0, 0]);
+  assert.equal(store.get('stats').sbFired, 0);
+});
+
 test('the garage can reset the truck to the one you start with', () => {
   const store = memoryStore();
   const g = new Game(data, { store });

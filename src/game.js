@@ -10,7 +10,7 @@ import { buildGrammar, EndlessCourse, ENDLESS_WIDTH, ENDLESS_SHIFT } from './end
 import { TrickTracker } from './tricks.js';
 import { Wreck } from './wreck.js';
 import { TRIAL_ALL, TRIAL_TRACKS, TRIAL_STUNTS, GHOST_EVERY, validBests, validStuntBests, loadGhost, saveGhost, ghostPose } from './trial.js';
-import { validStats, emptyStats, countTrick, countChain } from './stats.js';
+import { validStats, emptyStats, countTrick, countChain, SANDBOX_KEYS } from './stats.js';
 import { Battle } from './battle.js';
 import { validSandbox, applySandbox, stepTraffic, SANDBOX_ROW } from './sandbox.js';
 import { validStage, validStages, addStage } from './stages.js';
@@ -1232,7 +1232,7 @@ export class Game {
       // (their own random numbers, seeded from the game's: they never change what else happens)
       let seed = Math.floor(this.random() * 2147483646) + 1;
       this.critters = new Critters(() => (seed = (seed * 16807) % 2147483647) / 2147483647);
-      this.sbSeen = [0, 0];
+      this.sbSeen = {};
       this.ticker = `Sandbox  ·  ${this.onCourse ? 'Endless' : this.stageName(this.level)}`;
       applySandbox(this);
     }
@@ -1414,16 +1414,27 @@ export class Game {
 
   // ---- High Scores: reset (asked, then confirmed once RESET_WAIT steps have passed)
 
-  askReset() { if (this.screen === 'stats') this.resetConfirm = { steps: 0 }; }
+  askReset() { if (this.screen === 'stats' || this.screen === 'sandboxStats') this.resetConfirm = { steps: 0 }; }
   cancelReset() { this.resetConfirm = null; }
   get resetReady() { return !!this.resetConfirm && this.resetConfirm.steps >= RESET_WAIT; }
 
-  /** Clear every best score, best time, ghost and stat. Only once the wait is over. */
+  /**
+   * Clear every best score, best time, ghost and stat, but Sandbox's own; or, from Sandbox's Stats
+   * screen, only Sandbox's. Only once the wait is over.
+   */
   resetScores() {
     if (!this.resetReady) return false;
+    const S = this.realStats;
+    if (this.screen === 'sandboxStats') {
+      for (const k of SANDBOX_KEYS) S[k] = 0;
+      this.saveStats();
+      this.resetConfirm = null;
+      return true;
+    }
+    const keep = Object.fromEntries(SANDBOX_KEYS.map((k) => [k, S[k]]));
     this.best = 0; this.bestPlay = 0; this.bestEndless = 0;
     this.trialBests = {}; this.stuntBests = {};
-    this.stats = this.realStats = emptyStats();
+    this.stats = this.realStats = Object.assign(emptyStats(), keep);
     for (const k of ['bestScore', 'bestPlay', 'bestEndless']) this.store.set(k, 0);
     this.store.set('trialBests', {}); this.store.set('stuntBests', {});
     for (let t = 0; t < TRIAL_TRACKS; t++) this.store.set(`ghost${t}`, null);
@@ -1963,6 +1974,7 @@ export class Game {
         this.garageTruck.garageStep();
         break;
       case 'stats':
+      case 'sandboxStats':
         if (this.resetConfirm) this.resetConfirm.steps++;
         break;
       case 'title':
@@ -2116,14 +2128,21 @@ export class Game {
 
   /** Sandbox's records, straight into the saved stats (a Sandbox run's own are thrown away). */
   sandboxStats() {
-    const S = this.realStats, C = this.critters;
-    if (C) {
-      S.sbBirds += C.whacked - (this.sbSeen?.[0] ?? 0); S.sbWeeds += C.tumbled - (this.sbSeen?.[1] ?? 0);
-      this.sbSeen = [C.whacked, C.tumbled];
+    const S = this.realStats, C = this.critters, B = this.battle, R = this.stats;
+    // (counts: what's been added to this run's counters since last time)
+    const seen = this.sbSeen ||= {};
+    const add = (key, now) => { const was = seen[key] ?? 0; S[key] += now >= was ? now - was : now; seen[key] = now; };
+    if (C) { add('sbBirds', C.whacked); add('sbWeeds', C.tumbled); add('sbBirdsShot', C.shot); add('sbWeedsBlown', C.exploded); }
+    if (B) {
+      add('sbFired', B.fired); add('sbOnTarget', B.onTarget); add('sbIntercepts', B.intercepts);
+      add('sbTakedowns', B.takedowns); add('sbStomps', B.stomps); add('sbPassed', B.passed);
+      S.sbBestCombo = Math.max(S.sbBestCombo, B.bestCombo);
     }
+    add('sbDistance', R.distance);
     if (!this.wreck) S.sbTopSpeed = Math.max(S.sbTopSpeed, this.speedKmh);
     if (this.landed) S.sbHighest = Math.max(S.sbHighest, this.height);
-    S.sbMostFlips = Math.max(S.sbMostFlips, this.stats.mostFlips);
+    S.sbMostFlips = Math.max(S.sbMostFlips, R.mostFlips);
+    S.sbMaxAir = Math.max(S.sbMaxAir, R.maxAir);
   }
 
   /** Toggle pause directly (for touch/gamepad buttons, which are taps rather than held keys). */
