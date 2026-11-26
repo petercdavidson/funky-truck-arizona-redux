@@ -177,7 +177,8 @@ test('the look pass joins the art up without changing the ground', () => {
     // the same ground to drive on: only tiles with the same collision were swapped
     assert.deepEqual(surface({ ...level, tiles: looked.tiles }, 1, 16), surface({ ...level, tiles: plain.tiles }, 1, 16));
   }
-  assert.ok(after < before * 0.9, `joins ${before.toFixed(2)} -> ${after.toFixed(2)}`);
+  // (0.92, not 0.9, since 1.24.15: the corner twins the user never picks are left out, which costs a little on edge pixels)
+  assert.ok(after < before * 0.92, `joins ${before.toFixed(2)} -> ${after.toFixed(2)}`);
 });
 
 test('a sharp peak never puts two pieces in one cell', () => {
@@ -441,6 +442,6 @@ test("the look pass agrees with most of the user's own fixes (tests/fixtures/art
     lookAroundAll(t, artKit, cells, { rounds: 4 });
     want.forEach((r, y) => r.forEach((v, x) => { if (v && !sidesOfTile(v)) { total++; if (t[y][x] === v) agree++; } }));
   }
-  // (1.24.14: 64 of 83; most of the rest are near-twin corner tiles or cells left as plain dirt)
-  assert.ok(agree >= 60, `${agree} of ${total}`);
+  // (1.24.15: 81 of 101; most of the rest are cells left as plain dirt or a partner the user swapped)
+  assert.ok(agree >= 78, `${agree} of ${total}`);
 });

@@ -230,7 +230,7 @@ function sheetRules(kit, edges, sets = null) {
   const n = edges.length, COLS = sets?.cols ?? 10;
   // (a tile with only a few faint pixels round its edges counts as empty)
   const opaque = (id) => { const s = edges[id]; if (!s) return false; let k = 0; for (let e = 0; e < 4; e++) for (let i = 0; i < 32; i++) if (B64.indexOf(s[e * 64 + i]) > 20) k++; return k >= 8; };
-  const blank = new Set(sets?.empty || []);
+  const blank = new Set([...(sets?.empty || []), ...(sets?.spare || [])]);
   const art = new Set();
   for (let id = DIRT + 1; id < n; id++) if (!kit.isPiece.has(id) && !blank.has(id) && opaque(id)) art.add(id);
   // which tiles join their neighbour on the sheet: the sets marked up by hand (src/tile-sets.js),

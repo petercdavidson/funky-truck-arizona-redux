@@ -141,6 +141,6 @@ mistakes. The rules come from the tile sheet itself and from the user's fixes.
 - Tools: `tools/sheet-sets.html` (the sets), `tools/match-review.html` (rules by situation: the
   user found spot-checking screenshots better, so it's there but not the main way).
 
-Open: twin corner tiles (21/22, 10/20, 11/12, 14/15) are still a near coin-toss; more of the
-user's fixes will settle them. Ideas the user liked: decide art by rules and lookups rather than
+Twin corner tiles (21/22, 10/20, 11/12, 14/15): the user's fixes never once picked 22, 20, 12 or
+15, so the pass leaves those out (`TILE_SETS.spare`, 1.24.15; 81 of 101 fixed cells agree). Ideas the user liked: decide art by rules and lookups rather than
 pixel comparison wherever the sheet can say.

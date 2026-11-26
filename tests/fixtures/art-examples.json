@@ -1,5 +1,5 @@
 {
- "about": "Fixes made by hand to the Stage Editor art pass (screenshots from 1.24.8 to 1.24.13). Rows top to bottom, tiles left to right; ids with the turn as an arrow (tileLabel), . for sky. pass: what the pass laid; fixed: what the user changed it to. Data points, not gospel: the user may not always pick the best fix.",
+ "about": "Fixes made by hand to the Stage Editor art pass (screenshots from 1.24.8 to 1.24.14). Rows top to bottom, tiles left to right; ids with the turn as an arrow (tileLabel), . for sky. pass: what the pass laid; fixed: what the user changed it to. Data points, not gospel: the user may not always pick the best fix.",
  "examples": [
   {
    "name": "a1",
@@ -207,6 +207,47 @@
     "1 1 189→",
     "1 21↓ 153→",
     "1 184→ ."
+   ]
+  },
+  {
+   "name": "e1",
+   "pass": [
+    "1 1 188→",
+    "1 14→ 4→",
+    "10→ 155→ ."
+   ],
+   "fixed": [
+    "1 1 188→",
+    "1 163→ 4→",
+    "10→ 155→ ."
+   ]
+  },
+  {
+   "name": "e2",
+   "pass": [
+    "1 1 152→",
+    "1 22↓ 153→",
+    "10→ 155→ ."
+   ],
+   "fixed": [
+    "1 1 152→",
+    "1 21↓ 153→",
+    "10→ 155→ ."
+   ]
+  },
+  {
+   "name": "e3",
+   "pass": [
+    "77↓ 1 1",
+    "195← 1 1",
+    "212← 1 1",
+    "217← 1 1"
+   ],
+   "fixed": [
+    "77↓ 1 1",
+    "195← 205← 1",
+    "212← 222← 1",
+    "217← 1 1"
    ]
   }
  ]
