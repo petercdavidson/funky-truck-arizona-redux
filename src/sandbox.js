@@ -32,6 +32,9 @@ export const SANDBOX_ROWS = [
   { key: 'airJumps', name: 'Air Jumps', choices: [[false, 'Off'], [true, 'On']], dflt: 0 },
   { key: 'rivals', name: 'Rival Cars', choices: COUNTS, dflt: 0 },
   { key: 'enemies', name: 'Enemy Cars', choices: COUNTS, dflt: 0 },
+  { key: 'birds', name: 'Birds', choices: [[0, 'None'], [8, 'A Few'], [18, 'Lots'], [40, 'Flocks']], dflt: 1 },
+  { key: 'weeds', name: 'Tumbleweeds', choices: [[0, 'None'], [3, 'A Few'], [8, 'Lots'], [20, 'Loads']], dflt: 1 },
+  { key: 'clouds', name: 'Clouds', choices: [[false, 'Off'], [true, 'On']], dflt: 1 },
   { key: 'slow', name: 'Slow Motion', choices: [[1, 'Off'], [0.5, 'Half'], [0.25, 'Quarter']], dflt: 0 },
   { key: 'hitboxes', name: 'Hitboxes', choices: [[false, 'Hidden'], [true, 'Shown']], dflt: 0 },
 ];
@@ -77,6 +80,7 @@ export function applySandbox(game) {
   t.tiltPower = v('spin');
   t.springK = v('springs');
   if (game.wreck) game.wreck.gravity = t.gravity;
+  game.critters?.setCounts(v('birds'), v('weeds'));
   const b = game.battle;
   if (!b) return;
   Object.assign(b.tune, sandboxTune(v));

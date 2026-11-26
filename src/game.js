@@ -4,6 +4,7 @@
 // a line-for-line port of the original Flash ActionScript. Comments name the original obfuscated
 // identifiers where that helps cross-checking. Everything runs at the original 70 steps/second.
 
+import { Critters } from './critters.js';
 import { buildGrammar, EndlessCourse, ENDLESS_WIDTH, ENDLESS_SHIFT } from './endless.js';
 import { TrickTracker } from './tricks.js';
 import { Wreck } from './wreck.js';
@@ -704,6 +705,7 @@ export class Game {
     this.bestPlay = validCount(this.store.get('bestPlay'));
     this.bestEndless = validCount(this.store.get('bestEndless'));
     this.battle = null;               // Sandbox's cars and missiles (battle.js)
+    this.critters = null;             // Sandbox's birds and tumbleweeds (critters.js)
     // Sandbox Mode's settings (sandbox.js): which choice of each.
     // The Stage Editor's stages (stages.js), and the one picked on the Load Stage screen. (Before
     // Sandbox's settings: its tracks include them.)
@@ -1108,7 +1110,7 @@ export class Game {
   beginRun(firstLevel) { // H5D52
     if (this.mode !== 'trial') { this.ghost = null; this.ghostT = null; this.split = null; }
     this.stuntSaved = false; this.stuntResult = null;
-    this.battle = null;
+    this.battle = null; this.critters = null;
     // Nothing done in Sandbox counts towards the High Scores screen.
     this.stats = this.mode === 'sandbox' ? emptyStats() : this.realStats;
     if (this.mode === 'campaign' || (this.mode === 'trial' && this.track === TRIAL_ALL)) { this.lastLevel = this.data.levels.length - 1; this.level = 0; }
@@ -1162,6 +1164,9 @@ export class Game {
     if (this.mode === 'trial' || this.mode === 'sandbox') this.bonus = 0; // the clock (or nothing) is what counts
     if (this.mode === 'sandbox') {
       this.battle = new Battle(this, { weapons: true });
+      // (their own random numbers, seeded from the game's: they never change what else happens)
+      let seed = Math.floor(this.random() * 2147483646) + 1;
+      this.critters = new Critters(() => (seed = (seed * 16807) % 2147483647) / 2147483647);
       this.ticker = `Sandbox  ·  ${this.onCourse ? 'Endless' : this.stageName(this.level)}`;
       applySandbox(this);
     }
@@ -1275,6 +1280,13 @@ export class Game {
     this.shiftWorld(L.period * TILE, L.drop * TILE);
   }
 
+  /** Sandbox's birds and tumbleweeds: a step, round the view (a wrecked truck hits nothing). */
+  stepCritters() {
+    const z = this.zoom, hw = this.viewW * z / 2, hh = this.viewH * z / 2;
+    const view = { cx: this.camX + hw, cy: this.camY + hh, hw, hh };
+    this.critters.step(this.wreck ? null : this.truck, view, this.thinWorld, this.truck.gravity);
+  }
+
   /** Move everything (truck, wreck, dirt, camera) left by dx and up by dy. */
   shiftWorld(dx, dy) {
     const move = (A) => { for (let i = 0; i < A.length; i += 2) { A[i] -= dx; A[i + 1] -= dy; } };
@@ -1284,6 +1296,7 @@ export class Game {
     if (this.wreck) { move(this.wreck.T); move(this.wreck.P); }
     for (const d of this.dirt) { d.x -= dx; d.y -= dy; }
     if (this.battle) this.battle.shift(dx, dy);
+    if (this.critters) this.critters.shift(dx, dy);
     this.camX -= dx; this.camY -= dy;
     if (this.lastFocus) { this.lastFocus[0] -= dx; this.lastFocus[1] -= dy; }
     // How far everything has moved in all (the backdrop moves by where the camera really is).
@@ -1822,6 +1835,7 @@ export class Game {
         if (this.wreck) this.stepWreck(); else this.stepTruck(this.world);
         this.capSpeed();
         if (this.battle) this.battle.step();
+        if (this.critters) this.stepCritters();
         if (this.mode === 'sandbox') { stepTraffic(this); if (this.landed && this.endTimer === 0 && !this.wreck) this.clock++; }
         this.updateSpeedometer();
         this.stats.driveSteps++;

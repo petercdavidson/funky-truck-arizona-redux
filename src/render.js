@@ -11,6 +11,7 @@ import { Wreck } from './wreck.js';
 import { TRIAL_ALL, TRIAL_STUNTS, formatTime, formatGap } from './trial.js';
 import { battleBack, battleFront, battleHud } from './render-battle.js';
 import { circles } from './battle.js';
+import { cloudsNear, CRITTERS } from './critters.js';
 import { SANDBOX_ROWS, SANDBOX_ROW, sandboxValue } from './sandbox.js';
 import { formatSpeed, formatDistance, formatHeight, speedoShare } from './units.js';
 
@@ -258,8 +259,9 @@ function pickRect(g, i, tall, screen) {
 /** Sandbox's settings (all of them before a run, those that can change during one in Tweaks). */
 const sandboxRows = (tweaks) => SANDBOX_ROWS.filter((row) => !tweaks || row.live !== false);
 /** Where setting row i goes: its label on the left, then a - button, the value and a + button. */
-const sbRow = (i, tall) => (tall ? { x: 20, y: 70 + 44 * i, w: 320, h: 34, lw: 136, bw: 38 }
-  : { x: i < 6 ? 28 : 302, y: 72 + 40 * (i % 6), w: 246, h: 28, lw: 104, bw: 26 });
+const SB_PER_COL = 8;
+const sbRow = (i, tall) => (tall ? { x: 20, y: 70 + 40 * i, w: 320, h: 34, lw: 136, bw: 38 }
+  : { x: i < SB_PER_COL ? 28 : 302, y: 66 + 32 * (i % SB_PER_COL), w: 246, h: 27, lw: 104, bw: 26 });
 /** A setting row's value box, between its - and + buttons. */
 const sbValue = (R) => r(R.x + R.lw + R.bw + 3, R.y, R.w - R.lw - 2 * R.bw - 6, R.h);
 function sandboxButtons(tall, tweaks, extra = {}) {
@@ -279,7 +281,7 @@ function sandboxButtons(tall, tweaks, extra = {}) {
     show: (g) => i < choiceCount(g, g.sandboxPick), picker: true, ...(tall ? { size: 14 } : {}),
   }));
   picks.push({ rect: r(0, 0, tall ? TALL_W : STAGE_W, 1000), action: 'sbPickClose', picker: true, noHover: true });
-  const y = tall ? 70 + 44 * rows.length + 14 : 330;
+  const y = tall ? 70 + 40 * rows.length + 14 : 334;
   const big = tall ? T_BIG : {};
   const bottom = tweaks
     ? [{ rect: tall ? r(30, y, 145, 40) : r(170, y, 110, 26), label: 'Reset', action: 'sbReset', ...big },
@@ -329,7 +331,7 @@ export const BUTTONS = {
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 680, modes: 680, classicSelect: 600, stats: 760, options: 620, pauseOptions: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 680, sandboxTweaks: 640, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
+export const TALL_H = { title: 680, modes: 680, classicSelect: 600, stats: 760, options: 620, pauseOptions: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 760, sandboxTweaks: 720, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
@@ -898,6 +900,7 @@ export class Renderer {
     const ctx = this.ctx;
     this.backdrop(game, v);
     const zoom = game.rules.retro ? 1 : v.zoom || 1;
+    if (game.mode === 'sandbox' && sandboxValue(game.sandbox, 'clouds')) this.clouds(game, v, zoom);
     this.tiles(game.levelData, v.camX, v.camY, zoom, game.mode === 'custom' || !!game.sandboxCustom);
     ctx.save();
     ctx.beginPath();
@@ -920,6 +923,7 @@ export class Renderer {
       this.truck(v.G, rot, rot, game.look);
       ctx.restore();
     }
+    if (game.critters) this.critters(game.critters);
     if (game.battle) battleBack(this, game, v);
     if (game.wreck && v.W) this.wreck(game.wreck, v.W, game.look);
     else this.truck(v.T, v.rr, v.fr, game.look);
@@ -928,6 +932,91 @@ export class Renderer {
     ctx.restore();
     if (!game.rules.flipBonus && !game.wreck) this.flipCount(game, v, zoom);
     this.hud(game);
+  }
+
+  /**
+   * Sandbox's clouds: fixed in the sky (in cloud space: the world with the course's scrolling
+   * taken out), so you can see which way you're going with no ground in sight.
+   */
+  clouds(game, v, zoom) {
+    const ctx = this.ctx, [sx, sy] = game.shiftTotal;
+    const x0 = v.camX + sx, y0 = v.camY + sy, x1 = x0 + this.viewW * zoom, y1 = y0 + this.viewH * zoom;
+    ctx.save();
+    ctx.scale(1 / zoom, 1 / zoom);
+    ctx.translate(-v.camX - sx, -v.camY - sy);
+    for (const c of cloudsNear(x0 - 300, y0 - 200, x1 + 300, y1 + 200, 0)) {
+      // a soft shadow underneath, then the cloud: its puffs filled as one shape
+      for (const [col, oy, a] of [['rgba(120,140,170,1)', 6, 0.25], ['#fff', 0, 1]]) {
+        ctx.globalAlpha = c.alpha * a;
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        for (const [dx, dy, r] of c.puffs) { ctx.moveTo(c.x + dx + r, c.y + dy + oy); ctx.arc(c.x + dx, c.y + dy + oy, r, 0, Math.PI * 2); }
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  /** Sandbox's birds (flapping, or knocked tumbling), tumbleweeds and loose feathers. */
+  critters(C) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const w of C.weeds) {
+      ctx.save();
+      ctx.translate(w.x, w.y);
+      ctx.rotate(w.rot);
+      ctx.strokeStyle = 'rgba(122, 86, 44, 0.95)';
+      ctx.lineWidth = 1.6;
+      const R = CRITTERS.weedRadius;
+      ctx.beginPath();
+      for (let i = 0; i < 9; i++) {
+        const a = i * 2.39, r = R * (0.55 + 0.45 * ((i * 37) % 10) / 10);
+        ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+        ctx.quadraticCurveTo(Math.cos(a + 1.7) * R * 1.1, Math.sin(a + 1.7) * R * 1.1, Math.cos(a + 3) * r * 0.8, Math.sin(a + 3) * r * 0.8);
+      }
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(176, 132, 74, 0.9)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(0, 0, R * 0.9, 0.3, 2.2); ctx.moveTo(R * 0.5, -R * 0.6); ctx.arc(0, 0, R * 0.7, 3.3, 5.4);
+      ctx.stroke();
+      ctx.restore();
+    }
+    for (const b of C.birds) {
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.strokeStyle = '#3b2b25';
+      ctx.fillStyle = '#3b2b25';
+      if (!b.hit) {
+        // a gull's M: wings up and down as it flaps
+        ctx.scale(b.dir, 1);
+        const f = Math.sin(b.flap) * 6;
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.moveTo(-11, -f); ctx.quadraticCurveTo(-5, -f * 0.3 - 3, 0, 1); ctx.quadraticCurveTo(5, -f * 0.3 - 3, 11, -f);
+        ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(1, 1.5, 3.5, 2, 0, 0, Math.PI * 2); ctx.fill();
+      } else {
+        // knocked out: tumbling, wings folded; lying on the ground once it's down (and fading)
+        ctx.globalAlpha = b.rest > 300 ? Math.max(0, 1 - (b.rest - 300) / 100) : 1;
+        ctx.rotate(b.rest ? Math.PI * 0.9 : b.rot);
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(0, 0, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-2, -1); ctx.lineTo(-8, -5); ctx.moveTo(2, -1); ctx.lineTo(7, -6); ctx.stroke();
+        if (b.rest) { ctx.strokeStyle = '#f3e9d2'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-2, 2); ctx.lineTo(-1, 4); ctx.moveTo(2, 2); ctx.lineTo(3, 4); ctx.stroke(); }
+      }
+      ctx.restore();
+    }
+    for (const f of C.feathers) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, f.life / 40);
+      ctx.translate(f.x, f.y); ctx.rotate(f.rot);
+      ctx.fillStyle = '#f3e9d2';
+      ctx.beginPath(); ctx.ellipse(0, 0, 4, 1.4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
   }
 
   /** A flip's turns counted out in the air (+1, +2...), popping up over the truck. */
