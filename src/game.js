@@ -1148,7 +1148,7 @@ export class Game {
     this.altitude = null;
     this.zoom = 1; this.zoomV = 0; this.ground = 0; this.groundV = 0; this.camSpeed = 0; this.camSpeedV = 0;
     this.back = 0; this.backV = 0;
-    this.lastFocus = null; this.pace = [0, 0]; this.shiftTotal = [0, 0];
+    this.lastFocus = null; this.paceSpeed = 0; this.reversing = 0; this.shiftTotal = [0, 0];
     this.camX = Math.min(Math.max(s[0] - this.camAnchorX, 0), this.maxCamX);       // s4833
     this.camY = s[1] - this.viewH / 2;
     this.clampCamY();
@@ -1441,19 +1441,20 @@ export class Game {
     const lim = this.rules.retro ? TILE * z : Math.max(TILE * z, 1.5 * Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]));
     // (The crash cam keeps the pieces in the middle.)
     const anchorX = this.camAnchorX + (this.viewW / 2 - this.camAnchorX) * ease;
-    let dx = Math.max(Math.min((fx - anchorX * z - this.camX) * 0.2, lim), -lim);
-    let dy = Math.max(Math.min((fy - this.viewH * z / 2 - this.camY) * 0.2, lim), -lim);
-    // Following a fifth of the way each step, the camera trails five steps' travel behind: fine at
-    // the original's speeds, but at Sandbox's (a boost, no gravity) the truck would leave the
-    // screen. Outside 2006 Mode it also moves with whatever is followed beyond PACE_FROM px a step,
-    // so the trail never gets longer than at that speed.
-    // (That speed is smoothed, so bumps and landings don't jolt the camera.)
+    // The original follows a fifth of the way each step, so it trails five steps' travel behind:
+    // fine at the original's speeds, but at Sandbox's (a boost, no gravity) the truck would leave
+    // the screen. Outside 2006 Mode, past 1.5 PACE_FROM px a step it follows a bigger share, so the
+    // trail never gets longer than at that speed. The share goes by the speed alone, smoothed (not
+    // the direction): going round a loop fast, the camera then follows the circle smoothly, where
+    // pushing it along with a smoothed velocity (as before 1.24.15) lagged the turn and wobbled.
+    let k = 0.2;
     if (!this.rules.retro) {
-      const over = (v) => Math.sign(v) * Math.max(0, Math.abs(v) - PACE_FROM);
-      const P = (this.pace ||= [0, 0]);
-      P[0] += (over(fvx) - P[0]) * 0.08; P[1] += (over(fvy) - P[1]) * 0.08;
-      dx += P[0]; dy += P[1];
+      const sp = Math.hypot(fvx, fvy);
+      if (sp < 400) this.paceSpeed += (sp - this.paceSpeed) * 0.1;   // (not a jump: a world shift)
+      k = Math.max(0.2, this.paceSpeed / (this.paceSpeed + 8 * PACE_FROM));
     }
+    const dx = Math.max(Math.min((fx - anchorX * z - this.camX) * k, lim), -lim);
+    const dy = Math.max(Math.min((fy - this.viewH * z / 2 - this.camY) * k, lim), -lim);
     this.camX = Math.min(Math.max(this.camX + dx, 0), this.maxCamX);
     this.camY += dy;
     this.clampCamY();
@@ -1519,7 +1520,15 @@ export class Game {
     let speed = 0, height = 0, backwards = 0;
     if (!this.wreck && this.landed) { // a wreck: close in on it. Being dropped in at the start doesn't count.
       speed = Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]);
-      backwards = t.P[0] - t.T[0];
+      // Reversing: moving against the way the truck faces, as it was last on the ground (not just
+      // moving left: round a loop, upside down along its top, it's going forwards; before 1.24.15
+      // that swung the frame back and forth every time round; and a flip doesn't count).
+      if (this.airSteps === 0) {
+        // (the way it faces: from the rear wheel to the front one)
+        const fx = t.T[4] - t.T[2], fy = t.T[5] - t.T[3], fl = Math.hypot(fx, fy) || 1;
+        this.reversing = -((t.T[0] - t.P[0]) * fx + (t.T[1] - t.P[1]) * fy) / fl;
+      }
+      backwards = this.reversing || 0;
       // Height fades in over the first second in the air, so bumps and hops hardly count. Look
       // down from the wheel centres, which are always clear of the ground.
       const air = smoothstep(this.airSteps, C.airFrom, C.airTo);

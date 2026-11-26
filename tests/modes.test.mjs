@@ -852,9 +852,12 @@ test('reversing, the dynamic camera eases back a little to show where the truck 
   const frameX = (dynamic, classic = false) => {
     const g = new Game(data);
     g.dynamicCamera = dynamic;
+    // (Stage Four: since 1.24.15 only truly reversing counts, and on Stage One the drive away
+    // from the start ends on the truck's roof)
     g.startCampaign({ retro: classic });
+    g.level = 3; g.startStage();
     g.keys.up = true; // away from the start, where the camera can't go any further left
-    settle(g, 250);
+    settle(g, 160);
     g.keys.up = false;
     settle(g, 100);
     const x0 = (g.truck.T[0] - g.camX) / g.zoom;
