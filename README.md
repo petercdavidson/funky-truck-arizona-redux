@@ -53,14 +53,17 @@ Outside 2006 Mode the HUD has a **speedometer** in km/h, or mph with the **Units
 the stage is 2.5 m). Its bar is quasi-logarithmic: it moves at everyday speeds and is full at
 300 km/h. It reads the speed of the truck's centre of mass, so it stays steady while the truck
 turns over in the air, and reads 0 while the truck is being dropped in at the start of a stage,
-until it first lands. Nothing goes faster than 9999 km/h (only Sandbox gets near; past 999 km/h there's a little air drag, though ×8 boost straight up still gets there).
+until it first lands. Nothing goes faster than 9999 km/h, where the speedometer stops (only Sandbox gets near; past 999 km/h there's a little air drag, though ×8 boost straight up still gets there).
 
 When the truck is so high that the ground below it is out of sight, an **altitude** reading
 (▼ metres or feet to the ground) comes up under the speedometer (and stays while paused). Outside 2006 Mode,
 higher still (measured from where the stage starts) the sky darkens into space at real heights (deep blue by 20 km, black with stars by 100 km;
-clouds stop at 18 km) and the truck darkens with it; above 1 km it steers like a plane in the air (tilting
-turns it just as down low, but let go and it eases to a stop and holds its heading; never in Classic, under its ceiling); and
-the engine fades out by 10 km, leaving only the rocket. A cab scraping the ground where it does no damage
+clouds stop at 18 km), the truck darkens with it, and way up (from 45 km) the moon comes out; from 5 km
+it steers more and more like a plane in the air, fully by 10 km (tilting turns it just as down low, but let go
+and it slows to a stop as fast as it got going and holds its heading; never in Classic, under its ceiling);
+and the engine fades out from 1 km to nothing at 20 km, leaving only the rocket, the tyres slowing to a
+stop on screen with it. Past the speed of sound the speedometer shows the **Mach** number too (the speed
+of sound at that height, from the standard atmosphere). A cab scraping the ground where it does no damage
 (on its roof in Sandbox, say) is heard only as long as scraping would take to wreck it in Classic, then fades. Outside 2006 Mode the backdrop moves
 a little too: sideways as you travel, and down as you climb, so the mountains sink away below a
 truck flying high. Dirt flies from a cab scraping along the ground, and from a wrecked truck's
@@ -184,7 +187,7 @@ the first landing, as in Stages). On Endless's course and the stunt tracks there
 and the cars loop: one that's been out of sight for two seconds comes back just out of view.
 Cars never appear or vanish in view: new rival cars come in just out of view to your right, and
 cars taken away in Tweaks go once they're out of sight. Holding the boost roars like a rocket.
-Nothing done in Sandbox counts towards High Scores. Slow motion runs fewer steps a second, not
+Nothing done in Sandbox counts towards High Scores except its own section: birds whacked, tumbleweeds tumbled, top speed, highest climb and most flips in one jump. Slow motion runs fewer steps a second, not
 slower ones, so the physics is exactly the same, only slower. `SANDBOX_ROWS` in `src/sandbox.js`.
 
 ## Endless Mode

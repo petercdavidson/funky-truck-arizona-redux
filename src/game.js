@@ -31,7 +31,8 @@ export const METRES_PER_TILE = 2.5;
 export const KMH_PER_PX_STEP = STEP_HZ * METRES_PER_TILE / TILE * 3.6;
 const POINTS_PER_TILE = 10;
 /** The fastest anything goes (only Sandbox gets near it): 9999 km/h, in px per step. */
-export const MAX_SPEED = 9999 / KMH_PER_PX_STEP;
+export const MAX_KMH = 9999;
+export const MAX_SPEED = MAX_KMH / KMH_PER_PX_STEP;
 /**
  * Air drag, only past 999 km/h (no stage, nor anything short of Sandbox's boost or gravity, gets
  * near): each step a truck going faster loses DRAG[0] times how far over it is, plus DRAG[1] times
@@ -220,6 +221,7 @@ export class Truck {
     this.gravity = 0.11;
     this.tiltPower = 1;
     this.holdTurn = 0;                 // 0..1: in the air, it stops turning when let go (Game sets it, high up)
+    this.wheelShow = 1;                // how much of the tyres' spin is seen (only for drawing: the engine's fade, high up)
   }
 
   reset(x, y) { // u4095 + parts of s46B2
@@ -365,12 +367,12 @@ export class Truck {
       const s = this.rearN[1] * this.rearV[0] + -this.rearN[0] * this.rearV[1];
       this.rearSpin = -s / this.circumference * 360;
     }
-    this.rearWheelRot += this.rearSpin;
+    this.rearWheelRot += this.rearSpin * this.wheelShow;
     if (this.frontContact) {
       const s = this.frontN[1] * this.frontV[0] + -this.frontN[0] * this.frontV[1];
       this.frontSpin = -s / this.circumference * 360;
     }
-    this.frontWheelRot += this.frontSpin;
+    this.frontWheelRot += this.frontSpin * this.wheelShow;
   }
 
   tilt(keys) { // g80D5
@@ -381,13 +383,13 @@ export class Truck {
     const px = -dy, py = dx;
     const hold = !this.rearContact && !this.frontContact && !keys.left && !keys.right ? this.holdTurn : 0;
     if (hold > 0) {
-      // like a plane: steered just as low down, but let go it eases to a stop and holds its
-      // heading. Its turning (the wheels' line's) is slowed by turning all its points' velocities
+      // like a plane: steered just as low down, but let go it slows to a stop (as fast as it got
+      // going) and holds its heading. Its turning (the wheels' line's) is slowed by turning all its points' velocities
       // back round its middle.
       const a1 = Math.atan2(dy, dx), a0 = Math.atan2(P[5] - P[3], P[4] - P[2]);
       let w = a1 - a0;
       if (w > PI) w -= 2 * PI; else if (w < -PI) w += 2 * PI;
-      const d = -w * HOLD_TURN.ease * hold;
+      const d = -Math.sign(w) * Math.min(Math.abs(w), HOLD_TURN.slow * this.tiltPower * hold);
       let cx = 0, cy = 0;
       for (let i = 0; i < 10; i += 2) { cx += T[i]; cy += T[i + 1]; }
       cx /= 5; cy /= 5;
@@ -675,9 +677,21 @@ export const BALANCE_ANGLE = 45;
 const SELF_WRECK_DAMAGE = 6;
 
 /** Metres up where the truck starts to hold its heading in the air, and where it fully does. */
-export const HOLD_HEADING = [1000, 1200];
-/** Holding its heading: the share of its turning it loses each step once let go. */
-export const HOLD_TURN = { ease: 0.15 };
+export const HOLD_HEADING = [5000, 10000];
+/**
+ * Holding its heading: let go, its turning slows by `slow` rad a step, each step (times Air Spin):
+ * as fast as the tilt keys speed it up (their push of 0.2 px on the front wheel turns the whole
+ * truck about that much a step, on average, as its springs take some), so it takes as long to
+ * stop as it took to get going.
+ */
+export const HOLD_TURN = { slow: 0.0015 };
+/** Metres up where the engine starts to fade (and the tyres to slow on screen), and where it's gone. */
+export const ENGINE_FADE = [1000, 20000];
+/** The engine's loudness (and how fast the tyres are seen to turn) at `metres` up: full low down, nothing by 20 km. */
+export function engineVolume(metres = 0) {
+  const f = Math.max(0, Math.min(1, (metres - ENGINE_FADE[0]) / (ENGINE_FADE[1] - ENGINE_FADE[0])));
+  return 1 - f * f * (3 - 2 * f);
+}
 /** Endless Mode's milestones: distances (then every `every` metres), and scores. */
 export const MILESTONES = { metres: [100, 250, 500, 750, 1000], every: 500, scores: [5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000] };
 /** Steps a milestone stays on screen. */
@@ -1219,6 +1233,7 @@ export class Game {
       // (their own random numbers, seeded from the game's: they never change what else happens)
       let seed = Math.floor(this.random() * 2147483646) + 1;
       this.critters = new Critters(() => (seed = (seed * 16807) % 2147483647) / 2147483647);
+      this.sbSeen = [0, 0];
       this.ticker = `Sandbox  ·  ${this.onCourse ? 'Endless' : this.stageName(this.level)}`;
       applySandbox(this);
     }
@@ -1722,6 +1737,7 @@ export class Game {
     // its heading (easing in over HOLD_HEADING's metres).
     t.holdTurn = this.rules.ceiling ? 0 : Math.max(0, Math.min(1, (this.height - HOLD_HEADING[0]) / (HOLD_HEADING[1] - HOLD_HEADING[0])));
     t.tilt(keys);
+    t.wheelShow = this.rules.ceiling ? 1 : engineVolume(this.height);
     const type = t.probeBody(w);
     // The cab (the truck above its wheels) is touching the ground. Ground under the body is the
     // chassis bottoming out: by the original scrape (scrapeAll) it counts too, otherwise not.
@@ -1916,6 +1932,7 @@ export class Game {
         if (this.battle) this.battle.step();
         if (this.critters) this.stepCritters();
         if (this.mode === 'sandbox') { stepTraffic(this); if (this.landed && this.endTimer === 0 && !this.wreck) this.clock++; }
+        if (this.mode === 'sandbox') this.sandboxStats();
         this.updateSpeedometer();
         this.stats.driveSteps++;
         if (++this.statsSince >= STATS_SAVE_EVERY) this.saveStats();
@@ -2022,6 +2039,10 @@ export class Game {
     const raw = this.wreck ? (this.selfWrecked ? this.wreck.bodySpeed * KMH_PER_PX_STEP : 0)
       : !this.landed ? 0 : t.speed * KMH_PER_PX_STEP;
     this.speedKmh += (raw - this.speedKmh) * 0.15;
+    // (at the top speed it reads the top speed, steady: the chassis point it's measured from swings
+    // either side of it as the truck turns)
+    if (this.atMax) this.speedKmh = MAX_KMH;
+    this.speedKmh = Math.min(MAX_KMH, this.speedKmh);
     if (!this.wreck && this.landed) {
       this.stats.topSpeed = Math.max(this.stats.topSpeed, this.speedKmh);
       if (this.airSteps === 0) this.stats.distance += t.speed * METRES_PER_TILE / TILE;
@@ -2033,6 +2054,7 @@ export class Game {
    * relative to each other), and a wreck's pieces each. Only Sandbox's boost and gravity get near.
    */
   capSpeed() {
+    this.atMax = false;
     const cap = (T, P, whole) => {
       if (whole) {
         let vx = 0, vy = 0;
@@ -2041,6 +2063,7 @@ export class Game {
         // (the drag slows the whole truck alike, leaving how it spins alone)
         if (loss) for (let i = 0; i < T.length; i += 2) { P[i] += vx / n / v0 * loss; P[i + 1] += vy / n / v0 * loss; }
         const v = v0 - loss;
+        if (v >= MAX_SPEED * 0.999) this.atMax = true;
         if (v <= MAX_SPEED) return;
         const k = MAX_SPEED / v;
         for (let i = 0; i < T.length; i++) P[i] = T[i] - (T[i] - P[i]) * k;
@@ -2088,6 +2111,18 @@ export class Game {
     if (this.rules.retro) { this.height = 0; return; }
     const t = this.truck, y = this.wreck ? this.wreck.centre[1] : Math.max(t.T[3], t.T[5]);
     this.height = Math.max(0, (this.levelData.start[1] - this.shiftTotal[1] - y) / TILE * METRES_PER_TILE);
+  }
+
+  /** Sandbox's records, straight into the saved stats (a Sandbox run's own are thrown away). */
+  sandboxStats() {
+    const S = this.realStats, C = this.critters;
+    if (C) {
+      S.sbBirds += C.whacked - (this.sbSeen?.[0] ?? 0); S.sbWeeds += C.tumbled - (this.sbSeen?.[1] ?? 0);
+      this.sbSeen = [C.whacked, C.tumbled];
+    }
+    if (!this.wreck) S.sbTopSpeed = Math.max(S.sbTopSpeed, this.speedKmh);
+    if (this.landed) S.sbHighest = Math.max(S.sbHighest, this.height);
+    S.sbMostFlips = Math.max(S.sbMostFlips, this.stats.mostFlips);
   }
 
   /** Toggle pause directly (for touch/gamepad buttons, which are taps rather than held keys). */

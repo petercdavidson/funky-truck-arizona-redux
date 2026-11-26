@@ -4,6 +4,10 @@
 // compares the game with the previous step and returns what happened (a landing, a trick...),
 // plus what the engine and the cab scraping the ground should sound like right now.
 
+import { ENGINE_FADE, engineVolume } from './game.js';
+
+export { engineVolume };
+
 const LAND_AIR = 8;     // steps a wheel must be off the ground for touching down to be a landing
 const BUMP_AIR = 2;     // ...or a bump
 const SCRAPE_HOLD = 6;  // steps the scrape keeps sounding after the cab last touched (it flickers)
@@ -15,8 +19,7 @@ const SCRAPE_HOLD = 6;  // steps the scrape keeps sounding after the cab last to
 export const SCRAPE_LIMIT = Math.ceil(1000 / 6);
 const SCRAPE_FADE = 70;
 const SCRAPE_REST = 35;
-// The engine fades out going up, gone by 10 km (only the rocket up there).
-export const ENGINE_FADE = [1000, 10000];
+
 
 export class SoundWatcher {
   constructor() { this.reset(); }
@@ -130,8 +133,3 @@ export class SoundWatcher {
   }
 }
 
-/** The engine's loudness at `metres` up: full low down, fading to nothing by 10 km. */
-export function engineVolume(metres = 0) {
-  const f = Math.max(0, Math.min(1, (metres - ENGINE_FADE[0]) / (ENGINE_FADE[1] - ENGINE_FADE[0])));
-  return 1 - f * f * (3 - 2 * f);
-}

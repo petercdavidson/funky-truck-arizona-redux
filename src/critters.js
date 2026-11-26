@@ -122,6 +122,8 @@ export class Critters {
     this.feathers = [];
     this.wantBirds = 0;
     this.wantWeeds = 0;
+    this.whacked = 0;   // birds knocked out of the sky, and tumbleweeds hit or blasted, all told (for the stats)
+    this.tumbled = 0;
     this.events = [];  // this step's hits: { kind: 'bird' (the truck hit it, or a blast: `blast`) | 'weed' (the truck hit it) | 'weedBounce' (a tumbleweed off the ground or another), x, y, speed } (for sounds; tumbleweeds' only in sight)
   }
 
@@ -234,6 +236,7 @@ export class Critters {
       const k = power * (1 - d / radius) + 1;
       if (!b.hit) {
         this.knock(b, dx / d * k, dy / d * k - 1);
+        this.whacked++;
         if (!heard) this.events.push({ kind: 'bird', x: b.x, y: b.y, speed: k, blast: true });
         heard = true;
       }
@@ -243,7 +246,7 @@ export class Critters {
       const dx = w.x - x, dy = w.y - y, d = Math.hypot(dx, dy) || 1;
       if (d > radius) continue;
       const k = power * CRITTERS.weedBlast * (1 - d / radius) + 2;
-      w.sleep = false; w.still = 0;
+      w.sleep = false; w.still = 0; this.tumbled++;
       w.vx += dx / d * k; w.vy += dy / d * k - k * 0.6;
       w.spin = (w.spin || 0) + (this.random() - 0.5) * 0.02 * k + Math.sign(dx) * 0.01 * k;
     }
@@ -320,6 +323,7 @@ export class Critters {
           const [hx, hy, vx, vy] = h, dx = b.x - hx, dy = b.y - hy, d = Math.hypot(dx, dy) || 1, sp = Math.hypot(vx, vy);
           this.knock(b, vx * 0.9 + dx / d * (2 + sp * 0.3), vy * 0.9 + dy / d * (2 + sp * 0.3) - 2);
           this.events.push({ kind: 'bird', x: b.x, y: b.y, speed: sp });
+          this.whacked++;
         }
       } else if (b.rest === 0) {
         // tumbling down until it lands (bouncing off walls)
@@ -366,6 +370,7 @@ export class Critters {
             w.spin = side * pop * 0.02;
           }
           if (!w.cool && inView(w)) this.events.push({ kind: 'weed', x: w.x, y: w.y, speed: -vn });
+          if (!w.cool) this.tumbled++;
           w.cool = 12;
         }
         const ox = w.vx, oy = w.vy, out = C.weedRadius + hr - d;

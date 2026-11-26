@@ -30,3 +30,23 @@ export const SPEEDO_FULL = 300;
 export function speedoShare(kmh) {
   return Math.max(0, Math.min(1, Math.log1p(kmh / 40) / Math.log1p(SPEEDO_FULL / 40)));
 }
+
+/**
+ * The speed of sound (km/h) at `metres` up, from the standard atmosphere's temperatures: 1,225 km/h
+ * at sea level, 1,062 km/h through the cold 11 to 20 km, faster again in the warmer stratopause,
+ * slowest at the mesopause (86 km) and held there above it.
+ */
+export function soundSpeedKmh(metres = 0) {
+  const km = Math.max(0, metres / 1000);
+  // (temperature, K, at the start of each layer, and its lapse, K per km)
+  const L = [[0, 288.15, -6.5], [11, 216.65, 0], [20, 216.65, 1], [32, 228.65, 2.8], [47, 270.65, 0], [51, 270.65, -2.8], [71, 214.65, -2], [86, 184.65, 0]];
+  let T = 184.65;
+  for (let i = L.length - 1; i >= 0; i--) if (km >= L[i][0]) { T = L[i][1] + L[i][2] * (km - L[i][0]); break; }
+  return Math.sqrt(1.4 * 287.05 * T) * 3.6;
+}
+
+/** "Mach 1.3" at `kmh` and `metres` up, or '' below Mach 1. */
+export function formatMach(kmh, metres = 0) {
+  const m = kmh / soundSpeedKmh(metres);
+  return m >= 1 ? `Mach ${(Math.floor(m * 10) / 10).toFixed(1)}` : '';
+}

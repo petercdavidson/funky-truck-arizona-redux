@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Game, Truck } from '../src/game.js';
+import { Game, Truck, KMH_PER_PX_STEP } from '../src/game.js';
 import { SoundWatcher, SCRAPE_LIMIT, engineVolume } from '../src/sound-events.js';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
@@ -32,7 +32,8 @@ test('high up, the truck turns just as low down while steered, and stops when le
   // steered: exactly as low down
   for (let i = 0; i < 70; i++) assert.equal(plane[i], truck[i]);
   assert.ok(plane[69] < 0, 'left turns it back');
-  // let go: it stops within a second (the truck's own way keeps on spinning)
+  // let go: it slows as fast as it sped up, so it's stopped about as long after (the truck's own way keeps on spinning)
+  assert.ok(Math.abs(plane[100]) > 0.01, `stopped too soon (${plane[100]})`);
   assert.ok(Math.abs(plane[139]) < 0.002, `still turning ${plane[139]} after letting go`);
   assert.ok(Math.abs(truck[139]) > 0.02, 'down low it keeps spinning');
 });
@@ -43,24 +44,24 @@ test('the truck\'s height: above where the stage starts', () => {
   for (let i = 0; i < 200; i++) g.step();
   assert.ok(g.height < 30, `near the start: ${g.height.toFixed(1)} m`);
   // (lift it to 2 km above the start: the lower wheel there)
-  const lift = Math.max(g.truck.T[3], g.truck.T[5]) - (g.levelData.start[1] - g.shiftTotal[1]) + 64 / 2.5 * 2000;
+  const lift = Math.max(g.truck.T[3], g.truck.T[5]) - (g.levelData.start[1] - g.shiftTotal[1]) + 64 / 2.5 * 12000;
   for (let j = 1; j < 10; j += 2) g.truck.T[j] -= lift, g.truck.P[j] -= lift;
   g.updateHeight();
-  assert.ok(Math.abs(g.height - 2000) < 1, `${g.height.toFixed(0)} m`);
+  assert.ok(Math.abs(g.height - 12000) < 1, `${g.height.toFixed(0)} m`);
   assert.equal(g.truck.holdTurn, 0);
   g.step();
-  assert.equal(g.truck.holdTurn, 1, 'holding its heading at 2 km');
+  assert.equal(g.truck.holdTurn, 1, 'holding its heading at 12 km');
 });
 
-test('the engine fades out going up, gone by 10 km', () => {
+test('the engine fades out going up, gone by 20 km', () => {
   assert.equal(engineVolume(0), 1);
   assert.equal(engineVolume(1000), 1);
-  assert.ok(engineVolume(5500) > 0.2 && engineVolume(5500) < 0.8);
-  assert.equal(engineVolume(10000), 0);
+  assert.ok(engineVolume(10500) > 0.2 && engineVolume(10500) < 0.8);
+  assert.equal(engineVolume(20000), 0);
   const g = new Game(data);
   g.startSandbox();
   for (let i = 0; i < 50; i++) g.step();
-  g.height = 12000;
+  g.height = 22000;
   assert.equal(new SoundWatcher().observe(g).engine.on, false);
 });
 
@@ -81,4 +82,31 @@ test('the scrape fades away after as long as it would take to wreck, unless it\'
   assert.ok(off[SCRAPE_LIMIT + 30] > 0 && off[SCRAPE_LIMIT + 30] < 1, 'fading');
   assert.equal(off[SCRAPE_LIMIT + 150], 0, 'then silent');
   assert.ok(on.every((v) => v === 1), 'full while it does damage');
+});
+
+test('the speedometer stops at 9,999 km/h, and Mach shows past the speed of sound', async () => {
+  const { formatMach, soundSpeedKmh } = await import('../src/units.js');
+  const g = new Game(data);
+  g.startSandbox();
+  for (let i = 0; i < 100; i++) g.step();
+  let worst = 0;
+  for (let i = 0; i < 300; i++) {
+    const v = 20000 / KMH_PER_PX_STEP;   // px/step: twice the top speed, straight up
+    for (let j = 0; j < 10; j += 2) { g.truck.P[j + 1] = g.truck.T[j + 1] + v; }
+    g.step();
+    if (i > 60) worst = Math.max(worst, Math.abs(g.speedKmh - 9999));
+  }
+  assert.equal(worst, 0, 'steady at 9,999');
+  assert.equal(formatMach(1000, 0), '');
+  assert.equal(formatMach(soundSpeedKmh(0) * 2.05, 0), 'Mach 2.0');
+  assert.ok(soundSpeedKmh(15000) < soundSpeedKmh(0), 'slower in the cold up high');
+});
+
+test('the tyres are seen to turn less as the engine fades, and not at all once it\'s silent', () => {
+  const t = new Truck();
+  t.reset(0, 0); t.rearSpin = 10;
+  t.wheelShow = 0; t.spinWheels();
+  assert.equal(t.rearWheelRot, 0);
+  t.wheelShow = 1; t.spinWheels();
+  assert.equal(t.rearWheelRot, 10);
 });

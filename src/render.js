@@ -28,7 +28,7 @@ const CLOUD_LAYERS = [
   { depth: 0.1, size: 1, alpha: 0.92, blur: 2.5 },
 ];
 import { SANDBOX_ROWS, SANDBOX_ROW, sandboxValue } from './sandbox.js';
-import { formatSpeed, formatDistance, formatHeight, speedoShare } from './units.js';
+import { formatSpeed, formatDistance, formatHeight, formatMach, speedoShare } from './units.js';
 
 const DEG = Math.PI / 180;
 /** Where the tumbleweed art's round hitbox (50 px across) is centred in assets/tumbleweed.png. */
@@ -46,7 +46,8 @@ const MILESTONE_GOLD = '#ffe27a';
  * (down) rather than stopping dead at them.
  */
 const BACKDROP = { y: 0.06, up: 80, down: 420 };
-const TRUCK_SHADE = 0.6;   // how far the truck darkens toward the sky's colour as it goes black (at the sky's darkest)
+const TRUCK_SHADE = 0.6;
+const MOON = { from: 45, full: 65, km: 75, depth: 1 / 4000, r: 80 };   // the moon (see Renderer.moon)   // how far the truck darkens toward the sky's colour as it goes black (at the sky's darkest)
 /** The HUD in a tall view: how much bigger, how far down from the top (stage units), and where the middle's news goes (a share of the view's height). */
 const HUD_TALL = { k: 1.5, top: 12, middle: 0.2 };
 
@@ -137,8 +138,8 @@ function statsButtons(tall, extra = {}) {
   const asking = (g) => !!g.resetConfirm, idle = (g) => !g.resetConfirm;
   const left = (g) => Math.ceil(Math.max(0, RESET_WAIT - (g.resetConfirm?.steps ?? 0)) / STEP_HZ);
   return [
-    { rect: tall ? r(30, 700, 145, 38) : r(160, 412, 120, 25), label: 'Reset', action: 'resetAsk', show: idle, ...extra },
-    { rect: tall ? r(185, 700, 145, 38) : r(296, 412, 120, 25), label: 'Menu', action: 'menu', show: idle, ...extra },
+    { rect: tall ? r(30, 742, 145, 38) : r(160, 412, 120, 25), label: 'Reset', action: 'resetAsk', show: idle, ...extra },
+    { rect: tall ? r(185, 742, 145, 38) : r(296, 412, 120, 25), label: 'Menu', action: 'menu', show: idle, ...extra },
     { rect: tall ? r(50, 404, 125, 44) : r(168, 254, 115, 28), label: (g) => (g.resetReady ? 'Yes, Reset' : `Yes (${left(g)})`), action: 'resetYes',
       show: asking, disabled: (g) => !g.resetReady, ...extra },
     { rect: tall ? r(185, 404, 125, 44) : r(293, 254, 115, 28), label: 'No', action: 'resetNo', show: asking, ...extra },
@@ -381,7 +382,7 @@ export const BUTTONS = {
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 680, modes: 680, classicSelect: 600, stats: 760, options: 670, padMap: 640, pauseOptions: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 760, sandboxTweaks: 720, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
+export const TALL_H = { title: 680, modes: 680, classicSelect: 600, stats: 800, options: 670, padMap: 640, pauseOptions: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 760, sandboxTweaks: 720, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
@@ -508,6 +509,12 @@ export function statsColumns(game) {
     ['Longest wheelie', or(S.longestWheelie, secs)],
     ['Best trick chain', or(S.bestChain, (v) => `${n(v)} pts`)],
     ['Longest trick chain', or(S.longestChain, (v) => `${n(v)} tricks`)],
+    ['Sandbox'],
+    ['Birds whacked', n(S.sbBirds)],
+    ['Tumbleweeds tumbled', n(S.sbWeeds)],
+    ['Top speed', or(S.sbTopSpeed, (v) => formatSpeed(v, game.imperial))],
+    ['Highest climb', or(S.sbHighest, (v) => formatHeight(v, game.imperial))],
+    ['Most flips in one jump', or(S.sbMostFlips, n)],
   ], [
     ['Totals'],
     ['Distance driven', dist(S.distance)],
@@ -1019,7 +1026,7 @@ export class Renderer {
   /**
    * High up, the sky darkens over the backdrop into black space (`skyAt`: real colours at real
    * heights: the truck's `height`), and the stars come out, all in one plane very far off (moving
-   * past at 1/4000 of the world's speed). Returns the sky (for the clouds' fade and the truck's
+   * past at 1/8000 of the world's speed), and way up, the moon (`moon`). Returns the sky (for the clouds' fade and the truck's
    * shade), or null down low.
    */
   space(game, v) {
@@ -1035,7 +1042,7 @@ export class Renderer {
     if (sky.stars > 0) {
       const sc = this.scale, CELL = 70, W = c.width / sc, H = c.height / sc;
       ctx.fillStyle = '#fff';
-      for (const [depth, seed, size] of [[1 / 4000, 3, 1.4]]) {
+      for (const [depth, seed, size] of [[1 / 8000, 3, 1.4]]) {
         // the view's top left in this layer's star space (stage px)
         const ox = (v.camX + sx) * depth - this.offX / sc, oy = (v.camY + sy) * depth - this.offY / sc;
         for (let cy = Math.floor(oy / CELL); cy <= Math.floor((oy + H) / CELL); cy++) {
@@ -1050,7 +1057,62 @@ export class Renderer {
       }
     }
     ctx.restore();
+    this.moon(game, v, km);
     return sky;
+  }
+
+  /**
+   * The moon: a tyre (tyre_5.png) made moon-coloured, big, in the sky from 45 km up (fully there by
+   * 65 km). It moves past at 1/4000 of the world's speed, sitting `MOON.km` above the stage's start,
+   * so it rises past you as you climb; sideways there's always one across the view.
+   */
+  moon(game, v, km) {
+    const fade = Math.max(0, Math.min(1, (km - MOON.from) / (MOON.full - MOON.from)));
+    const img = this.moonImage();
+    if (!fade || !img) return;
+    const [sx, sy] = game.shiftTotal || [0, 0], z = v.zoom || 1;
+    const mx = (v.camX + sx + this.viewW * z / 2) * MOON.depth;
+    // (one comes round every view's width and a bit: always one across the view, as one goes off
+    // one side the next comes in at the other)
+    const every = this.viewW + MOON.r * 2 + 60;
+    let dx = (every * 0.2 - mx) % every;   // (right of the middle, above the stage's start)
+    if (dx < -every / 2) dx += every; else if (dx >= every / 2) dx -= every;
+    const top = game.levelData.start[1] - sy - MOON.km * 1000 / METRES_PER_TILE * TILE;
+    const dy = (top - (v.camY + this.viewH * z / 2)) * MOON.depth;
+    const r = MOON.r, x = this.viewW / 2 + dx, y = this.viewH / 2 + dy;
+    if (x < -r || x > this.viewW + r || y < -r || y > this.viewH + r) return;
+    const ctx = this.ctx, sc = this.scale;
+    ctx.save();
+    ctx.setTransform(sc, 0, 0, sc, this.offX, this.offY);
+    ctx.globalAlpha = fade;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, x - r, y - r, r * 2, r * 2);
+    ctx.restore();
+  }
+
+  /** The moon's picture: tyre_5.png in the moon's greys (made once). */
+  moonImage() {
+    if (this.moonImg !== undefined) return this.moonImg;
+    const tyre = this.a.images['tyre_5.png'];
+    if (!tyre) return (this.moonImg = null);
+    const c = document.createElement('canvas');
+    c.width = tyre.width; c.height = tyre.height;
+    const x = c.getContext('2d');
+    x.drawImage(tyre, 0, 0);
+    try {
+      // each pixel's brightness, stretched, in the moon's warm grey
+      const d = x.getImageData(0, 0, c.width, c.height), p = d.data;
+      let lo = 255, hi = 0;
+      for (let i = 0; i < p.length; i += 4) if (p[i + 3] > 128) { const l = (p[i] + p[i + 1] + p[i + 2]) / 3; lo = Math.min(lo, l); hi = Math.max(hi, l); }
+      for (let i = 0; i < p.length; i += 4) {
+        const l = ((p[i] + p[i + 1] + p[i + 2]) / 3 - lo) / Math.max(1, hi - lo), k = 0.62 + 0.38 * l;
+        p[i] = 222 * k; p[i + 1] = 218 * k; p[i + 2] = 206 * k;
+      }
+      x.putImageData(d, 0, 0);
+    } catch {
+      x.globalCompositeOperation = 'source-atop'; x.fillStyle = '#d6d2c6'; x.fillRect(0, 0, c.width, c.height);
+    }
+    return (this.moonImg = c);
   }
 
   /**
@@ -1240,7 +1302,11 @@ export class Renderer {
     let y = 7.5;
     if (game.rules.damage) { this.meter('damage', game.damage / 1000, y); y += 34; }
     // Outside 2006 Mode: the speedometer (the bar's scale squeezes high speeds: units.js).
-    if (!game.rules.retro) this.meter('speed', speedoShare(game.speedKmh), y, formatSpeed(game.speedKmh, game.imperial));
+    if (!game.rules.retro) {
+      // (past the speed of sound, the Mach number too)
+      const mach = formatMach(game.speedKmh, game.height);
+      this.meter('speed', speedoShare(game.speedKmh), y, formatSpeed(game.speedKmh, game.imperial) + (mach ? ` · ${mach}` : ''));
+    }
     // ...and the altimeter, while the ground under the truck is out of sight below.
     if (game.altitude != null && (game.screen === 'playing' || game.screen === 'paused')) {
       const ya = y + (this.hudW < 420 ? 50 : 36);
@@ -1389,6 +1455,9 @@ export class Renderer {
     const head = { weight: '800', align: 'left', color: MILESTONE_GOLD, shadow: 'rgba(38,38,38,0.5)' };
     const label = { weight: '600', align: 'left', color: 'rgba(255,255,255,0.9)' };
     const value = { weight: '800', align: 'right' };
+    // (rows shrink to fit the room above the buttons: a heading counts as a row and a half)
+    const units = (rows) => rows.reduce((u, [, val]) => u + (val === undefined ? 1.45 : 1), 0);
+    const fit = (rows, rowH, size, room) => { const h = Math.min(rowH, room / units(rows)); return [h, size * Math.min(1, (h / rowH) ** 0.6)]; };
     const column = (rows, x0, x1, y, rowH, size) => {
       for (const [name, val] of rows) {
         if (val === undefined) { if (y > 70) y += rowH * 0.35; this.text(name, x0, y, { ...head, size: size + 1.5 }); y += rowH * 1.1; continue; }
@@ -1400,12 +1469,14 @@ export class Renderer {
     };
     if (tall) {
       this.text('High Scores', cx, 18, { size: 26, weight: '900' });
-      const y = column(cols[0], 30, 330, 62, 21, 14);
-      column(cols[1], 30, 330, y, 21, 14);
+      const [h, size] = fit([...cols[0], ...cols[1]], 21, 14, 730 - 62);
+      const y = column(cols[0], 30, 330, 62, h, size);
+      column(cols[1], 30, 330, y, h, size);
     } else {
       this.text('High Scores', cx, 12, { size: 22, weight: '900' });
-      column(cols[0], 34, 262, 50, 19.5, 12.5);
-      column(cols[1], 314, 542, 50, 19.5, 12.5);
+      const [h, size] = fit(units(cols[0]) > units(cols[1]) ? cols[0] : cols[1], 19.5, 12.5, 402 - 50);
+      column(cols[0], 34, 262, 50, h, size);
+      column(cols[1], 314, 542, 50, h, size);
     }
     if (game.resetConfirm) {
       // Are you sure? (Yes waits five seconds.)

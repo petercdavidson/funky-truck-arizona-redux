@@ -10,6 +10,8 @@ export const STAT_KEYS = [
   'maxAir', 'topSpeed', 'mostFlips', 'longestWheelie', 'bestChain', 'longestChain',
   'distance', 'driveSteps', 'runs', 'stages', 'wrecks', 'selfWrecks', 'bails', 'endlessMetres', 'takedowns', 'rallyWins',
   'classicStage', // the highest stage (1-9) beaten in Classic
+  // Sandbox's own (its runs count into throwaway stats, so these go straight into the saved ones)
+  'sbBirds', 'sbWeeds', 'sbTopSpeed', 'sbHighest', 'sbMostFlips',
 ];
 
 /** The tricks counted one by one (by kind: no counts or airtimes in the name). */

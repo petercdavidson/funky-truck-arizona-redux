@@ -195,7 +195,7 @@ test('sandbox on Endless\'s course and on a stunt track: no finish, no damage', 
   }
 });
 
-test('nothing done in Sandbox counts towards High Scores', () => {
+test('nothing done in Sandbox counts towards High Scores but its own records', () => {
   const store = memoryStore();
   const g = new Game(data, { random: seeded(17), store });
   const before = JSON.stringify(g.stats);
@@ -205,8 +205,10 @@ test('nothing done in Sandbox counts towards High Scores', () => {
   g.selfWreck();
   for (let i = 0; i < 200; i++) g.step();
   g.showMenu('stats');
-  assert.equal(JSON.stringify(g.stats), before, 'the stats are as they were');
-  assert.equal(JSON.stringify(store.get('stats') ?? JSON.parse(before)), before, 'and so are the saved ones');
+  const others = (S) => JSON.stringify(Object.fromEntries(Object.entries(S).filter(([k]) => !k.startsWith('sb'))));
+  assert.equal(others(g.stats), others(JSON.parse(before)), 'the stats are as they were');
+  assert.equal(others(store.get('stats') ?? JSON.parse(before)), others(JSON.parse(before)), 'and so are the saved ones');
+  assert.ok(g.stats.sbTopSpeed > 0, 'but Sandbox\'s own top speed counts');
   assert.equal(store.get('bestEndless'), null);
   // and they still count elsewhere
   g.startCampaign();
