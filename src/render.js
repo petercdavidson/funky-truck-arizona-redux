@@ -46,6 +46,7 @@ const MILESTONE_GOLD = '#ffe27a';
  * (down) rather than stopping dead at them.
  */
 const BACKDROP = { y: 0.06, up: 80, down: 420 };
+const TRUCK_SHADE = 0.6;   // how far the truck darkens toward the sky's colour as it goes black (at the sky's darkest)
 /** The HUD in a tall view: how much bigger, how far down from the top (stage units), and where the middle's news goes (a share of the view's height). */
 const HUD_TALL = { k: 1.5, top: 12, middle: 0.2 };
 
@@ -947,7 +948,7 @@ export class Renderer {
     const ctx = this.ctx;
     this.backdrop(game, v);
     const zoom = game.rules.retro ? 1 : v.zoom || 1;
-    const sky = game.rules.retro ? null : this.space(game, v, zoom);
+    const sky = game.rules.retro ? null : this.space(game, v);
     if (game.mode === 'sandbox' && sandboxValue(game.sandbox, 'clouds') && (sky?.clouds ?? 1) > 0) this.clouds(game, v, zoom, sky?.clouds ?? 1);
     this.tiles(game.levelData, v.camX, v.camY, zoom, game.mode === 'custom' || !!game.sandboxCustom);
     ctx.save();
@@ -963,18 +964,20 @@ export class Renderer {
       ctx.drawImage(f.img, d.x + f.tx * d.scale, d.y + f.ty * d.scale, f.img.width * d.scale, f.img.height * d.scale);
     }
     ctx.globalAlpha = 1;
+    // high up the truck darkens with the sky, so it sits in it (`shaded`)
+    const shade = sky ? { color: sky.color, alpha: sky.alpha * TRUCK_SHADE } : null;
     if (v.G) {
       // Time Trial's ghost: your best run, see-through, its wheels turning as it goes.
       const rot = v.G[2] / game.truck.wheelRadius * 180 / Math.PI;
       ctx.save();
       ctx.globalAlpha = 0.38;
-      this.truck(v.G, rot, rot, game.look);
+      this.shaded(shade, () => this.truck(v.G, rot, rot, game.look));
       ctx.restore();
     }
     if (game.critters) this.critters(game.critters, v.t ?? 1);
     if (game.battle) battleBack(this, game, v);
-    if (game.wreck && v.W) this.wreck(game.wreck, v.W, game.look);
-    else this.truck(v.T, v.rr, v.fr, game.look);
+    if (game.wreck && v.W) this.shaded(shade, () => this.wreck(game.wreck, v.W, game.look));
+    else this.shaded(shade, () => this.truck(v.T, v.rr, v.fr, game.look));
     if (game.battle) battleFront(this, game, v);
     if (game.mode === 'sandbox' && sandboxValue(game.sandbox, 'hitboxes')) this.hitboxes(game, v);
     ctx.restore();
@@ -983,16 +986,45 @@ export class Renderer {
   }
 
   /**
-   * High up, the sky darkens over the backdrop into black space (`skyAt`: real colours at real
-   * heights above where the stage starts, at the middle of the view), and the stars come out:
-   * two layers, fixed in the sky but for a slight drift as you go (a thousandth of the world's
-   * speed and less), so you can still see you're moving. Returns the sky (for the clouds' fade),
-   * or null down low.
+   * Draw with `draw` (which draws through this.ctx, under its transform), shaded toward `shade`'s
+   * colour by its alpha: drawn on a canvas of its own, coloured over where it drew, then copied in.
+   * (Not with a canvas filter: Safari's canvas has none.)
    */
-  space(game, v, zoom) {
+  shaded(shade, draw) {
+    if (!shade || shade.alpha < 0.01) { draw(); return; }
+    const main = this.ctx, c = this.canvas;
+    this.shadeCanvas ||= document.createElement('canvas');
+    const o = this.shadeCanvas;
+    if (o.width !== c.width || o.height !== c.height) { o.width = c.width; o.height = c.height; }
+    const octx = o.getContext('2d');
+    octx.setTransform(1, 0, 0, 1, 0, 0);
+    octx.globalAlpha = 1; octx.globalCompositeOperation = 'source-over';
+    octx.clearRect(0, 0, o.width, o.height);
+    octx.setTransform(main.getTransform());
+    octx.globalAlpha = main.globalAlpha;
+    this.ctx = octx;
+    try { draw(); } finally { this.ctx = main; }
+    octx.setTransform(1, 0, 0, 1, 0, 0);
+    octx.globalAlpha = shade.alpha;
+    octx.globalCompositeOperation = 'source-atop';
+    octx.fillStyle = `rgb(${shade.color.join(',')})`;
+    octx.fillRect(0, 0, o.width, o.height);
+    main.save();
+    main.setTransform(1, 0, 0, 1, 0, 0);
+    main.globalAlpha = 1;
+    main.drawImage(o, 0, 0);
+    main.restore();
+  }
+
+  /**
+   * High up, the sky darkens over the backdrop into black space (`skyAt`: real colours at real
+   * heights: the truck's `height`), and the stars come out, all in one plane very far off (moving
+   * past at 1/4000 of the world's speed). Returns the sky (for the clouds' fade and the truck's
+   * shade), or null down low.
+   */
+  space(game, v) {
     const [sx, sy] = game.shiftTotal || [0, 0];
-    const above = (game.levelData.start[1] - sy) - (v.camY + this.viewH * zoom / 2);
-    const km = above / TILE * METRES_PER_TILE / 1000;
+    const km = (game.height || 0) / 1000;
     if (km <= 6) return null;
     const sky = skyAt(km), ctx = this.ctx, c = this.canvas;
     ctx.save();
@@ -1003,14 +1035,14 @@ export class Renderer {
     if (sky.stars > 0) {
       const sc = this.scale, CELL = 70, W = c.width / sc, H = c.height / sc;
       ctx.fillStyle = '#fff';
-      for (const [depth, seed, size] of [[1 / 4000, 3, 1], [1 / 1200, 5, 1.6]]) {
+      for (const [depth, seed, size] of [[1 / 4000, 3, 1.4]]) {
         // the view's top left in this layer's star space (stage px)
         const ox = (v.camX + sx) * depth - this.offX / sc, oy = (v.camY + sy) * depth - this.offY / sc;
         for (let cy = Math.floor(oy / CELL); cy <= Math.floor((oy + H) / CELL); cy++) {
           for (let cx = Math.floor(ox / CELL); cx <= Math.floor((ox + W) / CELL); cx++) {
-            if (hash2(cx, cy, 40 + seed) > 0.55) continue;
+            if (hash2(cx, cy, 40 + seed) > 0.8) continue;
             const x = (cx + hash2(cx, cy, 41 + seed)) * CELL - ox, y = (cy + hash2(cx, cy, 42 + seed)) * CELL - oy;
-            const b = hash2(cx, cy, 43 + seed), r = size * (0.5 + 0.7 * b) * sc;
+            const b = hash2(cx, cy, 43 + seed) ** 2, r = size * (0.5 + 0.8 * b) * sc;
             ctx.globalAlpha = sky.stars * (0.35 + 0.65 * b);
             ctx.fillRect(Math.round(x * sc - r / 2), Math.round(y * sc - r / 2), Math.max(1, r), Math.max(1, r));
           }
@@ -1210,7 +1242,7 @@ export class Renderer {
     // Outside 2006 Mode: the speedometer (the bar's scale squeezes high speeds: units.js).
     if (!game.rules.retro) this.meter('speed', speedoShare(game.speedKmh), y, formatSpeed(game.speedKmh, game.imperial));
     // ...and the altimeter, while the ground under the truck is out of sight below.
-    if (game.altitude != null && game.screen === 'playing') {
+    if (game.altitude != null && (game.screen === 'playing' || game.screen === 'paused')) {
       const ya = y + (this.hudW < 420 ? 50 : 36);
       this.text('altitude', 13.1, ya + 13, { size: 15, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic' });
       this.text(`▼ ${formatHeight(game.altitude, game.imperial)}`, 13.1, ya + 29, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic', color: 'rgba(255,255,255,0.9)' });

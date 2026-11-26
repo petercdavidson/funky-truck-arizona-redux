@@ -219,6 +219,7 @@ export class Truck {
     this.power = 1;
     this.gravity = 0.11;
     this.tiltPower = 1;
+    this.holdTurn = 0;                 // 0..1: in the air, it turns at a steady rate while steered and stops when let go (Game sets it, high up)
   }
 
   reset(x, y) { // u4095 + parts of s46B2
@@ -378,14 +379,31 @@ export class Truck {
     const l = Math.sqrt(dx * dx + dy * dy);
     if (l !== 0) { dx /= l; dy /= l; }
     const px = -dy, py = dx;
+    const air = !this.rearContact && !this.frontContact, hold = air ? this.holdTurn : 0;
+    if (hold > 0) {
+      // like a plane: turning at a steady rate while steered, and stopping when let go. Its turn
+      // (the wheels' line's) is eased toward the rate wanted by turning all its points' velocities
+      // round its middle.
+      const a1 = Math.atan2(dy, dx), a0 = Math.atan2(P[5] - P[3], P[4] - P[2]);
+      let w = a1 - a0;
+      if (w > PI) w -= 2 * PI; else if (w < -PI) w += 2 * PI;
+      const want = (keys.left ? -1 : keys.right ? 1 : 0) * HOLD_TURN.rate * this.tiltPower;
+      const d = (want - w) * HOLD_TURN.ease * hold;
+      let cx = 0, cy = 0;
+      for (let i = 0; i < 10; i += 2) { cx += T[i]; cy += T[i + 1]; }
+      cx /= 5; cy /= 5;
+      for (let i = 0; i < 10; i += 2) { P[i] += d * (T[i + 1] - cy); P[i + 1] -= d * (T[i] - cx); }
+      if (hold >= 1) return;
+    }
+    const k = 1 - hold;   // (easing in: the original push, less)
     if (keys.left) {
-      if (!this.rearContact && !this.frontContact) { P[4] += px * (0.2 * this.tiltPower); P[5] += py * (0.2 * this.tiltPower); }
+      if (!this.rearContact && !this.frontContact) { P[4] += px * (0.2 * this.tiltPower * k); P[5] += py * (0.2 * this.tiltPower * k); }
       else if (this.rearContact) {
         const n = this.rearN, s = (n[0] * px + n[1] * py) * (0.1 * this.tiltPower);
         P[4] += n[0] * s; P[5] += n[1] * s;
       }
     } else if (keys.right) {
-      if (!this.rearContact && !this.frontContact) { P[4] -= px * (0.2 * this.tiltPower); P[5] -= py * (0.2 * this.tiltPower); }
+      if (!this.rearContact && !this.frontContact) { P[4] -= px * (0.2 * this.tiltPower * k); P[5] -= py * (0.2 * this.tiltPower * k); }
       else if (this.frontContact) {
         const n = this.frontN, s = (n[0] * px + n[1] * py) * (0.1 * this.tiltPower);
         P[2] += n[0] * s; P[3] += n[1] * s;
@@ -657,6 +675,11 @@ const ONE_BUTTON_AIR = 4;        // steps off the ground before the one-button c
 export const BALANCE_ANGLE = 45;
 /** The cab of a truck wrecked on purpose (Esc) takes this much damage a step while it touches the ground (as scraping does). */
 const SELF_WRECK_DAMAGE = 6;
+
+/** Metres up where the truck starts to hold its heading in the air, and where it fully does. */
+export const HOLD_HEADING = [1000, 1200];
+/** Holding its heading: the fastest it turns with left or right held (rad a step: 180°/s), and the share of the way to the turn it wants it gets a step. */
+export const HOLD_TURN = { rate: Math.PI / STEP_HZ, ease: 0.15 };
 /** Endless Mode's milestones: distances (then every `every` metres), and scores. */
 export const MILESTONES = { metres: [100, 250, 500, 750, 1000], every: 500, scores: [5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000] };
 /** Steps a milestone stays on screen. */
@@ -707,6 +730,7 @@ export class Game {
       onBank: (points, n, bailed) => countChain(this.stats, points, n, bailed),
     });
     this.damage = 0;                  // X5B4 (0..1000)
+    this.height = 0;                  // m: how high the truck is (see updateAltitude): the sky, steering and engine go by it
     this.endTimer = 0;                // L5B72
     this.tickerTimer = 0;             // e8472
     this.ticker = '';
@@ -1171,7 +1195,7 @@ export class Game {
     this.truck.reset(s[0], s[1]);
     this.truck.rearWheelRot = 0; this.truck.frontWheelRot = 0;
     this.speedKmh = 0;
-    this.altitude = null;
+    this.altitude = null; this.height = 0;
     this.zoom = 1; this.zoomV = 0; this.ground = 0; this.groundV = 0; this.camSpeed = 0; this.camSpeedV = 0;
     this.back = 0; this.backV = 0;
     this.lastFocus = null; this.paceSpeed = 0; this.reversing = 0; this.shiftTotal = [0, 0];
@@ -1696,6 +1720,9 @@ export class Game {
     t.spinWheels();
     if (!hidden && t.rearContact) this.kickDirt(t.rearSpin, 1, t.rearN);
     if (!hidden && t.frontContact) this.kickDirt(t.frontSpin, 2, t.frontN);
+    // High up (outside the stages' ceiling, so never in Classic), more plane than truck: it holds
+    // its heading (easing in over HOLD_HEADING's metres).
+    t.holdTurn = this.rules.ceiling ? 0 : Math.max(0, Math.min(1, (this.height - HOLD_HEADING[0]) / (HOLD_HEADING[1] - HOLD_HEADING[0])));
     t.tilt(keys);
     const type = t.probeBody(w);
     // The cab (the truck above its wheels) is touching the ground. Ground under the body is the
@@ -2039,6 +2066,7 @@ export class Game {
    */
   updateAltitude() {
     this.altitude = null;
+    this.updateHeight();
     if (this.rules.retro || (this.wreck && !this.selfWrecked) || !this.landed) return;
     // (After an Esc wreck, from its body.)
     const t = this.truck, [x, y] = this.wreck ? this.wreck.centre : [(t.T[2] + t.T[4]) / 2, Math.min(t.T[3], t.T[5])];
@@ -2050,6 +2078,22 @@ export class Game {
     const h = this.world.down(x, Math.max(y, bottom - this.world.offset), y + max);
     if (!h || h.y < bottom - this.world.offset) return;
     this.altitude = Math.max(0, (h.y - y) / TILE * METRES_PER_TILE);
+  }
+
+  /**
+   * `height`: how high the truck (or its wreck) is, in metres, above the ground straight under it,
+   * or with none (past a level's side) above where the stage starts. Outside 2006 Mode the sky
+   * darkens into space by it (`skyAt`), above 1 km the truck steers like a plane (`HOLD_HEADING`)
+   * and the engine fades out by 10 km. (The ground is never above the level's top, so the search
+   * starts there.)
+   */
+  updateHeight() {
+    if (this.rules.retro) { this.height = 0; return; }
+    const t = this.truck, [x, y] = this.wreck ? this.wreck.centre : [(t.T[2] + t.T[4]) / 2, Math.max(t.T[3], t.T[5])];
+    const top = -TILE, bottom = this.levelData.height * TILE + 200;
+    const h = y < bottom ? this.world.down(x, Math.max(y, top), bottom) : null;
+    const under = h ? h.y : this.levelData.start[1] - this.shiftTotal[1];
+    this.height = Math.max(0, (under - y) / TILE * METRES_PER_TILE);
   }
 
   /** Toggle pause directly (for touch/gamepad buttons, which are taps rather than held keys). */

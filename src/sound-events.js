@@ -7,6 +7,16 @@
 const LAND_AIR = 8;     // steps a wheel must be off the ground for touching down to be a landing
 const BUMP_AIR = 2;     // ...or a bump
 const SCRAPE_HOLD = 6;  // steps the scrape keeps sounding after the cab last touched (it flickers)
+// The scrape is heard at full loudness for as long as Classic's scraping would take to wreck the
+// truck (1000 damage at 6 a step: 167 steps, about 2.4 s, some 17 hits), then fades away over
+// SCRAPE_FADE steps: a truck lying on its roof where scraping does no damage (Sandbox with damage
+// off, say) isn't heard for ever. While it's doing damage it's always heard in full. It starts
+// over once the cab has been off the ground for SCRAPE_REST steps.
+export const SCRAPE_LIMIT = Math.ceil(1000 / 6);
+const SCRAPE_FADE = 70;
+const SCRAPE_REST = 35;
+// The engine fades out going up, gone by 10 km (only the rocket up there).
+export const ENGINE_FADE = [1000, 10000];
 
 export class SoundWatcher {
   constructor() { this.reset(); }
@@ -16,6 +26,8 @@ export class SoundWatcher {
     this.fall = [0, 0];       // its downward speed on the last step it was in the air
     this.damage = 0;
     this.scrapeHold = 0;
+    this.scrapeRun = 0;       // steps of scraping in a row that did no damage
+    this.scrapeOff = 0;       // steps since the cab last scraped
     this.flipTimer = 0;
     this.tricksDone = 0;
     this.flipCounts = 0;
@@ -41,7 +53,7 @@ export class SoundWatcher {
       this.tricksDone = game.tricks.done;
       this.flipCounts = game.tricks.flipCounts;
       this.milestone = game.milestone?.n ?? 0;
-      this.scrapeHold = 0;
+      this.scrapeHold = 0; this.scrapeRun = 0;
       if (playing && !wasPlaying) events.push({ type: 'start' });
     }
     if (playing && !game.wreck) {
@@ -55,6 +67,10 @@ export class SoundWatcher {
         else if (air >= BUMP_AIR && fall > 1.5) events.push({ type: 'bump', force: Math.min(1, fall / 6), wheel: w });
       }
       this.scrapeHold = game.scraping ? SCRAPE_HOLD : Math.max(0, this.scrapeHold - 1);
+      if (game.scraping) {
+        this.scrapeOff = 0;
+        if (game.rules.damage && game.endTimer === 0 && game.damage < 1000) this.scrapeRun = 0; else this.scrapeRun++;
+      } else if (++this.scrapeOff >= SCRAPE_REST) this.scrapeRun = 0;
       if (game.rules.flipBonus) {
         // The original flip bonus (Classic, tricks off), heard as it's paid (the moment it lands).
         if (game.flipBonusTimer > this.flipTimer) events.push({ type: 'flip', degrees: game.flipBonus });
@@ -95,19 +111,27 @@ export class SoundWatcher {
     const slide = Math.hypot(t.T[0] - t.P[0], t.T[1] - t.P[1]);
     return {
       events,
-      scrape: { on: this.scrapeHold > 0, speed: Math.min(1, slide / 7) },
+      scrape: { on: this.scrapeHold > 0 && this.scrapeRun < SCRAPE_LIMIT + SCRAPE_FADE, speed: Math.min(1, slide / 7), volume: Math.max(0, Math.min(1, 1 - (this.scrapeRun - SCRAPE_LIMIT) / SCRAPE_FADE)) },
       // A truck wrecked on purpose (Esc) has no wheels to drive, but its engine still revs.
-      engine: game.wreck ? {
+      engine: game.height >= ENGINE_FADE[1] ? { on: false } : game.wreck ? {
         on: playing && game.selfWrecked,
         throttle: game.keys.up || game.keys.one || game.keys.down ? 1 : 0,
         speed: 0,
         airborne: false,
+        volume: engineVolume(game.height),
       } : {
         on: playing,
         throttle: playing && (game.driveKeys().up || game.keys.down) ? 1 : 0,
         speed: Math.min(1, speed / 14),
         airborne: !t.rearContact && !t.frontContact,
+        volume: engineVolume(game.height),
       },
     };
   }
+}
+
+/** The engine's loudness at `metres` up: full low down, fading to nothing by 10 km. */
+export function engineVolume(metres = 0) {
+  const f = Math.max(0, Math.min(1, (metres - ENGINE_FADE[0]) / (ENGINE_FADE[1] - ENGINE_FADE[0])));
+  return 1 - f * f * (3 - 2 * f);
 }

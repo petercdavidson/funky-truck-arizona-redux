@@ -118,7 +118,8 @@ const SET = {
     const gf = ctx.createBiquadFilter(); gf.type = 'bandpass'; gf.frequency.value = 260; gf.Q.value = 0.7;
     const gg = ctx.createGain(); gg.gain.value = 0;
     grit.connect(gf).connect(gg).connect(out); grit.start();
-    return engineShell(k, [a.o, b.o, grit], out, ({ throttle, speed, airborne }) => {
+    return engineShell(k, [a.o, b.o, grit], out, ({ throttle, speed, airborne, volume = 1 }) => {
+      smooth(out.gain, volume, k, 0.1);
       const f = 48 + speed * 70 + throttle * 16 + (airborne && throttle ? 24 : 0);
       smooth(a.o.frequency, f, k, 0.08); smooth(b.o.frequency, f / 2, k, 0.08);
       smooth(a.g.gain, 0.10 + throttle * 0.08, k); smooth(b.g.gain, 0.035 + throttle * 0.04, k);
@@ -246,10 +247,10 @@ const SET = {
 const semis = (n) => Math.pow(2, n / 12);
 
 /** One hard hit of the cab on the ground: a crack of noise with a thud under it. */
-function hit(k, { pitch = 1, force = 0.6 } = {}) {
-  noise(k, { dur: 0.13, gain: 0.34 + force * 0.3, type: 'bandpass', f: 720 * pitch, f2: 320 * pitch, Q: 1.4, attack: 0.002 });
-  noise(k, { dur: 0.04, gain: 0.1 + force * 0.08, type: 'bandpass', f: 2000 * pitch, Q: 0.8, attack: 0.001 });
-  tone(k, { f: 105 * pitch, f2: 40, dur: 0.15, gain: 0.2 + force * 0.15, attack: 0.002 });
+function hit(k, { pitch = 1, force = 0.6, volume = 1 } = {}) {
+  noise(k, { dur: 0.13, gain: (0.34 + force * 0.3) * volume, type: 'bandpass', f: 720 * pitch, f2: 320 * pitch, Q: 1.4, attack: 0.002 });
+  noise(k, { dur: 0.04, gain: (0.1 + force * 0.08) * volume, type: 'bandpass', f: 2000 * pitch, Q: 0.8, attack: 0.001 });
+  tone(k, { f: 105 * pitch, f2: 40, dur: 0.15, gain: (0.2 + force * 0.15) * volume, attack: 0.002 });
 }
 
 /**
@@ -259,11 +260,11 @@ function hit(k, { pitch = 1, force = 0.6 } = {}) {
 function scrapeVoice(k) {
   let next = 0;
   return {
-    update({ on, speed }) {
+    update({ on, speed, volume = 1 }) {
       const now = k.ctx.currentTime;
-      if (!on) { next = 0; return; }
+      if (!on || volume <= 0.01) { next = 0; return; }
       if (now < next) return;
-      hit(k, { pitch: semis(Math.random() * 6 - 3), force: 0.4 + speed * 0.6 });
+      hit(k, { pitch: semis(Math.random() * 6 - 3), force: 0.4 + speed * 0.6, volume });
       next = now + 0.16 - speed * 0.07 + Math.random() * 0.04;
     },
   };
