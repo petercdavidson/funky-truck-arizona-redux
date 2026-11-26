@@ -1,4 +1,5 @@
-// audio.js — the game's sound, synthesised live with the Web Audio API (no sound files).
+// audio.js — the game's sound, synthesised live with the Web Audio API, apart from
+// the recorded clips in SAMPLES (assets/audio/), loaded once sound is unlocked.
 //
 // Cues:
 //   engine            a continuous voice driven by { throttle, speed, airborne } (each 0..1),
@@ -12,7 +13,7 @@
 // SoundWatcher (sound-events.js) decides when cues happen; this file decides how they sound.
 
 export const CUES = ['start', 'land', 'bump', 'flip', 'trick', 'flipCount', 'milestone', 'stage', 'win', 'wreck', 'click', 'boing',
-  'missile', 'enemyMissile', 'boom', 'crunch', 'weed', 'pickup', 'jump', 'boost', 'takedown', 'wave', 'count', 'go'];
+  'missile', 'enemyMissile', 'boom', 'crunch', 'weed', 'bird', 'pickup', 'jump', 'boost', 'takedown', 'wave', 'count', 'go'];
 
 
 const note = (n) => 440 * Math.pow(2, (n - 69) / 12); // MIDI note number -> Hz
@@ -197,6 +198,17 @@ const SET = {
     for (let i = 0; i < 3 + Math.round(3 * force); i++) noise(k, { t: Math.random() * 0.12, dur: 0.018, gain: 0.07 * g, type: 'bandpass', f: 2500 + Math.random() * 3000, Q: 4, attack: 0.001 });
     tone(k, { f: 150 + Math.random() * 30, f2: 70, dur: 0.09, gain: 0.07 * g, attack: 0.003 });
   },
+  /** A bird hit by the truck: the recorded clip (assets/audio/bird-hit.wav), a little higher or lower each time. */
+  bird(k, { force = 0.6 } = {}) {
+    const buf = k.samples?.birdHit;
+    if (!buf) return;
+    const src = k.ctx.createBufferSource(), g = k.ctx.createGain();
+    src.buffer = buf;
+    src.playbackRate.value = 0.85 + Math.random() * 0.3;
+    g.gain.value = 0.55 + 0.45 * force;
+    src.connect(g).connect(k.out);
+    src.start();
+  },
   /** A pickup: a quick bright arpeggio. */
   pickup(k) { melody(k, [84, 88, 91, 96], 0.05, (f, t) => bell(k, f, t, 0.1, 0.35)); },
   /** The jump: a springy boing, a puff of air under it. */
@@ -292,6 +304,9 @@ function boostVoice(k) {
 
 // ---------------------------------------------------------------------------------------------
 
+/** Recorded clips, in assets/audio/: [name in the kit, file]. */
+const SAMPLES = { birdHit: 'bird-hit.wav' };
+
 export class Sound {
   constructor() {
     this.ctx = null;
@@ -318,7 +333,15 @@ export class Sound {
       const d = white.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
       this.ctx = ctx;
-      this.kit = { ctx, out: master, master, noise: white };
+      this.kit = { ctx, out: master, master, noise: white, samples: {} };
+      // The few recorded clips (everything else is made here), loaded once sound can start.
+      for (const [name, file] of Object.entries(SAMPLES)) {
+        fetch(new URL(`../assets/audio/${file}`, import.meta.url))
+          .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.status))))
+          .then((data) => new Promise((ok, fail) => ctx.decodeAudioData(data, ok, fail)))
+          .then((buf) => { this.kit.samples[name] = buf; })
+          .catch(() => { /* no clip: that cue stays silent */ });
+      }
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
   }

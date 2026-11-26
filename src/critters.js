@@ -76,7 +76,7 @@ export class Critters {
     this.feathers = [];
     this.wantBirds = 0;
     this.wantWeeds = 0;
-    this.events = [];  // this step's hits: { kind: 'bird' | 'weed' (the truck hit them) | 'weedBounce' (a tumbleweed off the ground or another), x, y, speed } (for sounds; tumbleweeds' only in sight)
+    this.events = [];  // this step's hits: { kind: 'bird' (the truck hit it, or a blast: `blast`) | 'weed' (the truck hit it) | 'weedBounce' (a tumbleweed off the ground or another), x, y, speed } (for sounds; tumbleweeds' only in sight)
   }
 
   /** How many birds and tumbleweeds to keep about. */
@@ -185,7 +185,7 @@ export class Critters {
       const dx = b.x - x, dy = b.y - y, d = Math.hypot(dx, dy) || 1;
       if (d > radius) continue;
       const k = power * (1 - d / radius) + 1;
-      if (!b.hit) { this.knock(b, dx / d * k, dy / d * k - 1); this.events.push({ kind: 'bird', x: b.x, y: b.y, speed: k }); }
+      if (!b.hit) { this.knock(b, dx / d * k, dy / d * k - 1); this.events.push({ kind: 'bird', x: b.x, y: b.y, speed: k, blast: true }); }
       else if (!b.rest) { b.vx += dx / d * k; b.vy += dy / d * k; }
     }
     for (const w of this.weeds) {

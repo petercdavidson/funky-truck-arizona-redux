@@ -1040,9 +1040,8 @@ export class Renderer {
       ctx.fillStyle = '#3b2b25';
       if (!b.hit) {
         // a gull's M: wings up and down as it flaps
-        // facing the way it flies; narrower as it turns round (seen side on, then end on)
-        const face = Math.max(-1, Math.min(1, b.vx / (b.cruise || 2)));
-        ctx.scale(Math.abs(face) < 0.2 ? (Math.sign(face) || b.dir) * 0.2 : face, 1);
+        // facing the way it flies (flipping round the moment it starts back the other way)
+        ctx.scale(Math.sign(b.vx) || b.dir, 1);
         const f = Math.sin(b.flap) * 6;
         ctx.lineWidth = 2.2;
         ctx.beginPath();

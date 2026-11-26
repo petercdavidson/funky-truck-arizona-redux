@@ -205,7 +205,8 @@ confetti in the trucks' paint colours and a fanfare: 100, 250, 500, 750 and 1,00
 
 ## Sound
 
-All sound is synthesised live with the Web Audio API, so the game ships no sound files. Sound is
+All sound is synthesised live with the Web Audio API, apart from one recorded clip: a bird hit by
+the truck (`assets/audio/bird-hit.wav`, a little higher or lower each time). Sound is
 off until you switch it on. There's a soft engine hum with a quiet hiss of tyres on the ground,
 thumps for landings, and bells for tricks, which ring as each trick is done. Scraping the cab
 is a run of hard hits, each at a slightly different pitch.

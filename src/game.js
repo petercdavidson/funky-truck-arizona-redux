@@ -36,10 +36,10 @@ export const MAX_SPEED = 9999 / KMH_PER_PX_STEP;
  * Air drag, only past 999 km/h (no stage, nor anything short of Sandbox's boost or gravity, gets
  * near): each step a truck going faster loses DRAG[0] times how far over it is, plus DRAG[1] times
  * that squared (px/step). Light enough that Sandbox's ×8 boost, pointing straight up, still gains
- * speed all the way to MAX_SPEED.
+ * speed all the way to MAX_SPEED (in about 30 s from 1000 km/h).
  */
 export const DRAG_FROM = 999 / KMH_PER_PX_STEP;
-export const DRAG = [0.0002, 3e-7];
+export const DRAG = [0.000435, 6.5e-7];
 const dragLoss = (v) => (v <= DRAG_FROM ? 0 : Math.min(v - DRAG_FROM, DRAG[0] * (v - DRAG_FROM) + DRAG[1] * (v - DRAG_FROM) ** 2));
 /** How many choices Sandbox setting `key` has. */
 
