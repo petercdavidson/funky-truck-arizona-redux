@@ -12,7 +12,7 @@ import { TRIAL_ALL, TRIAL_STUNTS, formatTime, formatGap } from './trial.js';
 import { battleBack, battleFront, battleHud } from './render-battle.js';
 import { circles } from './battle.js';
 import { PAD_ACTIONS, padName } from './pad.js';
-import { cloudsNear, CRITTERS, skyAt, hash2 } from './critters.js';
+import { cloudsNear, CRITTERS, skyAt, hash2, moonPhase, moonShadow } from './critters.js';
 
 /**
  * Sandbox's layers of clouds, farthest first: each moves past at `depth` of the world's speed
@@ -47,7 +47,7 @@ const MILESTONE_GOLD = '#ffe27a';
  */
 const BACKDROP = { y: 0.06, up: 80, down: 420 };
 const TRUCK_SHADE = 0.6;
-const MOON = { km: 75, depth: 1 / 1600, r: 240 };   // the moon (see Renderer.moon)   // how far the truck darkens toward the sky's colour as it goes black (at the sky's darkest)
+const MOON = { rise: 45, depth: 1 / 4800, r: 240 };   // the moon (see Renderer.moon)   // how far the truck darkens toward the sky's colour as it goes black (at the sky's darkest)
 /** The HUD in a tall view: how much bigger, how far down from the top (stage units), and where the middle's news goes (a share of the view's height). */
 const HUD_TALL = { k: 1.5, top: 12, middle: 0.2 };
 
@@ -1026,7 +1026,7 @@ export class Renderer {
   /**
    * High up, the sky darkens over the backdrop into black space (`skyAt`: real colours at real
    * heights: the truck's `height`), and the stars come out, all in one plane very far off (moving
-   * past at 1/8000 of the world's speed), and way up, the moon (`moon`). Returns the sky (for the clouds' fade and the truck's
+   * past at 1/24000 of the world's speed), and way up, the moon (`moon`). Returns the sky (for the clouds' fade and the truck's
    * shade), or null down low.
    */
   space(game, v) {
@@ -1042,7 +1042,7 @@ export class Renderer {
     if (sky.stars > 0) {
       const sc = this.scale, CELL = 70, W = c.width / sc, H = c.height / sc;
       ctx.fillStyle = '#fff';
-      for (const [depth, seed, size] of [[1 / 8000, 3, 1.4]]) {
+      for (const [depth, seed, size] of [[1 / 24000, 3, 1.4]]) {
         // the view's top left in this layer's star space (stage px)
         const ox = (v.camX + sx) * depth - this.offX / sc, oy = (v.camY + sy) * depth - this.offY / sc;
         for (let cy = Math.floor(oy / CELL); cy <= Math.floor((oy + H) / CELL); cy++) {
@@ -1062,12 +1062,13 @@ export class Renderer {
   }
 
   /**
-   * The moon (assets/moon.png), big, `MOON.km` above the stage's start. It never fades: it moves past
-   * at `MOON.depth` of the world's speed, so it rises into view from the top as you climb (from
-   * about 45 km up in a landscape view); sideways there's always one across the view.
+   * The moon (assets/moon.png), big, in today's phase (`moonPicture`). It never fades: it moves past
+   * at `MOON.depth` of the world's speed, coming down into view over the top edge as the view's top
+   * climbs past `MOON.rise` km above the stage's start (in any shape of view); sideways there's always
+   * one across the view.
    */
   moon(game, v) {
-    const img = this.moonImage();
+    const img = this.moonPicture();
     if (!img) return;
     const [sx, sy] = game.shiftTotal || [0, 0], z = v.zoom || 1;
     const mx = (v.camX + sx + this.viewW * z / 2) * MOON.depth;
@@ -1076,9 +1077,9 @@ export class Renderer {
     const every = this.viewW + MOON.r * 2 + 60;
     let dx = (every * 0.2 - mx) % every;   // (right of the middle, above the stage's start)
     if (dx < -every / 2) dx += every; else if (dx >= every / 2) dx -= every;
-    const top = game.levelData.start[1] - sy - MOON.km * 1000 / METRES_PER_TILE * TILE;
-    const dy = (top - (v.camY + this.viewH * z / 2)) * MOON.depth;
-    const r = MOON.r, h = r * img.height / img.width, x = this.viewW / 2 + dx, y = this.viewH / 2 + dy;
+    const r = MOON.r, h = r * img.height / img.width, x = this.viewW / 2 + dx;
+    const rise = game.levelData.start[1] - sy - MOON.rise * 1000 / METRES_PER_TILE * TILE;   // (world y)
+    const y = -h + (rise - v.camY) * MOON.depth;
     if (x < -r || x > this.viewW + r || y < -h || y > this.viewH + h) return;
     const ctx = this.ctx, sc = this.scale;
     ctx.save();
@@ -1086,6 +1087,36 @@ export class Renderer {
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(img, x - r, y - h, r * 2, h * 2);
     ctx.restore();
+  }
+
+  /**
+   * The moon in its phase right now (`moonPhase`, from the date and time): the picture with the part
+   * the sun isn't lighting in shadow (`moonShadow`), a little earthshine left in it. Made again only
+   * when the phase has moved on a bit (about every 20 minutes).
+   */
+  moonPicture() {
+    const img = this.moonImage();
+    if (!img) return null;
+    const phase = moonPhase(Date.now());
+    if (this.moonShade && Math.abs(phase - this.moonShade.phase) < 0.0005) return this.moonShade.c;
+    const c = this.moonShade?.c || document.createElement('canvas');
+    c.width = img.width; c.height = img.height;
+    const x = c.getContext('2d');
+    x.clearRect(0, 0, c.width, c.height);
+    x.drawImage(img, 0, 0);
+    const pts = moonShadow(phase);
+    if (pts) {
+      // (the disc is the picture's middle; a little bigger, so the tyre's treads are covered too)
+      const cx = c.width / 2, cy = c.height / 2, r = Math.max(c.width, c.height) / 2 * 1.02;
+      x.globalCompositeOperation = 'source-atop';
+      x.fillStyle = 'rgba(6, 8, 16, 0.9)';
+      x.beginPath();
+      pts.forEach(([px, py], i) => (i ? x.lineTo : x.moveTo).call(x, cx + px * r, cy + py * r));
+      x.closePath();
+      x.fill();
+    }
+    this.moonShade = { phase, c };
+    return c;
   }
 
   /** The moon's picture, loaded the first time it's wanted (null until it's in, and if it can't be). */

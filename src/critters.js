@@ -79,6 +79,37 @@ export function cloudsNear(x0, y0, x1, y1, top = 0, seed = 0, density = 1, depth
   return out;
 }
 
+/** The moon's synodic month (days) and a new moon to count from (2000-01-06 18:14 UTC). */
+export const LUNAR_MONTH = 29.530588853;
+const NEW_MOON_MS = Date.UTC(2000, 0, 6, 18, 14);
+
+/** How far through its month of phases the moon is at `ms` (0 new, 0.25 first quarter, 0.5 full, 0.75 last quarter). */
+export function moonPhase(ms = Date.now()) {
+  const p = ((ms - NEW_MOON_MS) / 86400000 / LUNAR_MONTH) % 1;
+  return p < 0 ? p + 1 : p;
+}
+
+/**
+ * The moon's shadow at `phase` (moonPhase), as a polygon on a disc of radius 1 centred at 0,0 (as
+ * seen from the northern hemisphere: lit from the right while waxing, from the left while waning).
+ * Each point is [x, y]; null when it's full (no shadow).
+ */
+export function moonShadow(phase, n = 48) {
+  const k = Math.cos(2 * Math.PI * phase);   // where the terminator crosses the middle (1 new, -1 full)
+  if (k <= -0.999) return null;
+  const waxing = phase < 0.5, pts = [];
+  // down the dark limb, then back up the terminator
+  for (let i = 0; i <= n; i++) {
+    const y = -1 + 2 * i / n, w = Math.sqrt(Math.max(0, 1 - y * y));
+    pts.push([waxing ? -w : w, y]);
+  }
+  for (let i = n; i >= 0; i--) {
+    const y = -1 + 2 * i / n, w = Math.sqrt(Math.max(0, 1 - y * y));
+    pts.push([(waxing ? k : -k) * w, y]);
+  }
+  return pts;
+}
+
 /**
  * The sky's colour high up (every mode but 2006 Mode): how much it darkens over the backdrop's
  * blue, and to what, at `km` above where the stage starts, from what the sky looks like straight

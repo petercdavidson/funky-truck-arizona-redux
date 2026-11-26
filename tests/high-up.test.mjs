@@ -101,3 +101,19 @@ test('the speedometer stops at 9,999 km/h, and Mach shows past the speed of soun
   assert.equal(formatMach(soundSpeedKmh(0) * 2.05, 0), 'Mach 2.0');
   assert.ok(soundSpeedKmh(15000) < soundSpeedKmh(0), 'slower in the cold up high');
 });
+
+test('the moon\'s phase follows the real moon', async () => {
+  const { moonPhase, moonShadow, LUNAR_MONTH } = await import('../src/critters.js');
+  const near = (p, want) => Math.min(Math.abs(p - want), 1 - Math.abs(p - want)) < 0.6 / LUNAR_MONTH;   // within ~14 hours
+  assert.ok(near(moonPhase(Date.UTC(2024, 3, 8, 18, 21)), 0), 'new moon, 8 April 2024 (the eclipse)');
+  assert.ok(near(moonPhase(Date.UTC(2024, 3, 23, 23, 49)), 0.5), 'full moon, 23 April 2024');
+  assert.ok(near(moonPhase(Date.UTC(2025, 0, 6, 23, 56)), 0.25), 'first quarter, 6 January 2025');
+  assert.ok(near(moonPhase(Date.UTC(2026, 0, 3, 10, 3)), 0.5), 'full moon, 3 January 2026');
+  assert.equal(moonShadow(0.5), null, 'no shadow at full');
+  // waxing crescent: the shadow is on the left, and reaches past the middle
+  const xs = moonShadow(0.1).map(([x]) => x);
+  assert.ok(Math.min(...xs) < -0.99 && Math.max(...xs) > 0.5);
+  // waning: on the right
+  const ws = moonShadow(0.7).map(([x]) => x);
+  assert.ok(Math.max(...ws) > 0.99 && Math.min(...ws) > -0.5);
+});

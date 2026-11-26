@@ -52,7 +52,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   your missiles home in on birds, `flying`, and blasts knock both; a wreck's loose pieces hit them too) and its clouds (`cloudsNear`: a hash of
   the sky, fixed in cloud space, the world less `game.shiftTotal`). Counts are Sandbox settings. Also `skyAt`: the sky darkening into space with height
   above the stage's start, real colours at real heights (`Renderer.space` draws it, with stars, in
-  every mode but 2006 Mode, with the moon). The same `game.height` (metres above the start) drives
+  every mode but 2006 Mode, with the moon, in its real phase: `moonPhase`, `moonShadow`). The same `game.height` (metres above the start) drives
   the plane steering (`HOLD_HEADING`, `Truck.holdTurn`) and the engine's fade (`engineVolume`). Sandbox's own records (`sb*` in stats.js) go
   straight into the saved stats (`Game.sandboxStats`).
 - `src/sandbox.js` (no DOM): Sandbox Mode's settings (`funkytruck.sandbox`, choice indices; track 0
