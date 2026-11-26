@@ -212,3 +212,17 @@ test('a long Sandbox run with rival and enemy cars, a simple driver firing and j
 });
 
 test('the tile size the battle assumes is the game\'s', () => assert.equal(TILE, 64));
+
+test('boosting before the truck has landed counts as landing (speedometer, altimeter, camera and clock start)', () => {
+  const g = new Game(data, { random: seeded(1) });
+  g.sandbox = { ...defaultSandbox(), course: 0, rivals: 0, enemies: 0, birds: 0, weeds: 0 };
+  g.startSandbox();
+  g.step();
+  assert.equal(g.landed, false);
+  g.keys.boost = true;
+  g.step();
+  assert.equal(g.landed, true);
+  for (let i = 0; i < 20; i++) g.step();
+  assert.ok(g.clock > 0, 'the clock runs');
+  assert.ok(g.speedKmh > 0, 'the speedometer reads');
+});

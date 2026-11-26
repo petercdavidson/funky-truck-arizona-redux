@@ -53,7 +53,7 @@ Outside 2006 Mode the HUD has a **speedometer** in km/h, or mph with the **Units
 the stage is 2.5 m). Its bar is quasi-logarithmic: it moves at everyday speeds and is full at
 300 km/h. It reads the speed of the truck's centre of mass, so it stays steady while the truck
 turns over in the air, and reads 0 while the truck is being dropped in at the start of a stage,
-until it first lands. Nothing goes faster than 9999 km/h, where the speedometer stops (only Sandbox gets near; past 999 km/h there's a little air drag, though ×8 boost straight up still gets there).
+until it first lands (in Sandbox, or first boosts). Nothing goes faster than 9999 km/h, where the speedometer stops (only Sandbox gets near; past 999 km/h there's a little air drag, though ×8 boost straight up still gets there).
 
 When the truck is so high that the ground below it is out of sight, an **altitude** reading
 (▼ metres or feet to the ground) comes up under the speedometer (and stays while paused). Outside 2006 Mode,
@@ -182,7 +182,7 @@ gold:
 
 Boost, jumps and missiles never run out, and there's no damage. On a stage, the enemy cars are
 spread out along it, and the finish line still ends the run, with your time (the clock runs from
-the first landing, as in Stages). On Endless's course and the stunt tracks there's no finish,
+the first landing, or the first boost if that comes sooner). On Endless's course and the stunt tracks there's no finish,
 and the cars loop: one that's been out of sight for two seconds comes back just out of view.
 Cars never appear or vanish in view: new rival cars come in just out of view to your right, and
 cars taken away in Tweaks go once they're out of sight. Holding the boost roars like a rocket.

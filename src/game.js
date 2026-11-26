@@ -1928,6 +1928,9 @@ export class Game {
         if (this.wreck) this.stepWreck(); else this.stepTruck(this.world);
         this.capSpeed();
         if (this.battle) this.battle.step();
+        // Boosting counts as landing (the speedometer, altimeter, camera and clock start): taking
+        // off straight from the drop in at the start shouldn't leave them waiting for a landing.
+        if (this.battle?.boosting && !this.landed) { this.landed = true; this.airSteps = 0; }
         if (this.critters) this.stepCritters();
         if (this.mode === 'sandbox') { stepTraffic(this); if (this.landed && this.endTimer === 0 && !this.wreck) this.clock++; }
         if (this.mode === 'sandbox') this.sandboxStats();
