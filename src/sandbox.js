@@ -27,7 +27,7 @@ export const SANDBOX_ROWS = [
   { key: 'gravity', name: 'Gravity', choices: [[0, 'None'], [0.17, 'Moon'], [0.5, 'Low'], [1, 'Earth'], [1.6, 'High'], [2.5, 'Jupiter']], dflt: 3 },
   { key: 'spin', name: 'Air Spin', choices: [[0.5, '×½'], [1, '×1'], [2, '×2'], [4, '×4']], dflt: 1 },
   { key: 'springs', name: 'Suspension', choices: [[0.03, 'Floppy'], [0.1, 'Normal'], [0.25, 'Stiff'], [0.7, 'Rigid']], dflt: 1 },
-  { key: 'boostPower', name: 'Boost Power', choices: [[0.5, '×½'], [1, '×1'], [2, '×2'], [4, '×4'], [8, '×8']], dflt: 1 },
+  { key: 'boostPower', name: 'Boost Power', choices: [[1, '×1'], [2, '×2'], [4, '×4'], [8, '×8']], dflt: 0 },
   { key: 'jump', name: 'Jump Power', choices: [[0.5, '×½'], [1, '×1'], [2, '×2'], [3, '×3'], [5, '×5']], dflt: 1 },
   { key: 'airJumps', name: 'Air Jumps', choices: [[false, 'Off'], [true, 'On']], dflt: 0 },
   { key: 'rivals', name: 'Rival Cars', choices: COUNTS, dflt: 0 },
@@ -40,13 +40,15 @@ export const SANDBOX_ROWS = [
 ];
 export const SANDBOX_ROW = Object.fromEntries(SANDBOX_ROWS.map((r) => [r.key, r]));
 
-/** The default settings: { key: choice index }. */
-export function defaultSandbox() { return Object.fromEntries(SANDBOX_ROWS.map((r) => [r.key, r.dflt])); }
+/** The default settings: { key: choice index } (and `boost1`: Boost Power's choices start at ×1). */
+export function defaultSandbox() { return { ...Object.fromEntries(SANDBOX_ROWS.map((r) => [r.key, r.dflt])), boost1: true }; }
 
 /** Saved settings, checked: anything missing or out of range goes back to its default. `courses` is how many tracks there are. */
 export function validSandbox(v, courses = 13) {
   const s = defaultSandbox();
   if (!v || typeof v !== 'object') return s;
+  // (saved before 1.24.26, Boost Power had ×½ first: one choice further along)
+  if (!v.boost1 && Number.isInteger(v.boostPower)) v = { ...v, boostPower: Math.max(0, v.boostPower - 1) };
   for (const r of SANDBOX_ROWS) {
     const n = r.key === 'course' ? courses : r.choices.length;
     if (Number.isInteger(v[r.key]) && v[r.key] >= 0 && v[r.key] < n) s[r.key] = v[r.key];

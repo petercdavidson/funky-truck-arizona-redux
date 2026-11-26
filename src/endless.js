@@ -13,7 +13,9 @@
 //     early stages towards the later ones as the player gets further;
 //   - it avoids shapes that only lead to dead ends (the last column of each stage);
 //   - it never climbs more than MAX_RISE tiles over RISE_SPAN columns, so there's no wall too
-//     tall and steep to drive up.
+//     tall and steep to drive up;
+//   - (given the tiles' collision lines) it never joins a slope down straight onto a slope up
+//     where they meet at less than V_ANGLE: a sharp V a wheel (or a tumbleweed) gets caught in.
 //
 // The course lives in a window of tiles that scrolls: when the truck is far enough along, the
 // oldest columns are dropped, new ones are added, and the game moves everything left.
@@ -30,6 +32,8 @@ const BAND = [14, 40];              // rows the ground's top may use
  */
 export const MAX_RISE = 5;
 export const RISE_SPAN = 4;
+/** The sharpest a slope down may meet a slope up at a join (degrees between them; flat is 180). */
+export const V_ANGLE = 120;
 /** How many columns ahead the walk checks it can go on without a climb steeper than that. */
 const LOOKAHEAD = 10;
 const FILL = 1, SKY = 0;
@@ -43,7 +47,7 @@ const ORDER = 3;
  * columns that followed it somewhere in the stages. `back` is the same read right to left (the
  * columns that came before each context), for the course's leftward end: { joins, alive, safe }.
  */
-export function buildGrammar(levels, { keepDeep = false } = {}) {
+export function buildGrammar(levels, { keepDeep = false, collision = null } = {}) {
   const shapes = [];            // index -> array of DEPTH tile ids
   const index = new Map();      // shape key -> index
   const id = (shape) => {
@@ -109,7 +113,34 @@ export function buildGrammar(levels, { keepDeep = false } = {}) {
     return { joins: out, alive, safe };
   };
   const ahead = learn(runs), back = learn(runs.map((r) => r.slice().reverse()));
-  return { shapes, index, ...ahead, back };
+  // Each shape's ground at its two edges: how steeply it goes down to the right edge (`down`) and
+  // up from the left edge (`up`), in degrees. A join of a down onto an up makes a V.
+  const edges = collision ? shapes.map((sh) => shapeEdges(sh, collision)) : null;
+  const vee = edges ? (a, b) => edges[a].down > 0 && edges[b].up > 0 && 180 - edges[a].down - edges[b].up < V_ANGLE : () => false;
+  return { shapes, index, ...ahead, back: { ...back, vee: (a, b) => vee(b, a) }, vee };
+}
+
+/**
+ * The ground's slope at a column shape's two edges (degrees; positive is downhill to the right at
+ * the right edge, `down`, and uphill to the right at the left edge, `up`), from the topmost
+ * up-facing collision line over each point.
+ */
+function shapeEdges(shape, collision) {
+  const y = (x) => {
+    let best = Infinity;
+    shape.forEach((id, r) => {
+      const d = collision[id] || [];
+      for (let i = 0; i < d.length; i += 5) {
+        const ax = d[i], ay = d[i + 1], bx = d[i + 2], by = d[i + 3];
+        if (bx >= ax) continue;   // (up-facing lines run right to left)
+        if (x < bx || x > ax) continue;
+        best = Math.min(best, ay + (by - ay) * (x - ax) / (bx - ax) + r * 64);
+      }
+    });
+    return best;
+  };
+  const deg = (dy) => (Number.isFinite(dy) ? Math.atan2(dy, 8) * 180 / Math.PI : 0);
+  return { down: deg(y(63) - y(55)), up: deg(y(1) - y(9)) };
 }
 
 /** Key for a run of columns: their shapes, and how far the ground steps between them. */
@@ -229,6 +260,7 @@ export class EndlessCourse {
     const weights = options.map((j) => {
       const top = w.state.top + j.step;
       if (top < BAND[0] || top > BAND[1] || !w.g.safe[j.to][top - BAND[0]]) return 0;
+      if (w.g.vee?.(w.state.s, j.to)) return 0;   // a sharp V
       if (!steepOk) {
         if (w.tops.length && Math.max(...w.tops) - top > MAX_RISE) return 0; // too steep a climb
         // ...or a way into somewhere (a valley) that can only be left by one
@@ -272,7 +304,7 @@ export class EndlessCourse {
     let ok = false;
     for (const j of opts) {
       const t = top + j.step;
-      if (t < BAND[0] || t > BAND[1] || !w.g.safe[j.to][t - BAND[0]] || highest - t > MAX_RISE) continue;
+      if (t < BAND[0] || t > BAND[1] || !w.g.safe[j.to][t - BAND[0]] || highest - t > MAX_RISE || w.g.vee?.(s, j.to)) continue;
       if (this.canGoOn(w, j.to, [...tops.slice(1 - RISE_SPAN), t], depth - 1, memo)) { ok = true; break; }
     }
     memo.set(key, ok);

@@ -3,11 +3,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Game, TILE } from '../src/game.js';
-import { buildGrammar, EndlessCourse, ENDLESS_WIDTH, ENDLESS_HEIGHT, ENDLESS_SHIFT } from '../src/endless.js';
+import { buildGrammar, EndlessCourse, ENDLESS_WIDTH, ENDLESS_HEIGHT, ENDLESS_SHIFT, V_ANGLE } from '../src/endless.js';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
 const seeded = (seed) => { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; };
-const grammar = buildGrammar(data.levels);
+const grammar = buildGrammar(data.levels, { collision: data.collision });   // as the game builds it
 
 function memoryStore() {
   const m = new Map();
@@ -180,4 +180,42 @@ test('an endless run scrolls back when you drive left, and counts the ground beh
   for (let i = 0; i < 30; i++) g.step();
   assert.ok(g.distanceBack > 2 * ENDLESS_SHIFT, `ground behind the start counted (${g.distanceBack} columns)`);
   assert.equal(g.metres, Math.floor((g.distance + g.distanceBack) * 2.5));
+});
+
+test('no sharp V: a slope down never meets a slope up at less than V_ANGLE (either way along the course)', () => {
+  // the ground's height at x (px) in a column of tiles: the topmost up-facing collision line
+  const ground = (col, x) => {
+    let best = Infinity;
+    col.forEach((id, r) => {
+      const d = data.collision[id] || [];
+      for (let i = 0; i < d.length; i += 5) {
+        const [ax, ay, bx, by] = d.slice(i, i + 4);
+        if (bx < ax && x >= bx && x <= ax) best = Math.min(best, ay + (by - ay) * (x - ax) / (bx - ax) + r * TILE);
+      }
+    });
+    return best;
+  };
+  const deg = (dy) => (Number.isFinite(dy) ? Math.atan2(dy, 8) * 180 / Math.PI : 0);
+  let joins = 0, before = 0;
+  const vees = (c) => {
+    const cols = c.tiles[0].map((_, x) => c.tiles.map((row) => row[x]));
+    let n = 0;
+    for (let x = 1; x < cols.length; x++) {
+      const down = deg(ground(cols[x - 1], 63) - ground(cols[x - 1], 55)), up = deg(ground(cols[x], 1) - ground(cols[x], 9));
+      joins++;
+      if (down > 0 && up > 0 && 180 - down - up < V_ANGLE) n++;
+    }
+    return n;
+  };
+  for (let seed = 1; seed <= 6; seed++) {
+    const c = new EndlessCourse(grammar, data.levels, seeded(seed));
+    let n = 0;
+    for (let k = 0; k < 12; k++) { c.scroll(ENDLESS_SHIFT); n += vees(c); }
+    for (let k = 0; k < 30; k++) { c.scrollBack(ENDLESS_SHIFT); n += vees(c); }
+    assert.equal(n, 0, `seed ${seed}: ${n} sharp V's`);
+    // (without the collision lines the generator doesn't know, and makes them)
+    const old = new EndlessCourse(buildGrammar(data.levels), data.levels, seeded(seed));
+    for (let k = 0; k < 12; k++) { old.scroll(ENDLESS_SHIFT); before += vees(old); }
+  }
+  assert.ok(joins > 1000 && before > 0, `${joins} joins checked; ${before} V's without the check`);
 });

@@ -923,7 +923,7 @@ export class Game {
   }
 
   newCourse() {
-    if (!this.grammar) this.grammar = buildGrammar(this.data.levels);
+    if (!this.grammar) this.grammar = buildGrammar(this.data.levels, { collision: this.data.collision });
     this.course = new EndlessCourse(this.grammar, this.data.levels, this.random);
     this.distance = 0; this.distanceBack = 0;
     this.nextMetres = 0; this.nextScore = 0;
@@ -1882,6 +1882,7 @@ export class Game {
   /** Advance one 1/70 s frame. */
   step() {
     if (this.battle) this.battle.events.length = 0;
+    if (this.critters) this.critters.events.length = 0;
     switch (this.screen) {
       case 'playing':
         if (!this.world) return;

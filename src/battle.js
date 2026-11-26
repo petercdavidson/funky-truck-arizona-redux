@@ -576,7 +576,7 @@ export class Battle {
       let target = null;
       if (m.owner === 'you') {
         let bestD = BATTLE.missile.range;
-        // (and Sandbox's birds: the nearest of them all ahead; never its tumbleweeds)
+        // (and Sandbox's birds: the nearest of them all ahead; never its tumbleweeds, though they blow up on one)
         const aims = (this.enemies.length ? this.enemies : this.racers).filter((e) => !e.wreck).map((e) => e.centre);
         for (const b of g.critters?.flying || []) aims.push([b.x, b.y]);
         for (const [ex, ey] of aims) {
@@ -598,6 +598,8 @@ export class Battle {
       const hits = (T, s) => circles(T, s).some((c) => Math.hypot(c.x - m.x, c.y - m.y) < c.r + 5);
       if (m.owner === 'you' && this.bots.some((e) => !e.wreck && hits(e.truck.T, e.s))) { this.blowMissile(m, m.x, m.y); continue; }
       if (m.owner === 'you' && g.critters?.flying.some((b) => Math.hypot(b.x - m.x, b.y - m.y) < 14)) { this.blowMissile(m, m.x, m.y); continue; }
+      // (and a tumbleweed in the way: it blows up on one, though it never aims for one)
+      if (g.critters?.weedAt(m.x, m.y, 4)) { this.blowMissile(m, m.x, m.y); continue; }
       if (m.owner === 'enemy' && you && hits(you.T, 1)) { this.blowMissile(m, m.x, m.y); continue; }
       if (--m.life <= 0) { this.blowMissile(m, m.x, m.y, 0.6); continue; }
     }

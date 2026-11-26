@@ -36,7 +36,7 @@ test('the Units option is saved', () => {
 
 test('nothing goes faster than 9999 km/h', () => {
   const g = new Game(data);
-  g.sandbox.course = 0; g.sandbox.gravity = 0; g.sandbox.boostPower = 4;
+  g.sandbox.course = 0; g.sandbox.gravity = 0; g.sandbox.boostPower = 3;
   g.startSandbox();
   const t = g.truck;
   for (let i = 0; i < 10; i += 2) { t.T[i + 1] -= 4000; t.P[i] = t.T[i] - 2000; t.P[i + 1] = t.T[i + 1]; }

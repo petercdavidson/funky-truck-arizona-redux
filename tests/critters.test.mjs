@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Game } from '../src/game.js';
-import { cloudsNear } from '../src/critters.js';
+import { cloudsNear, CRITTERS } from '../src/critters.js';
+import { SoundWatcher } from '../src/sound-events.js';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
 
@@ -75,7 +76,7 @@ test('nothing goes through the ground: tumbleweeds sit and roll on it, birds fly
       g.critters.birds.push({ x: t[0] + 4, y: t[1] - 4, vx: 0, vy: 0, dir: 1, flap: 0, hit: false, spin: 0, rot: 0, rest: 0, life: 0 });
     }
     if (i % 10) continue;
-    for (const w of g.critters.weeds) { checked++; if (below(g.world, w)) under++; }
+    for (const w of g.critters.weeds) { checked++; if (below(g.weedWorld, w)) under++; }
     for (const b of g.critters.birds) { checked++; if (below(g.thinWorld, b)) under++; if (!b.hit) sky++; }
   }
   assert.ok(checked > 500 && sky > 100, `${checked} looked at`);
@@ -126,4 +127,56 @@ test('tumbleweeds knock into each other rather than pass through', () => {
     if (C.weeds.length === 2) minGap = Math.min(minGap, Math.abs(C.weeds[1].x - C.weeds[0].x));
   }
   assert.ok(minGap > 25, `closest ${minGap.toFixed(1)} px apart`);
+});
+
+test('tumbleweeds are drawn and collide at the tyres\' scale, a little smaller than a tyre', () => {
+  const g = new Game(data);
+  assert.ok(CRITTERS.weedRadius < g.truck.wheelRadius && CRITTERS.weedRadius > g.truck.wheelRadius * 0.6);
+});
+
+test('a pile of tumbleweeds comes to rest (no rolling or jiggling), and wakes when hit', () => {
+  for (const course of [0, 1, 3]) {
+    const g = new Game(data);
+    g.sandbox.birds = 0; g.sandbox.weeds = 0; g.sandbox.course = course;
+    g.startSandbox();
+    const C = g.critters, t = g.truck.T, r = CRITTERS.weedRadius;
+    const x0 = t[0] + 300, gy = g.weedWorld.down(x0, t[1] - 600, t[1] + 1500).y;
+    for (let i = 0; i < 10; i++) C.weeds.push({ x: x0 + (i % 4) * r * 1.6 - r * 2.4, y: gy - r - Math.floor(i / 4) * r * 2.2 - 40, vx: 0, vy: 0, rot: 0, life: 0, cool: 0 });
+    const view = { cx: x0, cy: gy, hw: 3000, hh: 2000 };   // (wide: none rolls out of it and goes)
+    const step = () => { C.events.length = 0; C.step(null, view, g.weedWorld, g.thinWorld, g.truck.gravity, Infinity); };
+    for (let i = 0; i < 900; i++) step();
+    const rots = C.weeds.map((w) => w.rot);
+    let moved = 0;
+    for (let i = 0; i < 200; i++) { step(); for (const w of C.weeds) moved += Math.hypot(w.x - w.px, w.y - w.py); }
+    assert.ok(C.weeds.length > 3, `course ${course}: ${C.weeds.length} left`);
+    assert.equal(moved, 0, `course ${course}: still moving`);
+    assert.deepEqual(C.weeds.map((w) => w.rot), rots, `course ${course}: still turning`);
+    // a blast sends them off again
+    const w = C.weeds[0];
+    C.blast(w.x, w.y + 10, 80, 6);
+    step();
+    assert.ok(Math.hypot(w.x - w.px, w.y - w.py) > 0.5, 'blown away');
+  }
+});
+
+test('missiles blow up on tumbleweeds (never aiming for one), and a bird a missile gets is heard', () => {
+  const g = new Game(data);
+  g.sandbox.birds = 0; g.sandbox.weeds = 0; g.sandbox.course = 0;
+  g.startSandbox();
+  g.screen = 'playing';
+  const C = g.critters, B = g.battle, t = g.truck.T;
+  // a tumbleweed in the air in front of the truck, a missile fired at it
+  C.weeds.push({ x: t[0] + 160, y: t[1] - 40, vx: 0, vy: -0.11, rot: 0, life: 0, cool: 0 });
+  B.missiles.push({ id: 999, owner: 'you', x: t[0] + 60, y: t[1] - 40, ang: 0, speed: 8, age: 0, life: 200 });
+  let booms = 0;
+  for (let i = 0; i < 30; i++) { g.step(); booms += B.events.filter((e) => e.type === 'boom').length; }
+  assert.ok(booms >= 1, 'blew up on the tumbleweed');
+  // a bird blown up by a missile: the sound watcher hears it
+  const sw = new SoundWatcher();
+  sw.observe(g);
+  C.birds.push({ x: t[0] + 160, y: t[1] - 120, px: t[0] + 160, py: t[1] - 120, vx: 0, vy: 0, dir: 1, cruise: 0, flap: 0, hit: false, spin: 0, rot: 0, rest: 0, life: 0 });
+  B.missiles.push({ id: 1000, owner: 'you', x: t[0] + 100, y: t[1] - 120, ang: 0, speed: 8, age: 0, life: 200 });
+  let heard = 0;
+  for (let i = 0; i < 30; i++) { g.step(); heard += sw.observe(g).events.filter((e) => e.type === 'bird').length; }
+  assert.equal(heard, 1, 'the bird hit sound');
 });

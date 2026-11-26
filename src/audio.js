@@ -216,10 +216,11 @@ const SET = {
     tone(k, { type: 'triangle', f: 150, f2: 560, dur: 0.28, gain: 0.18, vibrato: 14, vibratoRate: 26 });
     noise(k, { dur: 0.2, gain: 0.1, f: 900, f2: 300 });
   },
-  /** The boost lighting up: a roaring sweep. */
+  /** The boost lighting up: a low whump, the roar opening up. */
   boost(k) {
-    noise(k, { dur: 0.7, gain: 0.22, type: 'bandpass', f: 250, f2: 2200, Q: 0.8 });
-    tone(k, { type: 'sawtooth', f: 70, f2: 220, dur: 0.6, gain: 0.07 });
+    noise(k, { dur: 0.7, gain: 0.32, type: 'lowpass', f: 140, f2: 520, Q: 0.9 });
+    tone(k, { type: 'sine', f: 70, f2: 32, dur: 0.5, gain: 0.3, attack: 0.01 });
+    tone(k, { type: 'sawtooth', f: 45, f2: 60, dur: 0.6, gain: 0.06 });
   },
   /** An enemy truck taken out: a fanfare, higher for a combo. */
   takedown(k, { combo = 1 } = {}) {
@@ -269,35 +270,53 @@ function scrapeVoice(k) {
 }
 
 /**
- * The rocket boost, held: a roar of filtered noise with a low rumble under it, which flutters a
- * little, as a rocket's flame does. update({ on, speed }) each frame (speed 0..1 brightens it).
+ * The rocket boost, held: a low, rumbling roar: dark filtered noise over a deep growl, both
+ * shaken by a slow, uneven flutter, as a rocket's flame is. update({ on, speed }) each frame
+ * (speed 0..1 opens it up a little).
  */
 function boostVoice(k) {
   const { ctx } = k;
   const out = ctx.createGain(); out.gain.value = 0;
   out.connect(k.out);
-  const roar = ctx.createBufferSource(); roar.buffer = k.noise; roar.loop = true;
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 700; bp.Q.value = 0.6;
-  const hiss = ctx.createBiquadFilter(); hiss.type = 'highpass'; hiss.frequency.value = 2500;
-  const hg = ctx.createGain(); hg.gain.value = 0.18;
-  roar.connect(bp).connect(out);
-  roar.connect(hiss).connect(hg).connect(out);
-  roar.start(0, Math.random() * 1.5);
-  const rumble = voice(k, { type: 'sawtooth', dest: out });
-  rumble.o.frequency.value = 48; rumble.g.gain.value = 0.22;
-  // the flutter: a slow wobble on the roar's loudness and pitch
+  // the flutter: the whole thing's loudness wobbles (two slow waves, so it never quite repeats)
+  const shake = ctx.createGain(); shake.gain.value = 1;
+  shake.connect(out);
   const lfo = ctx.createOscillator(), lg = ctx.createGain();
-  lfo.frequency.value = 13; lg.gain.value = 160;
-  lfo.connect(lg).connect(bp.frequency); lfo.start();
+  lfo.frequency.value = 7.3; lg.gain.value = 0.22;
+  lfo.connect(lg).connect(shake.gain); lfo.start();
+  const lfo2 = ctx.createOscillator(), lg2 = ctx.createGain();
+  lfo2.frequency.value = 11.9; lg2.gain.value = 0.12;
+  lfo2.connect(lg2).connect(shake.gain); lfo2.start();
+  // the roar: noise through a low lowpass (a dull thunder, no hiss)
+  const roar = ctx.createBufferSource(); roar.buffer = k.noise; roar.loop = true;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 260; lp.Q.value = 0.9;
+  const lp2 = ctx.createBiquadFilter(); lp2.type = 'lowpass'; lp2.frequency.value = 420;
+  const rg = ctx.createGain(); rg.gain.value = 1.6;
+  roar.connect(lp).connect(lp2).connect(rg).connect(shake);
+  roar.start(0, Math.random() * 1.5);
+  // the growl: a deep sawtooth, rounded off, and a sub-bass sine under it
+  const growlF = ctx.createBiquadFilter(); growlF.type = 'lowpass'; growlF.frequency.value = 140; growlF.Q.value = 1.2;
+  growlF.connect(shake);
+  const growl = voice(k, { type: 'sawtooth', dest: growlF });
+  growl.o.frequency.value = 36; growl.g.gain.value = 0.34;
+  const sub = voice(k, { type: 'sine', dest: shake });
+  sub.o.frequency.value = 31; sub.g.gain.value = 0.3;
+  // (the growl's pitch wanders a little with the flutter)
+  const pg = ctx.createGain(); pg.gain.value = 3;
+  lfo.connect(pg).connect(growl.o.frequency);
   let on = false;
   return {
     update({ on: now, speed = 0 }) {
-      if (now !== on) { on = now; smooth(out.gain, now ? 0.32 : 0, k, now ? 0.03 : 0.12); }
-      if (on) { smooth(bp.frequency, 600 + 900 * speed, k, 0.2); smooth(rumble.o.frequency, 46 + 30 * speed, k, 0.2); }
+      if (now !== on) { on = now; smooth(out.gain, now ? 0.42 : 0, k, now ? 0.04 : 0.15); }
+      if (on) {
+        smooth(lp.frequency, 220 + 200 * speed, k, 0.25);
+        smooth(growl.o.frequency, 34 + 14 * speed, k, 0.25);
+        smooth(sub.o.frequency, 29 + 8 * speed, k, 0.25);
+      }
     },
     stop() {
       smooth(out.gain, 0, k, 0.08);
-      setTimeout(() => { for (const n of [roar, rumble.o, lfo]) { try { n.stop(); } catch { /* already stopped */ } } out.disconnect(); }, 500);
+      setTimeout(() => { for (const n of [roar, growl.o, sub.o, lfo, lfo2]) { try { n.stop(); } catch { /* already stopped */ } } out.disconnect(); }, 500);
     },
   };
 }

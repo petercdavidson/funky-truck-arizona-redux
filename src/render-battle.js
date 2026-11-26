@@ -54,7 +54,7 @@ export function battleBack(r, game, v) {
 /** Missiles, explosions, particles and the enemies' health bars: drawn after your truck. */
 export function battleFront(r, game, v) {
   const b = game.battle, ctx = r.ctx;
-  for (const m of b.missiles) missile(ctx, m, missilePos(v, m), b.steps);
+  for (const m of b.missiles) missile(ctx, m, missilePos(v, m), b.steps, r.a.images['missile.png']);
   for (const bit of b.bits) particle(r, bit, v.t ?? 1);
   for (const x of b.blasts) blast(ctx, x);
   for (const e of b.enemies) {
@@ -126,30 +126,26 @@ function flame(ctx, T) {
   ctx.restore();
 }
 
-function missile(ctx, m, [x, y], steps) {
-  const yours = m.owner === 'you';
+/** A missile: assets/missile.png (nose to the right) at the tyres' scale (45/72), its flame behind it. */
+function missile(ctx, m, [x, y], steps, img) {
+  const yours = m.owner === 'you', k = 45 / 72;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(m.ang);
-  ctx.scale(1.25, 1.25);
-  ctx.lineJoin = 'round';
-  // flame
-  const L = 6 + Math.random() * 6;
+  ctx.scale(k, k);
+  // flame, out of the tail (the art's left end)
+  const tail = -22, L = 10 + Math.random() * 10;
   ctx.fillStyle = 'rgba(240, 120, 50, 0.9)';
-  ctx.beginPath(); ctx.moveTo(-9, -2.6); ctx.lineTo(-9 - L, 0); ctx.lineTo(-9, 2.6); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(tail, -4.5); ctx.lineTo(tail - L, 0); ctx.lineTo(tail, 4.5); ctx.fill();
   ctx.fillStyle = 'rgba(255, 226, 122, 0.95)';
-  ctx.beginPath(); ctx.moveTo(-9, -1.4); ctx.lineTo(-9 - L * 0.5, 0); ctx.lineTo(-9, 1.4); ctx.fill();
-  ctx.strokeStyle = INK; ctx.lineWidth = 1.1;
-  const fin = yours ? '#d9533b' : WARN;
-  for (const s of [-1, 1]) {
-    ctx.beginPath(); ctx.moveTo(-9, 2.6 * s); ctx.lineTo(-4, 2.6 * s); ctx.lineTo(-10, 6.5 * s); ctx.closePath();
-    ctx.fillStyle = fin; ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(tail, -2.4); ctx.lineTo(tail - L * 0.5, 0); ctx.lineTo(tail, 2.4); ctx.fill();
+  if (img) {
+    // an enemy's is darker, with a blinking light
+    if (!yours) ctx.filter = 'brightness(0.55)';
+    ctx.drawImage(img, -img.width / 2, -img.height / 2);
+    ctx.filter = 'none';
   }
-  ctx.beginPath(); ctx.roundRect(-9, -3, 17, 6, 2);
-  ctx.fillStyle = yours ? '#efe9df' : '#55534f'; ctx.fill(); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(8, -3); ctx.quadraticCurveTo(13, -1.5, 14, 0); ctx.quadraticCurveTo(13, 1.5, 8, 3); ctx.closePath();
-  ctx.fillStyle = yours ? '#d9533b' : '#2f2c2a'; ctx.fill(); ctx.stroke();
-  if (!yours && Math.floor(steps / 6) % 2 === 0) { ctx.fillStyle = '#ff4a3a'; ctx.beginPath(); ctx.arc(1, 0, 1.6, 0, 7); ctx.fill(); }
+  if (!yours && Math.floor(steps / 6) % 2 === 0) { ctx.fillStyle = '#ff4a3a'; ctx.beginPath(); ctx.arc(2, 0, 2.6, 0, 7); ctx.fill(); }
   ctx.restore();
 }
 

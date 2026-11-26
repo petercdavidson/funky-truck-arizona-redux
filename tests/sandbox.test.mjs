@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Game, TILE, unpackLevel } from '../src/game.js';
-import { SANDBOX_ROWS, defaultSandbox, validSandbox, sandboxValue, AWAY_FOR } from '../src/sandbox.js';
+import { SANDBOX_ROWS, SANDBOX_ROW, defaultSandbox, validSandbox, sandboxValue, AWAY_FOR } from '../src/sandbox.js';
 import { memoryStore } from './helpers.mjs';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
@@ -31,6 +31,11 @@ test('sandbox settings: defaults, saving, checking what is read back', () => {
   for (const gone of ['boost', 'ammo', 'traffic', 'track']) assert.ok(!SANDBOX_ROWS.some((r) => r.key === gone), `${gone} is not a setting`);
   assert.deepEqual(validSandbox({ power: 99, gravity: 0, course: 11, slow: -1 }, 13), { ...d, gravity: 0, course: 11 });
   assert.deepEqual(validSandbox('junk'), d);
+  // Boost Power lost its ×½: one saved before that keeps the setting it had
+  assert.equal(sandboxValue(validSandbox({ boostPower: 2 }), 'boostPower'), 2, 'old save: ×2 stays ×2');
+  assert.equal(sandboxValue(validSandbox({ boostPower: 0 }), 'boostPower'), 1, 'old save: ×½ becomes ×1');
+  assert.equal(sandboxValue(validSandbox({ boostPower: 2, boost1: true }), 'boostPower'), 4);
+  assert.ok(!SANDBOX_ROW.boostPower.choices.some(([v]) => v < 1), 'no ×½ boost');
   const store = memoryStore();
   const g = new Game(data, { store });
   assert.equal(g.sandboxCourses, 13);
@@ -214,7 +219,7 @@ test('nothing done in Sandbox counts towards High Scores', () => {
 test('sandbox, all settings turned up, for a long while: nothing breaks', () => {
   for (const course of [0, 3, 11]) {
     const g = new Game(data, { random: seeded(16) });
-    g.sandbox = { ...defaultSandbox(), power: 5, gravity: 1, boostPower: 4, jump: 4, airJumps: 1, rivals: 6, enemies: 6, hitboxes: 1, course };
+    g.sandbox = { ...defaultSandbox(), power: 5, gravity: 1, boostPower: 3, jump: 4, airJumps: 1, rivals: 6, enemies: 6, hitboxes: 1, course };
     g.startSandbox();
     for (let i = 0; i < 3000; i++) {
       g.keys.up = true; g.keys.boost = i % 300 < 100;
@@ -252,7 +257,7 @@ test('sandbox: boost ×8 never takes the truck out of the level (over the side w
   for (const course of [0, 1, 4, 10]) for (const run of [0, 1]) {
     const rnd = seeded(run * 7919 + course * 31 + 1);
     const g = new Game(data, { store: memoryStore(), random: rnd });
-    g.sandbox = { ...defaultSandbox(), course, boostPower: 4, power: 5 };
+    g.sandbox = { ...defaultSandbox(), course, boostPower: 3, power: 5 };
     g.startSandbox(); g.screen = 'playing';
     let tilt = null, fastest = 0, under = 0;
     const sunk = (T, j) => { const h = g.world.collide(T[j], T[j + 1] - 400, T[j], T[j + 1]); return h && h.ny < -0.5 && T[j + 1] - h.y > 30; };
