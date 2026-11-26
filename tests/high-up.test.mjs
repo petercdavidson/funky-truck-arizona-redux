@@ -101,12 +101,3 @@ test('the speedometer stops at 9,999 km/h, and Mach shows past the speed of soun
   assert.equal(formatMach(soundSpeedKmh(0) * 2.05, 0), 'Mach 2.0');
   assert.ok(soundSpeedKmh(15000) < soundSpeedKmh(0), 'slower in the cold up high');
 });
-
-test('the tyres are seen to turn less as the engine fades, and not at all once it\'s silent', () => {
-  const t = new Truck();
-  t.reset(0, 0); t.rearSpin = 10;
-  t.wheelShow = 0; t.spinWheels();
-  assert.equal(t.rearWheelRot, 0);
-  t.wheelShow = 1; t.spinWheels();
-  assert.equal(t.rearWheelRot, 10);
-});

@@ -58,11 +58,10 @@ until it first lands. Nothing goes faster than 9999 km/h, where the speedometer 
 When the truck is so high that the ground below it is out of sight, an **altitude** reading
 (▼ metres or feet to the ground) comes up under the speedometer (and stays while paused). Outside 2006 Mode,
 higher still (measured from where the stage starts) the sky darkens into space at real heights (deep blue by 20 km, black with stars by 100 km;
-clouds stop at 18 km), the truck darkens with it, and way up (from 45 km) the moon comes out; from 5 km
+clouds stop at 18 km), the truck darkens with it, and way up (from about 45 km) the moon rises into view; from 5 km
 it steers more and more like a plane in the air, fully by 10 km (tilting turns it just as down low, but let go
 and it slows to a stop as fast as it got going and holds its heading; never in Classic, under its ceiling);
-and the engine fades out from 1 km to nothing at 20 km, leaving only the rocket, the tyres slowing to a
-stop on screen with it. Past the speed of sound the speedometer shows the **Mach** number too (the speed
+and the engine fades out from 1 km to nothing at 20 km, leaving only the rocket. Past the speed of sound the **Mach** number shows under the speed (the speed
 of sound at that height, from the standard atmosphere). A cab scraping the ground where it does no damage
 (on its roof in Sandbox, say) is heard only as long as scraping would take to wreck it in Classic, then fades. Outside 2006 Mode the backdrop moves
 a little too: sideways as you travel, and down as you climb, so the mountains sink away below a

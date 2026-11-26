@@ -53,8 +53,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   the sky, fixed in cloud space, the world less `game.shiftTotal`). Counts are Sandbox settings. Also `skyAt`: the sky darkening into space with height
   above the stage's start, real colours at real heights (`Renderer.space` draws it, with stars, in
   every mode but 2006 Mode, with the moon). The same `game.height` (metres above the start) drives
-  the plane steering (`HOLD_HEADING`, `Truck.holdTurn`) and the engine's fade (`engineVolume`, which
-  also slows the tyres on screen, `Truck.wheelShow`). Sandbox's own records (`sb*` in stats.js) go
+  the plane steering (`HOLD_HEADING`, `Truck.holdTurn`) and the engine's fade (`engineVolume`). Sandbox's own records (`sb*` in stats.js) go
   straight into the saved stats (`Game.sandboxStats`).
 - `src/sandbox.js` (no DOM): Sandbox Mode's settings (`funkytruck.sandbox`, choice indices; track 0
   is Endless, then the stages, then the stunt tracks), `applySandbox` (sets the truck's `power`,

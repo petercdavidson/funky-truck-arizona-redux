@@ -47,7 +47,7 @@ const MILESTONE_GOLD = '#ffe27a';
  */
 const BACKDROP = { y: 0.06, up: 80, down: 420 };
 const TRUCK_SHADE = 0.6;
-const MOON = { from: 45, full: 65, km: 75, depth: 1 / 4000, r: 80 };   // the moon (see Renderer.moon)   // how far the truck darkens toward the sky's colour as it goes black (at the sky's darkest)
+const MOON = { km: 75, depth: 1 / 1600, r: 240 };   // the moon (see Renderer.moon)   // how far the truck darkens toward the sky's colour as it goes black (at the sky's darkest)
 /** The HUD in a tall view: how much bigger, how far down from the top (stage units), and where the middle's news goes (a share of the view's height). */
 const HUD_TALL = { k: 1.5, top: 12, middle: 0.2 };
 
@@ -1057,19 +1057,18 @@ export class Renderer {
       }
     }
     ctx.restore();
-    this.moon(game, v, km);
+    this.moon(game, v);
     return sky;
   }
 
   /**
-   * The moon: a tyre (tyre_5.png) made moon-coloured, big, in the sky from 45 km up (fully there by
-   * 65 km). It moves past at 1/4000 of the world's speed, sitting `MOON.km` above the stage's start,
-   * so it rises past you as you climb; sideways there's always one across the view.
+   * The moon (assets/moon.png), big, `MOON.km` above the stage's start. It never fades: it moves past
+   * at `MOON.depth` of the world's speed, so it rises into view from the top as you climb (from
+   * about 45 km up in a landscape view); sideways there's always one across the view.
    */
-  moon(game, v, km) {
-    const fade = Math.max(0, Math.min(1, (km - MOON.from) / (MOON.full - MOON.from)));
+  moon(game, v) {
     const img = this.moonImage();
-    if (!fade || !img) return;
+    if (!img) return;
     const [sx, sy] = game.shiftTotal || [0, 0], z = v.zoom || 1;
     const mx = (v.camX + sx + this.viewW * z / 2) * MOON.depth;
     // (one comes round every view's width and a bit: always one across the view, as one goes off
@@ -1079,40 +1078,25 @@ export class Renderer {
     if (dx < -every / 2) dx += every; else if (dx >= every / 2) dx -= every;
     const top = game.levelData.start[1] - sy - MOON.km * 1000 / METRES_PER_TILE * TILE;
     const dy = (top - (v.camY + this.viewH * z / 2)) * MOON.depth;
-    const r = MOON.r, x = this.viewW / 2 + dx, y = this.viewH / 2 + dy;
-    if (x < -r || x > this.viewW + r || y < -r || y > this.viewH + r) return;
+    const r = MOON.r, h = r * img.height / img.width, x = this.viewW / 2 + dx, y = this.viewH / 2 + dy;
+    if (x < -r || x > this.viewW + r || y < -h || y > this.viewH + h) return;
     const ctx = this.ctx, sc = this.scale;
     ctx.save();
     ctx.setTransform(sc, 0, 0, sc, this.offX, this.offY);
-    ctx.globalAlpha = fade;
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(img, x - r, y - r, r * 2, r * 2);
+    ctx.drawImage(img, x - r, y - h, r * 2, h * 2);
     ctx.restore();
   }
 
-  /** The moon's picture: tyre_5.png in the moon's greys (made once). */
+  /** The moon's picture, loaded the first time it's wanted (null until it's in, and if it can't be). */
   moonImage() {
-    if (this.moonImg !== undefined) return this.moonImg;
-    const tyre = this.a.images['tyre_5.png'];
-    if (!tyre) return (this.moonImg = null);
-    const c = document.createElement('canvas');
-    c.width = tyre.width; c.height = tyre.height;
-    const x = c.getContext('2d');
-    x.drawImage(tyre, 0, 0);
-    try {
-      // each pixel's brightness, stretched, in the moon's warm grey
-      const d = x.getImageData(0, 0, c.width, c.height), p = d.data;
-      let lo = 255, hi = 0;
-      for (let i = 0; i < p.length; i += 4) if (p[i + 3] > 128) { const l = (p[i] + p[i + 1] + p[i + 2]) / 3; lo = Math.min(lo, l); hi = Math.max(hi, l); }
-      for (let i = 0; i < p.length; i += 4) {
-        const l = ((p[i] + p[i + 1] + p[i + 2]) / 3 - lo) / Math.max(1, hi - lo), k = 0.62 + 0.38 * l;
-        p[i] = 222 * k; p[i + 1] = 218 * k; p[i + 2] = 206 * k;
-      }
-      x.putImageData(d, 0, 0);
-    } catch {
-      x.globalCompositeOperation = 'source-atop'; x.fillStyle = '#d6d2c6'; x.fillRect(0, 0, c.width, c.height);
+    if (this.moonImg === undefined) {
+      this.moonImg = null;
+      const img = new Image();
+      img.onload = () => { this.moonImg = img; };
+      img.src = 'assets/moon.png';
     }
-    return (this.moonImg = c);
+    return this.moonImg;
   }
 
   /**
@@ -1255,7 +1239,7 @@ export class Renderer {
   }
 
   /** A HUD meter in the original damage bar's style: a label, a bar filled to `share`, and optionally a reading just right of the bar. */
-  meter(name, share, y, reading = '') {
+  meter(name, share, y, reading = '', under = '') {
     const ctx = this.ctx;
     // The label's left edge lines up with the bar's.
     // Placed by their baselines, not the tops of their lines: where a line's top is above the
@@ -1265,8 +1249,11 @@ export class Renderer {
     ctx.textAlign = 'left'; // the measurement below depends on it
     this.text(name, 13.1 + ctx.measureText(name).actualBoundingBoxLeft, y + 13, label);
     // (In a narrow view the reading goes under the bar, leaving the top middle clear for the pause button.)
-    if (reading && this.hudW < 420) this.text(reading, 13.1, y + 41, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic', color: 'rgba(255,255,255,0.9)' });
-    else if (reading) this.text(reading, 99.5, y + 27.5, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic', color: 'rgba(255,255,255,0.9)' });
+    // (`under` is a second reading, a line below the first)
+    const small = { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic', color: 'rgba(255,255,255,0.9)' };
+    const [rx, ry] = this.hudW < 420 ? [13.1, y + 41] : [99.5, y + 27.5];
+    if (reading) this.text(reading, rx, ry, small);
+    if (under) this.text(under, rx, ry + 14, small);
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.fillRect(13.1, y + 17.5, 80, 10);
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
@@ -1304,12 +1291,13 @@ export class Renderer {
     // Outside 2006 Mode: the speedometer (the bar's scale squeezes high speeds: units.js).
     if (!game.rules.retro) {
       // (past the speed of sound, the Mach number too)
+      // (on its own line under the speed, so it doesn't jump about as the speed's digits change)
       const mach = formatMach(game.speedKmh, game.height);
-      this.meter('speed', speedoShare(game.speedKmh), y, formatSpeed(game.speedKmh, game.imperial) + (mach ? ` · ${mach}` : ''));
+      this.meter('speed', speedoShare(game.speedKmh), y, formatSpeed(game.speedKmh, game.imperial), mach);
     }
     // ...and the altimeter, while the ground under the truck is out of sight below.
     if (game.altitude != null && (game.screen === 'playing' || game.screen === 'paused')) {
-      const ya = y + (this.hudW < 420 ? 50 : 36);
+      const ya = y + (this.hudW < 420 ? 50 + (!game.rules.retro && formatMach(game.speedKmh, game.height) ? 14 : 0) : 36);
       this.text('altitude', 13.1, ya + 13, { size: 15, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic' });
       this.text(`▼ ${formatHeight(game.altitude, game.imperial)}`, 13.1, ya + 29, { size: 12.85, font: HUD_FONT, weight: '800', align: 'left', baseline: 'alphabetic', color: 'rgba(255,255,255,0.9)' });
     }

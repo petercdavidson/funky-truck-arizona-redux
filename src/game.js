@@ -221,7 +221,6 @@ export class Truck {
     this.gravity = 0.11;
     this.tiltPower = 1;
     this.holdTurn = 0;                 // 0..1: in the air, it stops turning when let go (Game sets it, high up)
-    this.wheelShow = 1;                // how much of the tyres' spin is seen (only for drawing: the engine's fade, high up)
   }
 
   reset(x, y) { // u4095 + parts of s46B2
@@ -367,12 +366,12 @@ export class Truck {
       const s = this.rearN[1] * this.rearV[0] + -this.rearN[0] * this.rearV[1];
       this.rearSpin = -s / this.circumference * 360;
     }
-    this.rearWheelRot += this.rearSpin * this.wheelShow;
+    this.rearWheelRot += this.rearSpin;
     if (this.frontContact) {
       const s = this.frontN[1] * this.frontV[0] + -this.frontN[0] * this.frontV[1];
       this.frontSpin = -s / this.circumference * 360;
     }
-    this.frontWheelRot += this.frontSpin * this.wheelShow;
+    this.frontWheelRot += this.frontSpin;
   }
 
   tilt(keys) { // g80D5
@@ -1737,7 +1736,6 @@ export class Game {
     // its heading (easing in over HOLD_HEADING's metres).
     t.holdTurn = this.rules.ceiling ? 0 : Math.max(0, Math.min(1, (this.height - HOLD_HEADING[0]) / (HOLD_HEADING[1] - HOLD_HEADING[0])));
     t.tilt(keys);
-    t.wheelShow = this.rules.ceiling ? 1 : engineVolume(this.height);
     const type = t.probeBody(w);
     // The cab (the truck above its wheels) is touching the ground. Ground under the body is the
     // chassis bottoming out: by the original scrape (scrapeAll) it counts too, otherwise not.
