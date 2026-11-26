@@ -22,6 +22,8 @@ export const CRITTERS = {
   gone: 500,              // px out of sight: further than that, it goes (and a new one comes)
   look: 26,               // steps a bird looks ahead for ground in its way
   clear: 70,              // px a bird keeps above the ground
+  highest: 150 * 64 / 2.5, // px: no bird comes in more than 150 m above the ground
+  weedBounce: 0.12,       // the share of a tumbleweed's speed into the ground it bounces back with
 };
 
 /** A small, repeatable hash of two integers to [0, 1). */
@@ -82,7 +84,7 @@ export class Critters {
 
   /** Move them all left by dx and up by dy (the world moved: Endless's scrolling, a loop's repeat). */
   shift(dx, dy) {
-    for (const A of [this.birds, this.weeds, this.feathers]) for (const o of A) { o.x -= dx; o.y -= dy; }
+    for (const A of [this.birds, this.weeds, this.feathers]) for (const o of A) { o.x -= dx; o.y -= dy; o.px -= dx; o.py -= dy; }
   }
 
   /**
@@ -126,17 +128,19 @@ export class Critters {
   }
 
   /** A new bird (and a few more in a flock with it) in open sky out of sight. */
-  spawnBird(view, world, heading) {
+  spawnBird(view, world, heading, sky = () => true) {
     const R = this.random;
     for (let tries = 0; tries < 6; tries++) {
       const [x, y] = this.spawnPoint(view, heading);
-      if (!Critters.openSky(world, x, y, CRITTERS.clear)) continue;
+      if (!Critters.openSky(world, x, y, CRITTERS.clear) || !sky(x, y)) continue;
+      // (and not too high: ground within 150 m below)
+      if (!world.down(x, y, y + CRITTERS.highest)) continue;
       const dir = R() < 0.5 ? -1 : 1;
       const n = 1 + Math.min(this.wantBirds - this.birds.length - 1, Math.floor(R() * 4));
       for (let i = 0; i < n; i++) {
         const bx = x - dir * i * (20 + 30 * R()), by = y + (R() - 0.5) * 50;
-        if (i && !Critters.openSky(world, bx, by, CRITTERS.clear)) continue;
-        this.birds.push({ x: bx, y: by, vx: dir * (1.6 + 1.2 * R()), vy: 0, dir, flap: R() * 6, hit: false, spin: 0, rot: 0, rest: 0, life: 0 });
+        if (i && (!Critters.openSky(world, bx, by, CRITTERS.clear) || !sky(bx, by))) continue;
+        this.birds.push({ x: bx, y: by, px: bx, py: by, vx: dir * (1.6 + 1.2 * R()), vy: 0, dir, flap: R() * 6, hit: false, spin: 0, rot: 0, rest: 0, life: 0 });
       }
       return true;
     }
@@ -144,14 +148,15 @@ export class Critters {
   }
 
   /** A new tumbleweed out of sight, on the first ground down from above the view. */
-  spawnWeed(view, world, heading) {
+  spawnWeed(view, world, heading, sky = () => true) {
     for (let tries = 0; tries < 6; tries++) {
       const [x] = this.spawnPoint(view, [heading[0], 0]);
       const h = world.down(x, view.cy - view.hh - 1200, view.cy + view.hh + 1200);
       if (!h || h.ny > -0.5) continue;   // (only on ground facing up)
       const y = h.y - 1;
+      if (!sky(h.x, y - CRITTERS.weedRadius)) continue;   // (out in the open, under the sky)
       if (Math.abs(y - view.cy) < view.hh + 30 && Math.abs(x - view.cx) < view.hw + 30) continue;   // (never in sight)
-      this.weeds.push({ x: h.x, y, vx: 0, vy: 0, rot: this.random() * 6, life: 0, cool: 0 });
+      this.weeds.push({ x: h.x, y, px: h.x, py: y, vx: 0, vy: 0, rot: this.random() * 6, life: 0, cool: 0 });
       return true;
     }
     return false;
@@ -165,7 +170,7 @@ export class Critters {
     b.spin = (R() - 0.5) * 0.6;
     for (let i = 0; i < 10; i++) {
       const a = R() * Math.PI * 2, s = 0.5 + R() * 2.5;
-      this.feathers.push({ x: b.x, y: b.y, vx: vx * 0.3 + Math.cos(a) * s, vy: vy * 0.3 + Math.sin(a) * s, rot: R() * 6, spin: (R() - 0.5) * 0.3, life: 90 + R() * 80 });
+      this.feathers.push({ x: b.x, y: b.y, px: b.x, py: b.y, vx: vx * 0.3 + Math.cos(a) * s, vy: vy * 0.3 + Math.sin(a) * s, rot: R() * 6, spin: (R() - 0.5) * 0.3, life: 90 + R() * 80 });
     }
   }
 
@@ -193,18 +198,21 @@ export class Critters {
    * One step. `truck`: the Truck (read only, never changed), or null (a wreck hits nothing).
    * `view`: { cx, cy, hw, hh } in world px. `world`: the collision world for tumbleweeds (pushed
    * out by their size); `thin`: the one for birds (pushed out a little). `bottom`: below that,
-   * something's fallen out of the level and goes.
+   * something's fallen out of the level and goes. `sky(x, y)`: whether there's open sky straight
+   * up from there (nothing comes in where there isn't: in a pipe, under the ground).
    */
-  step(truck, view, world, thin, gravity = CRITTERS.gravity, bottom = Infinity) {
+  step(truck, view, world, thin, gravity = CRITTERS.gravity, bottom = Infinity, sky = () => true) {
     const C = CRITTERS, R = this.random;
     this.events.length = 0;
+    // (where each was, for drawing between steps)
+    for (const A of [this.birds, this.weeds, this.feathers]) for (const o of A) { o.px = o.x; o.py = o.y; }
     const gone = (o) => o.y > bottom || Math.abs(o.x - view.cx) > view.hw + C.gone || Math.abs(o.y - view.cy) > view.hh + C.gone;
     this.birds = this.birds.filter((b) => !gone(b) && !(b.hit && b.rest > 400));
     this.weeds = this.weeds.filter((w) => !gone(w));
     // new ones out of sight, the way you're heading
     const heading = truck ? [truck.T[0] - truck.P[0], truck.T[1] - truck.P[1]] : [0, 0];
-    if (this.birds.length < this.wantBirds && R() < 0.25) this.spawnBird(view, thin, heading);
-    if (this.weeds.length < this.wantWeeds && R() < 0.15) this.spawnWeed(view, world, heading);
+    if (this.birds.length < this.wantBirds && R() < 0.25) this.spawnBird(view, thin, heading, sky);
+    if (this.weeds.length < this.wantWeeds && R() < 0.15) this.spawnWeed(view, world, heading, sky);
     // what hits: circles round the truck's chassis centre and its wheels (and how fast each moves)
     const T = truck?.T, P = truck?.P;
     const hitters = truck ? [0, 1, 2].map((p) => [T[p * 2], T[p * 2 + 1], T[p * 2] - P[p * 2], T[p * 2 + 1] - P[p * 2 + 1], p ? truck.wheelRadius + 6 : C.truckRadius]) : [];
@@ -243,7 +251,7 @@ export class Critters {
       w.life++;
       w.vy += gravity;
       w.vx *= 0.999;
-      const n = Critters.move(w, world, w.vy > 2 ? 0.4 : 0, 0.004);
+      const n = Critters.move(w, world, w.vy > 3 ? C.weedBounce : 0, 0.004);
       // rolling: it turns as far as it goes along
       w.rot += w.vx / C.weedRadius;
       if (n && Math.hypot(w.vx, w.vy) < 0.02) { w.vx = 0; w.vy = 0; }
@@ -254,6 +262,26 @@ export class Critters {
         w.vx = vx * 1.1 + dx / d * 2; w.vy = Math.min(vy, 0) - 2 - sp * 0.4 + dy / d;
         w.cool = 20;
         this.events.push({ kind: 'weed', x: w.x, y: w.y, speed: sp });
+      }
+    }
+
+    // tumbleweeds knock into each other: pushed apart, trading the speed they meet with
+    const W = this.weeds, D = C.weedRadius * 2 * 0.9;
+    for (let i = 0; i < W.length; i++) for (let j = i + 1; j < W.length; j++) {
+      const a = W[i], b = W[j], dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
+      if (d2 >= D * D || d2 === 0) continue;
+      const d = Math.sqrt(d2), nx = dx / d, ny = dy / d, push = (D - d) / 2;
+      // (pushed apart only where the ground lets them go)
+      for (const [o, s] of [[a, -1], [b, 1]]) {
+        const ox = o.vx, oy = o.vy;
+        o.vx = s * nx * push; o.vy = s * ny * push;
+        Critters.move(o, world, 0, 0);
+        o.vx = ox; o.vy = oy;
+      }
+      const vn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+      if (vn < 0) {
+        const k = -vn * (1 + C.weedBounce) / 2;
+        a.vx -= k * nx; a.vy -= k * ny; b.vx += k * nx; b.vy += k * ny;
       }
     }
 

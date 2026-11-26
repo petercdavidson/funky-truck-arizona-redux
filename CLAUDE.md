@@ -133,6 +133,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   2006 Mode) unless the user says otherwise. General options go
   on the Options screen (`OPTIONS` in `render.js`); an option for one mode goes in the small on/off
   switches at the side of that mode's screen (`option()`).
+- Players see Time Trial as **Stages** (since 1.24.20; the code still calls it Time Trial / `trial`).
 - Practice was merged into Time Trial (`mode: 'trial'`, `startTrial`): its screen (`trialSelect`) has the
   stages, All Nine, the stunt tracks and the Tricks / Damage / 2006 Mode / Ghost switches. Its
   stages have Classic's ceiling and scrape (`trackRules`). A time only counts with damage on

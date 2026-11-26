@@ -325,3 +325,20 @@ test('the garage can reset the truck to the one you start with', () => {
   assert.deepEqual(g.look, { body: 0, tyre: 0, hub: 0, paint: 0 });
   assert.deepEqual(store.get('truckLook'), g.look);
 });
+
+test('air drag: nothing below 999 km/h, and a truck going 3000 km/h is soon slowed', async () => {
+  const { DRAG_FROM, KMH_PER_PX_STEP } = await import('../src/game.js');
+  const g = new Game(data);
+  g.startSandbox();
+  settle(g, 150);
+  const t = g.truck, push = (kmh) => { for (let i = 0; i < 10; i += 2) { t.P[i] = t.T[i] - kmh / KMH_PER_PX_STEP; t.P[i + 1] = t.T[i + 1]; } };
+  const v = () => { let x = 0; for (let i = 0; i < 10; i += 2) x += t.T[i] - t.P[i]; return x / 5 * KMH_PER_PX_STEP; };
+  push(900); g.capSpeed();
+  assert.ok(Math.abs(v() - 900) < 1e-6, 'untouched at 900 km/h');
+  assert.ok(DRAG_FROM * KMH_PER_PX_STEP > 998);
+  push(3000);
+  const speeds = [];
+  for (let s = 0; s < 210; s++) { g.capSpeed(); for (let i = 0; i < 10; i += 2) { const d = t.T[i] - t.P[i]; t.P[i] = t.T[i]; t.T[i] += d; } if (s % 70 === 69) speeds.push(Math.round(v())); }
+  console.log('3000 km/h, coasting with drag only, after 1 s, 2 s, 3 s:', speeds.join(', '));
+  assert.ok(speeds[2] < 1500 && speeds[2] > 999);
+});

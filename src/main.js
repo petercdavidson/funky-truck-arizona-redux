@@ -133,6 +133,13 @@ function escape() {
 /** Sandbox's presses: a missile, and the jump. */
 const PRESS_KEYS = { KeyX: 'fire', KeyZ: 'jump' };
 
+// Whether the menus are being worked with a controller or the arrow keys (rather than a mouse or
+// a finger): then each new menu starts with its first button highlighted.
+let navInput = false;
+// Enter / Space while they're still held after pressing a highlighted button (so they don't go on
+// to restart a run on the screen that button opened).
+const keysSwallowed = new Set();
+
 function onKey(e, down) {
   // With Cmd or Ctrl held (Cmd-Shift-4 for a screenshot, say), Shift is part of a shortcut, not boost.
   if (down && (e.metaKey || e.ctrlKey) && (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'MetaLeft' || e.code === 'MetaRight')) {
@@ -147,13 +154,28 @@ function onKey(e, down) {
     if (e.code === 'KeyF') { toggleFullscreen(); return; }
     if (e.code === 'KeyM') { doAction('sound'); return; }
     if (PRESS_KEYS[e.code]) { game.press(PRESS_KEYS[e.code]); return; }
-    if (game.screen === 'title' && (e.code === 'Space' || e.code === 'Enter')) { doAction('play'); moveModeChoice(0); return; }
+    if (e.code.startsWith('Arrow')) navInput = true;   // (the arrow keys: menus highlight their first button)
+    const lit = renderer.padHover && navButtons(game.screen, game, renderer.tall).includes(renderer.hover);
+    if (game.screen === 'title' && !lit && (e.code === 'Space' || e.code === 'Enter')) { doAction('play'); moveModeChoice(0); return; }
     if (game.screen === 'modes') {
       if (name === 'up' || name === 'down') { moveModeChoice(name === 'up' ? -1 : 1); return; }
       if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') { chooseMode(); return; }
     }
     if (game.screen === 'classicSelect' && !renderer.padHover && (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter')) { doAction('classic'); return; }
   }
+  // Menus: the arrow keys move a highlight as a controller's stick does, and Enter or Space
+  // presses it (held down, it presses nothing more until it's let go).
+  if (down && game.screen !== 'playing' && game.screen !== 'modes' && !game.padListen) {
+    const dir = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.code];
+    if (dir) { navInput = true; moveMenuHighlight(...dir); return; }
+    if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+      if (keysSwallowed.has(e.code)) return;
+      const hl = renderer.padHover && navButtons(game.screen, game, renderer.tall).includes(renderer.hover) ? renderer.hover : null;
+      if (hl) { keysSwallowed.add(e.code); doAction(hl.action); return; }
+    }
+  }
+  if (!down && keysSwallowed.delete(e.code)) return;
+  if (down && keysSwallowed.has(e.code)) return;
   if (name) { for (const n of [name].flat()) keyboard[n] = down; combineKeys(); }
 }
 
@@ -282,6 +304,7 @@ canvas.addEventListener('pointermove', (e) => {
   const b = hitButton(game.screen, x, y, game, renderer.tall);
   renderer.hover = b;
   renderer.padHover = false;
+  navInput = false;
   canvas.style.cursor = b || onTitleTruck(x, y) ? 'pointer' : '';
 });
 
@@ -409,6 +432,7 @@ let padUpWasDown = false, padDownWasDown = false;
 let padFireWasDown = false, padJumpWasDown = false, padTopWasDown = false, padWreckWasDown = false;
 let padSelectWasDown = false, padBackWasDown = false;
 let padDir = '', padDirNext = 0;
+let padSwallowA = false;                  // A pressed a menu button: it restarts nothing until let go
 let padHeld = new Set();                  // the buttons held at the last look (the Controller screen)          // the stick / d-pad direction held in menus, and when it repeats
 
 function pollGamepads() {
@@ -456,6 +480,7 @@ function pollGamepads() {
     backDown ||= b(1) || b(8);                     // B, or Back / Select
   }
   if (pads.length) {
+    if (startDown || selectDown || backDown || upDown || downDown || leftDown || rightDown || pauseDown) navInput = true;
     const inMenu = game.screen !== 'playing';
     if (pauseDown && !padPauseWasDown && (game.screen === 'playing' || game.screen === 'paused')) game.togglePause();
     else if (startDown && !padStartWasDown && game.screen === 'title' && !navButtons('title', game, renderer.tall).includes(renderer.hover)) { doAction('play'); moveModeChoice(0); }
@@ -472,7 +497,7 @@ function pollGamepads() {
       padDir = dir;
       const hl = navButtons(game.screen, game, renderer.tall).includes(renderer.hover) ? renderer.hover : null;
       if (hl) padKeys.restart = false;    // A presses the highlighted button rather than Play Again
-      if (selectDown && !padSelectWasDown && hl) doAction(hl.action);
+      if (selectDown && !padSelectWasDown && hl) { padSwallowA = true; doAction(hl.action); }
       else if (backDown && !padBackWasDown && game.screen !== 'paused' && game.screen !== 'gameOver') escape();
     }
     if (!inMenu) padDir = '';
@@ -484,7 +509,8 @@ function pollGamepads() {
       else if (!padTopWasDown) game.press('jump');
     }
     if (wreckDown && !padWreckWasDown && game.screen === 'playing' && game.selfWreck()) sound.play('wreck');
-    padKeys.restart = padKeys.restart && game.screen === 'gameOver';
+    if (padSwallowA && !startDown) padSwallowA = false;
+    padKeys.restart = padKeys.restart && game.screen === 'gameOver' && !padSwallowA;
     combineKeys();
   }
   padPauseWasDown = pauseDown;
@@ -522,6 +548,7 @@ function lerpView(a, b, t) {
     W: a.W && b.W && a.W.length === b.W.length ? a.W.map((x, i) => L(x, b.W[i])) : b.W,
     G: a.G && b.G ? a.G.map((x, i) => L(x, b.G[i])) : b.G,
     B: b.B && lerpBattle(a.B, b.B, t),
+    t,
   };
 }
 
@@ -556,6 +583,17 @@ function countFrame(now) {
     fpsBox.textContent = `${Math.round(fpsFrames * 1000 / (now - fpsSince))} fps`;
     fpsFrames = 0; fpsSince = now;
   }
+}
+
+/** With a controller or the arrow keys in use, a menu just opened has its first button highlighted. */
+let navScreen = '', navPick = null;
+function highlightNewMenu() {
+  if (game.screen === navScreen && game.sandboxPick === navPick) return;
+  navScreen = game.screen; navPick = game.sandboxPick;
+  if (!navInput || game.screen === 'playing') return;
+  const list = navButtons(game.screen, game, renderer.tall);
+  if (list.includes(renderer.hover)) { renderer.padHover = true; return; }
+  if (list.length) { renderer.hover = list[0]; renderer.padHover = true; }
 }
 
 function frame(now) {
@@ -593,6 +631,7 @@ function frame(now) {
   sound.updateEngine(engineState);
   sound.updateScrape(scrapeState);
   sound.updateBoost({ on: game.screen === 'playing' && !!game.battle?.boosting, speed: Math.min(1, game.speedKmh / 300) });
+  highlightNewMenu();
   // Tell the page which screen this is before drawing, so the on-screen controls always match it.
   const ds = document.body.dataset;
   if (ds.screen !== game.screen) ds.screen = game.screen;

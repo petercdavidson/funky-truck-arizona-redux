@@ -64,6 +64,7 @@ test('dirt flies from a wrecked truck\'s wheels and body, and from a cab scrapin
     // (no wait left over from dirt thrown while driving: it could last till the cab had slowed below
     // SCRAPE_DIRT_FROM, and then none came, about one time in 30)
     g.dirtCooldown = 0;
+    for (const d of g.dirt) d.life = 0;                     // (nor dirt still flying from the drop-in)
     let scraped = 0; most = 0;
     for (let i = 0; i < 45; i++) { g.step(); if (g.scraping) scraped++; most = Math.max(most, live(g)); }
     assert.ok(scraped > 0, 'the cab scraped');

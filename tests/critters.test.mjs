@@ -82,3 +82,48 @@ test('nothing goes through the ground: tumbleweeds sit and roll on it, birds fly
   assert.equal(under, 0, `${under} of ${checked} in the ground`);
   assert.ok(g.critters.birds.some((b) => b.rest > 0), 'a knocked bird has landed');
 });
+
+test('nothing comes in where there is no open sky straight up, nor birds more than 150 m up', () => {
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const g = new Game(data, { random: rnd });
+  g.sandbox.birds = 3; g.sandbox.weeds = 3;
+  g.startSandbox();
+  // a sky that's closed everywhere (a pipe, all ground): none come in at all
+  const C = g.critters;
+  C.birds.length = 0; C.weeds.length = 0;
+  const z = g.zoom, hw = g.viewW * z / 2, hh = g.viewH * z / 2, view = { cx: g.camX + hw, cy: g.camY + hh, hw, hh };
+  for (let i = 0; i < 400; i++) C.step(g.truck, view, g.world, g.thinWorld, 0.11, Infinity, () => false);
+  assert.equal(C.birds.length + C.weeds.length, 0);
+  // the level's own sky: everything that comes in has open sky above it
+  for (let i = 0; i < 400; i++) {
+    const n = C.birds.length;
+    g.step();
+    for (const b of C.birds.slice(n)) {
+      assert.ok(g.skyAbove(b.x, b.y), 'bird under open sky');
+      assert.ok(g.world.down(b.x, b.y, b.y + 150 * 64 / 2.5), 'ground within 150 m');
+    }
+  }
+  // skyAbove: under the ground, no; well above it, yes
+  const t = g.truck.T;
+  assert.equal(g.skyAbove(t[0], t[1] + 400), false);
+  assert.equal(g.skyAbove(t[0], -100), true);
+});
+
+test('tumbleweeds knock into each other rather than pass through', () => {
+  const g = new Game(data);
+  g.sandbox.birds = 0; g.sandbox.weeds = 2;
+  g.startSandbox();
+  const C = g.critters, t = g.truck.T;
+  const y = g.world.down(t[0] + 600, t[1] - 300, t[1] + 600).y - 30;
+  C.weeds = [
+    { x: t[0] + 500, y, vx: 4, vy: 0, rot: 0, life: 0, cool: 0 },
+    { x: t[0] + 700, y, vx: -4, vy: 0, rot: 0, life: 0, cool: 0 },
+  ];
+  let minGap = Infinity;
+  for (let i = 0; i < 60; i++) {
+    C.step(null, { cx: t[0], cy: t[1], hw: 2000, hh: 2000 }, g.world, g.thinWorld);
+    if (C.weeds.length === 2) minGap = Math.min(minGap, Math.abs(C.weeds[1].x - C.weeds[0].x));
+  }
+  assert.ok(minGap > 25, `closest ${minGap.toFixed(1)} px apart`);
+});

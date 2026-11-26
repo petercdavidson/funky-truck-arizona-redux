@@ -9,6 +9,7 @@
 export const STAT_KEYS = [
   'maxAir', 'topSpeed', 'mostFlips', 'longestWheelie', 'bestChain', 'longestChain',
   'distance', 'driveSteps', 'runs', 'stages', 'wrecks', 'selfWrecks', 'bails', 'endlessMetres', 'takedowns', 'rallyWins',
+  'classicStage', // the highest stage (1-9) beaten in Classic
 ];
 
 /** The tricks counted one by one (by kind: no counts or airtimes in the name). */

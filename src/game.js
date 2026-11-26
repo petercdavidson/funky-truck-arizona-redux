@@ -32,6 +32,14 @@ export const KMH_PER_PX_STEP = STEP_HZ * METRES_PER_TILE / TILE * 3.6;
 const POINTS_PER_TILE = 10;
 /** The fastest anything goes (only Sandbox gets near it): 9999 km/h, in px per step. */
 export const MAX_SPEED = 9999 / KMH_PER_PX_STEP;
+/**
+ * Air drag, only past 999 km/h (no stage, nor anything short of Sandbox's boost or gravity, gets
+ * near): each step a truck going faster loses DRAG[0] times how far over it is, plus DRAG[1] times
+ * that squared (px/step), so let off the boost and it's soon back down.
+ */
+export const DRAG_FROM = 999 / KMH_PER_PX_STEP;
+export const DRAG = [0.005, 1.5e-5];
+const dragLoss = (v) => (v <= DRAG_FROM ? 0 : Math.min(v - DRAG_FROM, DRAG[0] * (v - DRAG_FROM) + DRAG[1] * (v - DRAG_FROM) ** 2));
 /** How many choices Sandbox setting `key` has. */
 
 // ---------------------------------------------------------------------------------------------
@@ -1030,7 +1038,8 @@ export class Game {
 
   /** Sandbox: every setting back to its default. */
   resetSandbox() {
-    const course = this.sandbox.course;
+    // (the track too, back to Endless, unless this is mid-run, from the pause menu's Tweaks)
+    const course = this.screen === 'sandboxTweaks' ? this.sandbox.course : 0;
     this.sandbox = { ...validSandbox(null), course };
     this.store.set('sandbox', this.sandbox);
     if (this.mode === 'sandbox' && this.battle) applySandbox(this);
@@ -1294,7 +1303,18 @@ export class Game {
   stepCritters() {
     const z = this.zoom, hw = this.viewW * z / 2, hh = this.viewH * z / 2;
     const view = { cx: this.camX + hw, cy: this.camY + hh, hw, hh };
-    this.critters.step(this.wreck ? null : this.truck, view, this.world, this.thinWorld, this.truck.gravity, this.levelData.height * TILE + 400);
+    this.critters.step(this.wreck ? null : this.truck, view, this.world, this.thinWorld, this.truck.gravity, this.levelData.height * TILE + 400, (x, y) => this.skyAbove(x, y));
+  }
+
+  /**
+   * Whether (x, y) is out under the open sky: inside the level's sides, with no tile at all in its
+   * column from its own cell up to the top (so not in a pipe, a cave or the ground itself).
+   */
+  skyAbove(x, y) {
+    const L = this.levelData, gx = Math.floor(x / TILE);
+    if (gx < 0 || gx >= L.width) return false;
+    for (let gy = Math.min(L.height - 1, Math.floor(y / TILE)); gy >= 0; gy--) if (L.tiles[gy][gx]) return false;
+    return true;
   }
 
   /** Move everything (truck, wreck, dirt, camera) left by dx and up by dy. */
@@ -1797,6 +1817,7 @@ export class Game {
     for (const d of this.dirt) d.life = 0;
     const isWrecked = this.damage === 1000;
     if (isWrecked) this.stats.wrecks++; else this.stats.stages++;
+    if (this.mode === 'campaign' && !isWrecked) this.stats.classicStage = Math.max(this.stats.classicStage, this.level + 1);
     if (this.level === this.lastLevel || isWrecked) {
       this.score += this.bonus;
       if (this.mode === 'campaign' && !isWrecked) this.score += 100000;
@@ -1969,14 +1990,19 @@ export class Game {
       if (whole) {
         let vx = 0, vy = 0;
         for (let i = 0; i < T.length; i += 2) { vx += T[i] - P[i]; vy += T[i + 1] - P[i + 1]; }
-        const n = T.length / 2, v = Math.hypot(vx / n, vy / n);
+        const n = T.length / 2, v0 = Math.hypot(vx / n, vy / n), loss = dragLoss(v0);
+        // (the drag slows the whole truck alike, leaving how it spins alone)
+        if (loss) for (let i = 0; i < T.length; i += 2) { P[i] += vx / n / v0 * loss; P[i + 1] += vy / n / v0 * loss; }
+        const v = v0 - loss;
         if (v <= MAX_SPEED) return;
         const k = MAX_SPEED / v;
         for (let i = 0; i < T.length; i++) P[i] = T[i] - (T[i] - P[i]) * k;
         return;
       }
       for (let i = 0; i < T.length; i += 2) {
-        const v = Math.hypot(T[i] - P[i], T[i + 1] - P[i + 1]);
+        const v0 = Math.hypot(T[i] - P[i], T[i + 1] - P[i + 1]), loss = dragLoss(v0);
+        if (loss) { P[i] += (T[i] - P[i]) / v0 * loss; P[i + 1] += (T[i + 1] - P[i + 1]) / v0 * loss; }
+        const v = v0 - loss;
         if (v > MAX_SPEED) { const k = MAX_SPEED / v; P[i] = T[i] - (T[i] - P[i]) * k; P[i + 1] = T[i + 1] - (T[i + 1] - P[i + 1]) * k; }
       }
     };

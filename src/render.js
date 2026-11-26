@@ -13,6 +13,9 @@ import { battleBack, battleFront, battleHud } from './render-battle.js';
 import { circles } from './battle.js';
 import { PAD_ACTIONS, padName } from './pad.js';
 import { cloudsNear, CRITTERS } from './critters.js';
+
+/** How far off Sandbox's clouds are: they move past at this share of the world's speed. */
+const CLOUD_DEPTH = 0.3;
 import { SANDBOX_ROWS, SANDBOX_ROW, sandboxValue } from './sandbox.js';
 import { formatSpeed, formatDistance, formatHeight, speedoShare } from './units.js';
 
@@ -117,7 +120,7 @@ const MENU = [['Play', 'play'], ['Change Truck', 'garage'], ['High Scores', 'sta
 export const MODES = [
   ['Classic', 'classicSelect', 'The nine stages as the original game had them, with or without tricks'],
   ['Endless', 'endless', 'A course that goes on for ever: how far can you get?'],
-  ['Time Trial', 'trial', 'Any stage against the clock and your ghost, and the stunt tracks'],
+  ['Stages', 'trial', 'Any stage: race the clock and your ghost, practise, or play the stunt tracks'],
   ['Sandbox', 'sandbox', 'Any track, with the physics as you like'],
   ['Stage Editor', 'stageEditor', 'Build your own stages, and play them'],
 ];
@@ -407,7 +410,7 @@ export function runName(game) {
   if (game.mode === 'sandbox') return `Sandbox  ·  ${game.onCourse ? `Endless  ·  ${game.metres} m` : game.sandboxCustom ? game.customLevel.name : game.stageName(game.level)}`;
   const R = game.rules, retro = R.retro && '2006 Mode', noDamage = !R.damage && 'no damage';
   const with_ = (name, rules) => (rules.filter(Boolean).length ? `${name}  (${rules.filter(Boolean).join(', ')})` : name);
-  if (game.mode === 'trial') return with_(`Time Trial  ·  ${trialName(game, game.track)}`, [retro, noDamage, R.tricks === false && !R.retro && 'no tricks']);
+  if (game.mode === 'trial') return with_(`Stages  ·  ${trialName(game, game.track)}`, [retro, noDamage, R.tricks === false && !R.retro && 'no tricks']);
   if (game.mode === 'custom') return with_(game.customLevel.name, [retro, noDamage]);
   const stage = game.stageName(game.level);
   if (game.mode === 'campaign') return `${classicName(game)}  ·  ${stage}`;
@@ -468,8 +471,9 @@ export function statsColumns(game) {
     ['Best Scores'],
     ['Classic', or(game.best, n)],
     ['Classic with Tricks', or(game.bestPlay, n)],
+    ['Highest stage beat in Classic', or(S.classicStage, n)],
     ['Endless', or(game.bestEndless, (v) => `${n(v)} m`)],
-    ['Time Trial (All Nine)', game.trialBests[TRIAL_ALL] ? formatTime(game.trialBests[TRIAL_ALL]) : none],
+    ['All Nine Stages (time)', game.trialBests[TRIAL_ALL] ? formatTime(game.trialBests[TRIAL_ALL]) : none],
     ['Records'],
     ['Longest airtime', or(S.maxAir, secs)],
     ['Top speed', or(S.topSpeed, (v) => formatSpeed(v, game.imperial))],
@@ -482,7 +486,6 @@ export function statsColumns(game) {
     ['Distance driven', dist(S.distance)],
     ['Time driving', time],
     ['Runs', n(S.runs)],
-    ['Finish lines crossed (any mode)', n(S.stages)],
     ['Flips', n(S.backflips + S.frontflips)],
     ['Backflips', n(S.backflips)],
     ['Frontflips', n(S.frontflips)],
@@ -941,7 +944,7 @@ export class Renderer {
       this.truck(v.G, rot, rot, game.look);
       ctx.restore();
     }
-    if (game.critters) this.critters(game.critters);
+    if (game.critters) this.critters(game.critters, v.t ?? 1);
     if (game.battle) battleBack(this, game, v);
     if (game.wreck && v.W) this.wreck(game.wreck, v.W, game.look);
     else this.truck(v.T, v.rr, v.fr, game.look);
@@ -953,18 +956,23 @@ export class Renderer {
   }
 
   /**
-   * Sandbox's clouds: fixed in the sky (in cloud space: the world with the course's scrolling
-   * taken out), so you can see which way you're going with no ground in sight.
+   * Sandbox's clouds: far off, behind the world, so they move past slower than it does
+   * (`CLOUD_DEPTH` of its speed) and zoom out less, and fixed in that far sky (in cloud space: the
+   * world with the course's scrolling taken out, times the depth), so you can see which way you're
+   * going with no ground in sight.
    */
   clouds(game, v, zoom) {
-    const ctx = this.ctx, [sx, sy] = game.shiftTotal;
-    const x0 = v.camX + sx, y0 = v.camY + sy, x1 = x0 + this.viewW * zoom, y1 = y0 + this.viewH * zoom;
+    const ctx = this.ctx, [sx, sy] = game.shiftTotal, p = CLOUD_DEPTH;
+    const cz = zoom ** p, w = this.viewW * cz, h = this.viewH * cz;
+    // the view's middle in cloud space
+    const mx = (v.camX + sx + this.viewW * zoom / 2) * p, my = (v.camY + sy + this.viewH * zoom / 2) * p;
+    const x0 = mx - w / 2, y0 = my - h / 2;
     ctx.save();
-    ctx.scale(1 / zoom, 1 / zoom);
-    ctx.translate(-v.camX - sx, -v.camY - sy);
-    for (const c of cloudsNear(x0 - 300, y0 - 200, x1 + 300, y1 + 200, 0)) {
-      // a soft shadow underneath, then the cloud: its puffs filled as one shape
-      for (const [col, oy, a] of [['rgba(120,140,170,1)', 6, 0.25], ['#fff', 0, 1]]) {
+    ctx.scale(1 / cz, 1 / cz);
+    ctx.translate(-x0, -y0);
+    for (const c of cloudsNear(x0 - 300, y0 - 200, x0 + w + 300, y0 + h + 200, 0)) {
+      // a soft shadow underneath, then the cloud: its puffs filled as one shape (paler, far off)
+      for (const [col, oy, a] of [['rgba(120,140,170,1)', 5, 0.2], ['#fff', 0, 0.85]]) {
         ctx.globalAlpha = c.alpha * a;
         ctx.fillStyle = col;
         ctx.beginPath();
@@ -976,13 +984,15 @@ export class Renderer {
   }
 
   /** Sandbox's birds (flapping, or knocked tumbling), tumbleweeds and loose feathers. */
-  critters(C) {
+  critters(C, t = 1) {
     const ctx = this.ctx;
+    // (drawn between their last two steps, as the truck is, so they move smoothly)
+    const at = (o) => [o.px == null ? o.x : o.px + (o.x - o.px) * t, o.py == null ? o.y : o.py + (o.y - o.py) * t];
     ctx.save();
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     for (const w of C.weeds) {
       ctx.save();
-      ctx.translate(w.x, w.y);
+      ctx.translate(...at(w));
       ctx.rotate(w.rot);
       ctx.strokeStyle = 'rgba(122, 86, 44, 0.95)';
       ctx.lineWidth = 1.6;
@@ -1003,7 +1013,7 @@ export class Renderer {
     }
     for (const b of C.birds) {
       ctx.save();
-      ctx.translate(b.x, b.y);
+      ctx.translate(...at(b));
       ctx.strokeStyle = '#3b2b25';
       ctx.fillStyle = '#3b2b25';
       if (!b.hit) {
@@ -1029,8 +1039,8 @@ export class Renderer {
     for (const f of C.feathers) {
       ctx.save();
       ctx.globalAlpha = Math.min(1, f.life / 40);
-      ctx.translate(f.x, f.y); ctx.rotate(f.rot);
-      ctx.fillStyle = '#f3e9d2';
+      ctx.translate(...at(f)); ctx.rotate(f.rot);
+      ctx.fillStyle = '#111';
       ctx.beginPath(); ctx.ellipse(0, 0, 4, 1.4, 0, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
@@ -1436,7 +1446,7 @@ export class Renderer {
     const note = { weight: '600', color: 'rgba(255,255,255,0.8)' };
     const stunts = Math.min(STUNTS, game.stunts?.length ?? 0);
     if (tall) {
-      this.text('Time Trial', cx, 14, { size: 22, weight: '800' });
+      this.text('Stages', cx, 14, { size: 22, weight: '800' });
       this.text('Race the clock and your ghost, or score tricks', cx, 44, { ...note, size: 13 });
       for (let i = 0; i < 9; i++) card(tallTrialCard(i), String(i + 1), best(i), 24, 14);
       card(TALL_TRIAL_ALL_CARD, 'All Nine', best(TRIAL_ALL), 16, 13);
@@ -1444,7 +1454,7 @@ export class Renderer {
       for (let i = 0; i < stunts; i++) card(tallStuntCard(i), game.stageName(9 + i), score(TRIAL_STUNTS + i), 13, 12);
       this.text(trialNote(game), cx, 522, { ...note, size: 12 });
     } else {
-      this.text('Time Trial', 258, 10, { size: 20, weight: '800' });
+      this.text('Stages', 258, 10, { size: 20, weight: '800' });
       this.text('Race the clock and your best run\'s ghost, or score tricks on the stunt tracks', 258, 36, { ...note, size: 11 });
       for (let i = 0; i < 9; i++) card(trialCard(i), String(i + 1), best(i), 18, 12);
       card(TRIAL_ALL_CARD, 'All Nine', best(TRIAL_ALL), 13, 11);
