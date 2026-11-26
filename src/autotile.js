@@ -874,6 +874,14 @@ function leftToRight(pts) {
  * A search like drawPath's, over (edge point, last piece, how far along the sketch).
  */
 function drawPathFree(level, sketch, kit, opts = {}) {
+  // (the quick, pruned search first; the full one if that finds nothing)
+  if (opts.prune !== Infinity) {
+    const r = searchFree(level, sketch, kit, opts);
+    if (r) return r;
+  }
+  return searchFree(level, sketch, kit, { ...opts, prune: Infinity });
+}
+function searchFree(level, sketch, kit, opts = {}) {
   const { T, joins, oById, oByEntry, opieces } = kit;
   const W = level.width, H = level.height;
   // the sketch, every 4 px along it, smoothed
@@ -1000,10 +1008,18 @@ function drawPathFree(level, sketch, kit, opts = {}) {
   const [ex0, ey0] = S[n - 1];
   let done = null, pops = 0;
   const LIMIT = opts.limit ?? 400000;
+  // States are taken cheapest first, so the first to get this far along the sketch (by 8 samples)
+  // is the cheapest there. One that's dearer than it by more than PRUNE is dropped: without this
+  // the search goes back over ever more alternatives behind the front, and its time grows with
+  // the square of the path's length; with it, about in step with it.
+  const PRUNE = opts.prune ?? 40, front = new Float64Array((n >> 3) + 2).fill(Infinity);
   while (heap.size && pops++ < LIMIT) {
     const [cost, key, X, Y, last, k] = heap.pop();
     if (best.get(key) < cost) continue;
     if (done && cost >= done.cost) break;
+    const kb = k >> 3;
+    if (cost > front[kb] + PRUNE) continue;
+    if (cost < front[kb]) front[kb] = cost;
     if (k >= n - 9 && last >= 0) {
       const e = endAt.get(`${X},${Y}`), lp = opieces[last];
       const extra = e ? (joins.has(lp.base * 1024 + e.p.base) && lp.form === e.p.form ? 0 : UNSEEN * 0.5)
