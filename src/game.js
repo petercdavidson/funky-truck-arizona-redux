@@ -219,7 +219,7 @@ export class Truck {
     this.power = 1;
     this.gravity = 0.11;
     this.tiltPower = 1;
-    this.holdTurn = 0;                 // 0..1: in the air, it turns at a steady rate while steered and stops when let go (Game sets it, high up)
+    this.holdTurn = 0;                 // 0..1: in the air, it stops turning when let go (Game sets it, high up)
   }
 
   reset(x, y) { // u4095 + parts of s46B2
@@ -379,31 +379,29 @@ export class Truck {
     const l = Math.sqrt(dx * dx + dy * dy);
     if (l !== 0) { dx /= l; dy /= l; }
     const px = -dy, py = dx;
-    const air = !this.rearContact && !this.frontContact, hold = air ? this.holdTurn : 0;
+    const hold = !this.rearContact && !this.frontContact && !keys.left && !keys.right ? this.holdTurn : 0;
     if (hold > 0) {
-      // like a plane: turning at a steady rate while steered, and stopping when let go. Its turn
-      // (the wheels' line's) is eased toward the rate wanted by turning all its points' velocities
-      // round its middle.
+      // like a plane: steered just as low down, but let go it eases to a stop and holds its
+      // heading. Its turning (the wheels' line's) is slowed by turning all its points' velocities
+      // back round its middle.
       const a1 = Math.atan2(dy, dx), a0 = Math.atan2(P[5] - P[3], P[4] - P[2]);
       let w = a1 - a0;
       if (w > PI) w -= 2 * PI; else if (w < -PI) w += 2 * PI;
-      const want = (keys.left ? -1 : keys.right ? 1 : 0) * HOLD_TURN.rate * this.tiltPower;
-      const d = (want - w) * HOLD_TURN.ease * hold;
+      const d = -w * HOLD_TURN.ease * hold;
       let cx = 0, cy = 0;
       for (let i = 0; i < 10; i += 2) { cx += T[i]; cy += T[i + 1]; }
       cx /= 5; cy /= 5;
       for (let i = 0; i < 10; i += 2) { P[i] += d * (T[i + 1] - cy); P[i + 1] -= d * (T[i] - cx); }
-      if (hold >= 1) return;
+      return;
     }
-    const k = 1 - hold;   // (easing in: the original push, less)
     if (keys.left) {
-      if (!this.rearContact && !this.frontContact) { P[4] += px * (0.2 * this.tiltPower * k); P[5] += py * (0.2 * this.tiltPower * k); }
+      if (!this.rearContact && !this.frontContact) { P[4] += px * (0.2 * this.tiltPower); P[5] += py * (0.2 * this.tiltPower); }
       else if (this.rearContact) {
         const n = this.rearN, s = (n[0] * px + n[1] * py) * (0.1 * this.tiltPower);
         P[4] += n[0] * s; P[5] += n[1] * s;
       }
     } else if (keys.right) {
-      if (!this.rearContact && !this.frontContact) { P[4] -= px * (0.2 * this.tiltPower * k); P[5] -= py * (0.2 * this.tiltPower * k); }
+      if (!this.rearContact && !this.frontContact) { P[4] -= px * (0.2 * this.tiltPower); P[5] -= py * (0.2 * this.tiltPower); }
       else if (this.frontContact) {
         const n = this.frontN, s = (n[0] * px + n[1] * py) * (0.1 * this.tiltPower);
         P[2] += n[0] * s; P[3] += n[1] * s;
@@ -678,8 +676,8 @@ const SELF_WRECK_DAMAGE = 6;
 
 /** Metres up where the truck starts to hold its heading in the air, and where it fully does. */
 export const HOLD_HEADING = [1000, 1200];
-/** Holding its heading: the fastest it turns with left or right held (rad a step: 180°/s), and the share of the way to the turn it wants it gets a step. */
-export const HOLD_TURN = { rate: Math.PI / STEP_HZ, ease: 0.15 };
+/** Holding its heading: the share of its turning it loses each step once let go. */
+export const HOLD_TURN = { ease: 0.15 };
 /** Endless Mode's milestones: distances (then every `every` metres), and scores. */
 export const MILESTONES = { metres: [100, 250, 500, 750, 1000], every: 500, scores: [5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000] };
 /** Steps a milestone stays on screen. */

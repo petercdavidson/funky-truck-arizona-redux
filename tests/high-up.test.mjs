@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Game, Truck, HOLD_TURN } from '../src/game.js';
+import { Game, Truck } from '../src/game.js';
 import { SoundWatcher, SCRAPE_LIMIT, engineVolume } from '../src/sound-events.js';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
@@ -27,10 +27,11 @@ function spin(holdTurn, held, steps) {
   return out;
 }
 
-test('high up, the truck turns at a steady rate while steered and stops when let go', () => {
+test('high up, the truck turns just as low down while steered, and stops when let go', () => {
   const plane = spin(1, 70, 140), truck = spin(0, 70, 140);
-  // steered: it turns the way left turns, at about the set rate (not faster and faster)
-  assert.ok(plane[69] < 0 && Math.abs(plane[69] + HOLD_TURN.rate) < HOLD_TURN.rate * 0.2, `turning ${plane[69]}`);
+  // steered: exactly as low down
+  for (let i = 0; i < 70; i++) assert.equal(plane[i], truck[i]);
+  assert.ok(plane[69] < 0, 'left turns it back');
   // let go: it stops within a second (the truck's own way keeps on spinning)
   assert.ok(Math.abs(plane[139]) < 0.002, `still turning ${plane[139]} after letting go`);
   assert.ok(Math.abs(truck[139]) > 0.02, 'down low it keeps spinning');

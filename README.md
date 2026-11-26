@@ -58,8 +58,8 @@ until it first lands. Nothing goes faster than 9999 km/h (only Sandbox gets near
 When the truck is so high that the ground below it is out of sight, an **altitude** reading
 (▼ metres or feet to the ground) comes up under the speedometer (and stays while paused). Outside 2006 Mode,
 higher still (measured from where the stage starts) the sky darkens into space at real heights (deep blue by 20 km, black with stars by 100 km;
-clouds stop at 18 km) and the truck darkens with it; above 1 km it steers like a plane in the air (turning
-steadily while you tilt, and holding its heading when you let go; never in Classic, under its ceiling); and
+clouds stop at 18 km) and the truck darkens with it; above 1 km it steers like a plane in the air (tilting
+turns it just as down low, but let go and it eases to a stop and holds its heading; never in Classic, under its ceiling); and
 the engine fades out by 10 km, leaving only the rocket. A cab scraping the ground where it does no damage
 (on its roof in Sandbox, say) is heard only as long as scraping would take to wreck it in Classic, then fades. Outside 2006 Mode the backdrop moves
 a little too: sideways as you travel, and down as you climb, so the mountains sink away below a
