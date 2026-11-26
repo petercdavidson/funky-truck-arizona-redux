@@ -359,6 +359,13 @@ export class Wreck {
   }
 
   /** The body's middle, for the camera to follow. */
+  /** How far the body moved in the last step (px): the average of its points' moves. */
+  get bodySpeed() {
+    let x = 0, y = 0;
+    for (const i of this.body) { x += this.T[i * 2] - this.P[i * 2]; y += this.T[i * 2 + 1] - this.P[i * 2 + 1]; }
+    return Math.hypot(x, y) / this.body.length;
+  }
+
   get centre() {
     let x = 0, y = 0;
     for (const i of this.body) { x += this.T[i * 2]; y += this.T[i * 2 + 1]; }

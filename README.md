@@ -116,7 +116,7 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Forwards / reverse | ↑ / ↓ (or W / S) | right-hand pedals (slide between them) | A or RT / B or LT |
 | Tilt back / forwards | ← / → (or A / D) | left-hand buttons (slide between them) | stick or d-pad |
 | One Button | Space or ↑ | hold anywhere | A |
-| Pause | P | ⏸ button | Start |
+| Pause | P (and Esc in Classic and a timed Time Trial) | ⏸ button | Start |
 | Flip upright (when offered) | R | Flip button | Y |
 | Play again (game over) | Space, Enter or Ctrl | Play Again button | A |
 | Menus: move / choose / back | ↑ ↓ / Enter / Esc, or the mouse | tap | stick or d-pad / A / B |
@@ -124,14 +124,14 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Sound on / off | | Sound switch (Options screen or pause menu) | |
 | Full screen | F | | |
 | Sandbox: fire a missile | X | fire button (right) | X |
-| Sandbox: jump | Z | jump button (left) | LB |
-| Sandbox: boost (hold) | C or Shift | boost button (right) | RB |
+| Sandbox: jump | Z | jump button (left) | LB, or Y |
+| Sandbox: boost (hold) | C or Shift (not with ⌘ or Ctrl, so screenshots don't boost) | boost button (right) | RB |
 
 **Options** (on the title screen) has the switches for sound, the controls (Standard / Pedals or
 One Button), the dynamic camera, the dynamic crash cam, **Units** (metric, or imperial: mph, and
 heights in feet, then miles past a mile), and **Show Frame Rate** (frames per second
 in the bottom left corner). Options for one mode stay on that
-mode's screen (Classic's Tricks and 2006 Mode; Time Trial's Tricks, Damage, 2006 Mode and Ghost). The speaker button in the top
+mode's screen (Classic's Tricks and 2006 Mode checkboxes, one or the other; Time Trial's Tricks, Damage, 2006 Mode and Ghost). The speaker button in the top
 right corner of the title screen switches the sound on and off too.
 
 The game's

@@ -113,11 +113,13 @@ function chooseMode() {
 }
 
 /**
- * Esc: the easter egg first (outside 2006 Mode, a truck being driven is wrecked on the spot, and
- * its pieces tumble; in Classic and Time Trial it can't finish the stage after), then back a
- * level as usual.
+ * Esc: in Classic and a Time Trial run that could set a time, pause; otherwise the easter egg
+ * first (outside 2006 Mode, a truck being driven is wrecked on the spot, and its pieces tumble; in
+ * Time Trial it can't finish the stage after), then back a level as usual.
  */
 function escape() {
+  // Classic and a Time Trial run that could set a time: Esc pauses (and resumes) instead.
+  if (game.escPauses && (game.screen === 'playing' || game.screen === 'paused')) { game.togglePause(); return; }
   if (game.screen === 'playing' && game.selfWreck()) { sound.play('wreck'); return; }
   if (game.screen === 'classicSelect') { doAction('play'); return; }
   if (game.sandboxPick) { doAction('sbPickClose'); return; }
@@ -131,6 +133,11 @@ function escape() {
 const PRESS_KEYS = { KeyX: 'fire', KeyZ: 'jump' };
 
 function onKey(e, down) {
+  // With Cmd or Ctrl held (Cmd-Shift-4 for a screenshot, say), Shift is part of a shortcut, not boost.
+  if (down && (e.metaKey || e.ctrlKey) && (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'MetaLeft' || e.code === 'MetaRight')) {
+    keyboard.boost = false; combineKeys();
+    return;
+  }
   const name = KEY_MAP[e.code];
   if (name || e.code === 'Escape' || PRESS_KEYS[e.code]) e.preventDefault();
   if (down) setTouchMode(false);
@@ -395,7 +402,7 @@ document.addEventListener('touchstart', (e) => {
 let padPauseWasDown = false;
 let padStartWasDown = false;
 let padUpWasDown = false, padDownWasDown = false;
-let padFireWasDown = false, padJumpWasDown = false;
+let padFireWasDown = false, padJumpWasDown = false, padTopWasDown = false, padWreckWasDown = false;
 let padSelectWasDown = false, padBackWasDown = false;
 let padDir = '', padDirNext = 0;          // the stick / d-pad direction held in menus, and when it repeats
 
@@ -403,7 +410,7 @@ function pollGamepads() {
   const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
   Object.assign(padKeys, emptyKeys());
   let pauseDown = false, startDown = false, upDown = false, downDown = false, fireDown = false, jumpDown = false;
-  let leftDown = false, rightDown = false, selectDown = false, backDown = false;
+  let leftDown = false, rightDown = false, selectDown = false, backDown = false, topDown = false, wreckDown = false;
   for (const p of pads) {
     const b = (i) => !!p.buttons[i]?.pressed;
     const ax = p.axes[0] || 0;
@@ -413,10 +420,11 @@ function pollGamepads() {
     padKeys.right ||= b(15) || ax > 0.4;
     padKeys.restart ||= b(0) || b(9);
     padKeys.one ||= b(0);
-    padKeys.upright ||= b(3);                      // Y
     padKeys.boost ||= b(5);                        // Sandbox: right bumper boosts,
     fireDown ||= b(2);                             // X fires a missile,
-    jumpDown ||= b(4);                             // and the left bumper jumps
+    jumpDown ||= b(4);                             // and the left bumper jumps;
+    topDown ||= b(3);                              // Y jumps, or flips you upright when you can;
+    wreckDown ||= b(11);                           // the right stick clicked in wrecks the truck
     pauseDown ||= b(9);                            // Start
     startDown ||= b(0) || b(9);
     upDown ||= b(12) || (p.axes[1] || 0) < -0.5;
@@ -449,6 +457,12 @@ function pollGamepads() {
     if (!inMenu) padDir = '';
     if (fireDown && !padFireWasDown) game.press('fire');
     if (jumpDown && !padJumpWasDown) game.press('jump');
+    // Y: flip upright when that's on offer (on your roof, stuck), else jump.
+    if (topDown && game.screen === 'playing') {
+      if (game.canUpright || game.righting > 0) padKeys.upright = true;
+      else if (!padTopWasDown) game.press('jump');
+    }
+    if (wreckDown && !padWreckWasDown && game.screen === 'playing' && game.selfWreck()) sound.play('wreck');
     padKeys.restart = padKeys.restart && game.screen === 'gameOver';
     combineKeys();
   }
@@ -458,6 +472,8 @@ function pollGamepads() {
   padDownWasDown = downDown;
   padFireWasDown = fireDown;
   padJumpWasDown = jumpDown;
+  padTopWasDown = topDown;
+  padWreckWasDown = wreckDown;
   padSelectWasDown = selectDown;
   padBackWasDown = backDown;
 }
@@ -561,6 +577,8 @@ function frame(now) {
   if (ds.screen !== game.screen) ds.screen = game.screen;
   const snd = game.soundOn ? '1' : '0';
   if (ds.sound !== snd) ds.sound = snd;
+  const retroOn = game.rules?.retro ? '1' : '0';
+  if (ds.retro !== retroOn) ds.retro = retroOn;
   // 2006 Mode: a frame every 1/30 s (a few ms early is fine: the screen's own frames are what
   // it waits on), showing the latest step as it is.
   const retro = !!game.rules.retro && RETRO_SCREENS.has(game.screen);

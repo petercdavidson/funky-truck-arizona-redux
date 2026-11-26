@@ -150,6 +150,26 @@ body[data-screen="playing"] #corner { display: flex; }
 #corner svg { width: 22px; height: 22px; flex: none; }
 #corner button:hover { background: rgba(110, 76, 64, 0.7); }
 #pause-button { width: 44px; }
+#pause-button .retro-icon { display: none; }
+/* 2006 Mode: a square button in the stage's own pixels (the view is 576 of them across). */
+body[data-retro="1"] #pause-button {
+  --px: max(2px, calc(var(--view-w, 576px) / 576));
+  width: calc(var(--px) * 18);
+  height: calc(var(--px) * 18);
+  border-radius: 0;
+  border: var(--px) solid #fff;
+  background: rgba(0, 0, 0, 0.5);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+body[data-retro="1"] #pause-button svg { display: none; }
+body[data-retro="1"] #pause-button svg.retro-icon {
+  display: block;
+  width: calc(var(--px) * 8);
+  height: calc(var(--px) * 8);
+  fill: #fff;
+  stroke: none;
+}
 #corner #upright-button {
   display: none !important;
   grid-auto-flow: column;

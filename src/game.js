@@ -1303,7 +1303,12 @@ export class Game {
   showMenu(screen) {
     // Leaving an Endless run part-way (quitting from pause, say) still counts its distance.
     if (this.mode === 'endless' && (this.screen === 'playing' || this.screen === 'paused')) this.saveEndlessBest();
-    if (this.screen === 'playing' || this.screen === 'paused') { this.saveStuntBest(); this.saveStats(); }
+    if (this.screen === 'playing' || this.screen === 'paused') {
+      this.saveStuntBest();
+      // Quitting Classic part-way still counts the points scored so far as a high score.
+      if (this.mode === 'campaign' && this.rules.damage) { this.bankTricks(); this.saveBest(this.score); }
+      this.saveStats();
+    }
     this.stats = this.realStats; // (back from a Sandbox run's throwaway stats)
     this.sandboxPick = null;
     // The title's truck carries on as it was under the mode picker, and back from it.
@@ -1353,6 +1358,9 @@ export class Game {
 
   /** Wrecking on purpose works outside 2006 Mode (which has no ragdoll wreck). */
   get selfWreckAllowed() { return !this.rules.retro; }
+
+  /** Esc pauses instead of wrecking in Classic and in a Time Trial run that could set a time. */
+  get escPauses() { return this.mode === 'campaign' || this.timeCounts; }
 
   /**
    * Whether a truck wrecked on purpose can still finish the stage, its body rolling over the line:
@@ -1908,7 +1916,9 @@ export class Game {
    */
   updateSpeedometer() {
     const t = this.truck;
-    const raw = this.wreck || !this.landed ? 0 : t.speed * KMH_PER_PX_STEP;
+    // (An Esc wreck reads its body's speed: you meant it, so you'll want to see how fast it goes.)
+    const raw = this.wreck ? (this.selfWrecked ? this.wreck.bodySpeed * KMH_PER_PX_STEP : 0)
+      : !this.landed ? 0 : t.speed * KMH_PER_PX_STEP;
     this.speedKmh += (raw - this.speedKmh) * 0.15;
     if (!this.wreck && this.landed) {
       this.stats.topSpeed = Math.max(this.stats.topSpeed, this.speedKmh);
@@ -1947,8 +1957,9 @@ export class Game {
    */
   updateAltitude() {
     this.altitude = null;
-    if (this.rules.retro || this.wreck || !this.landed) return;
-    const t = this.truck, x = (t.T[2] + t.T[4]) / 2, y = Math.min(t.T[3], t.T[5]);
+    if (this.rules.retro || (this.wreck && !this.selfWrecked) || !this.landed) return;
+    // (After an Esc wreck, from its body.)
+    const t = this.truck, [x, y] = this.wreck ? this.wreck.centre : [(t.T[2] + t.T[4]) / 2, Math.min(t.T[3], t.T[5])];
     const bottom = this.camY + this.viewH * this.zoom;
     if (y > bottom) return;
     // (from just below the view's bottom edge: ground any nearer would be in sight)

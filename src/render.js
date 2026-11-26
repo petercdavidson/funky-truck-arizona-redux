@@ -160,20 +160,25 @@ const TRIAL_OPTIONS = [
 ];
 /** Why a Time Trial run's time won't count, if it won't (for the screen and the game-over box). */
 const trialNote = (g) => (!g.practiceDamage ? 'Damage off: times aren\'t records' : 'Times count with damage on');
-/** Classic's switches: [label, action]. 2006 Mode always has tricks off. */
+/**
+ * Classic's switches, as checkboxes: [label, action, checked, greyed out, why]. Tricks and 2006 Mode
+ * don't go together, so while one is ticked the other is greyed out, with a note saying why.
+ */
 const CLASSIC_OPTIONS = [
-  [(g) => `Tricks: ${onOff(g.classicTricks && !g.classicRetro)}`, 'classicTricks'],
-  [(g) => `2006 Mode: ${onOff(g.classicRetro)}`, 'classicRetro'],
+  ['Tricks', 'classicTricks', (g) => g.classicTricks && !g.classicRetro, (g) => g.classicRetro, 'Tricks are disabled in 2006 Mode'],
+  ['2006 Mode', 'classicRetro', (g) => g.classicRetro, (g) => g.classicTricks && !g.classicRetro, '2006 Mode requires tricks disabled'],
 ];
 /** What Classic's switches, as set, make of it. */
 const classicAbout = (g) => (g.classicRetro ? 'The original game as it looked in 2006: 576x448 at 30 fps, no tricks'
   : g.classicTricks ? 'The original game, with tricks scored in chains' : 'The original game, with the new look and extras');
-/** Classic's screen: Start, its two switches and Back (from the mode picker). */
+/** Where Classic's checkbox i goes. */
+const classicCheck = (i, tall) => (tall ? r(60, 372 + 62 * i, 240, 34) : r(198, 282 + 42 * i, 180, 24));
+/** Classic's screen: Start, its two checkboxes and Back (from the mode picker). */
 function classicButtons(tall) {
   return [
     { rect: tall ? r(60, 300, 240, 48) : r(208, 236, 160, 34), label: 'Start', action: 'classic', size: tall ? 17 : 14 },
-    ...CLASSIC_OPTIONS.map(([label, action], i) => (tall ? { rect: r(60, 372 + 44 * i, 240, 34), label, action, size: 13 }
-      : { rect: r(198, 286 + 30 * i, 180, 24), label, action, small: true })),
+    ...CLASSIC_OPTIONS.map(([label, action, check, disabled], i) => ({ rect: classicCheck(i, tall), label, action, check, disabled,
+      ...(tall ? { size: 14 } : { small: true, size: 12 }) })),
     { rect: tall ? r(80, 520, 200, 38) : r(228, 400, 120, 25), label: 'Back', action: 'play', ...(tall ? T_BIG : {}) },
   ];
 }
@@ -457,7 +462,7 @@ export function statsColumns(game) {
     ['Distance driven', dist(S.distance)],
     ['Time driving', time],
     ['Runs', n(S.runs)],
-    ['Stages finished', n(S.stages)],
+    ['Finish lines crossed (any mode)', n(S.stages)],
     ['Flips', n(S.backflips + S.frontflips)],
     ['Backflips', n(S.backflips)],
     ['Frontflips', n(S.frontflips)],
@@ -671,6 +676,30 @@ export class Renderer {
   }
 
   /** Draw a screen's buttons (`picker`: Sandbox's open list of choices, or the rest). */
+  /** A checkbox button's face: a box, ticked or not, then its label. */
+  checkLabel(label, on, x, y, w, h, size) {
+    const ctx = this.ctx, box = Math.round(h * 0.6), bx = x + Math.round(h * 0.3), by = y + (h - box) / 2;
+    ctx.save();
+    ctx.lineWidth = this.tall ? 2.5 : 2;
+    ctx.strokeStyle = '#fff';
+    ctx.fillStyle = on ? MILESTONE_GOLD : 'rgba(0,0,0,0.25)';
+    ctx.fillRect(bx, by, box, box);
+    ctx.strokeRect(bx, by, box, box);
+    if (on) {
+      ctx.strokeStyle = '#3a2418';
+      ctx.lineWidth = this.tall ? 3.5 : 2.5;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(bx + box * 0.2, by + box * 0.52);
+      ctx.lineTo(bx + box * 0.42, by + box * 0.76);
+      ctx.lineTo(bx + box * 0.8, by + box * 0.26);
+      ctx.stroke();
+    }
+    ctx.restore();
+    const left = bx + box + h * 0.3;
+    this.centredLabel(label.toUpperCase(), (left + x + w - 6) / 2, y + h / 2, x + w - 6 - left, { size, weight: '800' });
+  }
+
   buttons(screen, game, picker = !!game?.sandboxPick) {
     for (const b of buttonsFor(screen, this.tall)) {
       if (!showing(b, game, picker)) continue;
@@ -681,7 +710,8 @@ export class Renderer {
         const label = typeof b.label === 'function' ? b.label(game, this) : b.label;
         const size = b.size || (b.small ? 10 : 11.5);
         this.roundRect(x, y, w, h, this.tall ? 6 : 4, b.small ? 'rgba(107, 74, 64, 0.7)' : BUTTON_FILL);
-        this.centredLabel(label.toUpperCase(), x + w / 2, y + h / 2, w - 8, { size, weight: '800' });
+        if (b.check) this.checkLabel(label, b.check(game), x, y, w, h, size);
+        else this.centredLabel(label.toUpperCase(), x + w / 2, y + h / 2, w - 8, { size, weight: '800' });
       }
       if (off) this.ctx.restore();
       else if (this.hover === b && !b.noHover) this.roundRect(x, y, w, h, this.tall ? 6 : 4, 'rgba(255,255,255,0.16)', this.padHover ? '#fff' : null, this.tall ? 3 : 2);
@@ -1433,6 +1463,12 @@ export class Renderer {
       this.text(best > 0 ? best.toLocaleString('en-US') : '—', x1, y0 + rowH * i, { size, weight: '800', align: 'right', color });
     });
     this.buttons('classicSelect', game);
+    // Under a greyed-out checkbox, why.
+    CLASSIC_OPTIONS.forEach(([, , , disabled, why], i) => {
+      if (!disabled(game)) return;
+      const { y, h } = classicCheck(i, tall);
+      this.text(why, cx, y + h + (tall ? 5 : 3), { size: tall ? 12.5 : 10.5, weight: '600', color: 'rgba(255,255,255,0.7)' });
+    });
   }
 
   stageEditor(game) {
