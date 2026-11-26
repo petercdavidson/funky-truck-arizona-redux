@@ -4,6 +4,7 @@
 // a line-for-line port of the original Flash ActionScript. Comments name the original obfuscated
 // identifiers where that helps cross-checking. Everything runs at the original 70 steps/second.
 
+import { validPadMap, assignPad, defaultPadMap } from './pad.js';
 import { Critters } from './critters.js';
 import { buildGrammar, EndlessCourse, ENDLESS_WIDTH, ENDLESS_SHIFT } from './endless.js';
 import { TrickTracker } from './tricks.js';
@@ -730,7 +731,9 @@ export class Game {
     this.crashCam = flag('crashCam', true);
     this.ghostOn = flag('ghost', true);
     this.showFps = flag('showFps', false);
-    this.imperial = flag('imperial', false);   // speeds in mph, heights in ft and mi (units.js)
+    this.imperial = flag('imperial', false);
+    this.padMap = validPadMap(this.store.get('padMap'));   // the gamepad's buttons (pad.js)
+    this.padListen = null;            // the Controller screen: the action waiting for a button press   // speeds in mph, heights in ft and mi (units.js)
     // Time Trial: the best time on each track (see trial.js), and the run under way.
     this.trialBests = validBests(this.store.get('trialBests'));
     this.stuntBests = validStuntBests(this.store.get('stuntBests'));   // the stunt tracks' best trick scores
@@ -850,6 +853,13 @@ export class Game {
     if (!key) return;
     this[option] = !this[option];
     this.store.set(key, this[option]);
+  }
+
+  /** The Controller screen: set `action` to gamepad button i (or put them all back, with no action). */
+  setPad(action, i) {
+    this.padMap = action ? assignPad(this.padMap, action, i) : defaultPadMap();
+    this.padListen = null;
+    this.store.set('padMap', this.padMap);
   }
 
   /** The dynamic camera applies outside 2006 Mode, when switched on. */
@@ -1324,6 +1334,7 @@ export class Game {
     }
     this.stats = this.realStats; // (back from a Sandbox run's throwaway stats)
     this.sandboxPick = null;
+    this.padListen = null;
     // The title's truck carries on as it was under the mode picker, and back from it.
     const overTitle = (a, b) => (a === 'title' && b === 'modes') || (a === 'modes' && b === 'title');
     if ((screen === 'title' || screen === 'garage') && !overTitle(this.screen, screen)) this.garageTruck.reset(STAGE_W / 2, 120);

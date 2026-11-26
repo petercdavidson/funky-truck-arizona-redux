@@ -130,7 +130,7 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 **Options** (on the title screen) has the switches for sound, the controls (Standard / Pedals or
 One Button), the dynamic camera, the dynamic crash cam, **Units** (metric, or imperial: mph, and
 heights in feet, then miles past a mile), and **Show Frame Rate** (frames per second
-in the bottom left corner). Options for one mode stay on that
+in the bottom left corner). **Controller** (on the Options screen) sets which gamepad button does what while driving: tap an action, then press the button (the menus always use A and B). Options for one mode stay on that
 mode's screen (Classic's Tricks and 2006 Mode checkboxes, one or the other; Time Trial's Tricks, Damage, 2006 Mode and Ghost). The speaker button in the top
 right corner of the title screen switches the sound on and off too.
 

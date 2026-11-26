@@ -59,6 +59,9 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `src/trial.js` (no DOM): Time Trial's time formats, saved bests and ghosts. `Game.updateTrial` runs
   the clock (from first landing to the finish line) and records the ghost; ghosts are poses, not
   inputs, so they survive physics changes.
+- `src/pad.js` (no DOM): the gamepad's buttons for each driving action (`game.padMap`, saved as
+  `funkytruck.padMap`), set on the Controller screen (`padMap`, from Options); `pollGamepads` in
+  main.js reads them. Menus always use the stick / d-pad, A and B.
 - `src/version.js`: the version on the title screen (the Pages deploy stamps in the commit).
 - `assets/stunts.json`: the stunt tracks (after the nine stages; in Time Trial as tracks TRIAL_STUNTS on), built by
   `node tools/make-stunts.mjs` from the stages' own column shapes and joins, stored a column at a
@@ -145,7 +148,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   for game state. `Renderer` scales the stage to fit the screen.
 - The physics is a faithful port of the original game. Treat changes to `Truck` / `CollisionWorld`
   as gameplay changes: say so explicitly and add or adjust tests.
-- Screens are `game.screen` strings: `title`, `modes` (the mode picker over the title), `classicSelect`, `stats`, `pauseOptions`, `options`, `help`, `garage`, `practiceSelect`, `trialSelect`, `sandbox`, `stageEditor`, `stageLoad`, `sandboxTweaks`, `playing`,
+- Screens are `game.screen` strings: `title`, `modes` (the mode picker over the title), `classicSelect`, `stats`, `pauseOptions`, `options`, `padMap`, `help`, `garage`, `practiceSelect`, `trialSelect`, `sandbox`, `stageEditor`, `stageLoad`, `sandboxTweaks`, `playing`,
   `paused`, `gameOver`. A new screen needs an entry in `BUTTONS`, a case in `Renderer.draw`, and
   `body[data-screen]` CSS if it affects touch controls.
 - Saved data goes through `game.store` (key prefix `funkytruck.` in localStorage). Validate

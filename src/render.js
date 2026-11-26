@@ -11,13 +11,14 @@ import { Wreck } from './wreck.js';
 import { TRIAL_ALL, TRIAL_STUNTS, formatTime, formatGap } from './trial.js';
 import { battleBack, battleFront, battleHud } from './render-battle.js';
 import { circles } from './battle.js';
+import { PAD_ACTIONS, padName } from './pad.js';
 import { cloudsNear, CRITTERS } from './critters.js';
 import { SANDBOX_ROWS, SANDBOX_ROW, sandboxValue } from './sandbox.js';
 import { formatSpeed, formatDistance, formatHeight, speedoShare } from './units.js';
 
 const DEG = Math.PI / 180;
 const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'sandboxTweaks', 'gameOver']);
-const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'help', 'garage', 'classicSelect', 'trialSelect', 'sandbox', 'stageEditor', 'stageLoad']);
+const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'padMap', 'help', 'garage', 'classicSelect', 'trialSelect', 'sandbox', 'stageEditor', 'stageLoad']);
 const AHEAD = '#8ff0a4', BEHIND = '#ffb0a0'; // Time Trial gaps: ahead of / behind your best
 const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
@@ -79,6 +80,19 @@ function pauseOptionButtons(tall, extra = {}) {
       { rect: tall ? r(80, 560, 200, 38) : r(229, 400, 120, 25), label: 'Back', action: 'pauseBack', show: when, ...extra },
     ];
   });
+}
+
+/** The Controller screen: a row per action (tap it, then press the button for it), Reset and Back. */
+const padRow = (i, tall) => (tall ? r(20, 84 + 54 * i, 320, 44) : r(118, 62 + 36 * i, 340, 28));
+function padMapButtons(tall) {
+  const B = tall ? T_BIG : {};
+  return [
+    ...PAD_ACTIONS.map(([action, name], i) => ({ rect: padRow(i, tall), action: `padSet:${action}`,
+      label: (g) => (g.padListen === action ? `${name}: press a button…` : `${name}: ${(g.padMap[action] || []).map(padName).join(' or ') || '—'}`),
+      ...(tall ? { size: 14 } : { size: 12 }) })),
+    { rect: tall ? r(30, 84 + 54 * PAD_ACTIONS.length + 40, 145, 40) : r(160, 400, 120, 25), label: 'Reset', action: 'padReset', ...B },
+    { rect: tall ? r(185, 84 + 54 * PAD_ACTIONS.length + 40, 145, 40) : r(296, 400, 120, 25), label: 'Back', action: 'options', ...B },
+  ];
 }
 
 /** High Scores: Reset and Menu, or while a reset is being confirmed, Yes (once it may) and No. */
@@ -301,8 +315,10 @@ export const BUTTONS = {
   stats: statsButtons(false),
   options: [
     ...OPTIONS.map(([label, action], i) => ({ rect: optionRow(i, false), label, action })),
-    { rect: r(228, 400, 120, 25), label: 'Menu', action: 'menu' },
+    { rect: r(160, 400, 120, 25), label: 'Controller', action: 'padMap' },
+    { rect: r(296, 400, 120, 25), label: 'Menu', action: 'menu' },
   ],
+  padMap: padMapButtons(false),
   pauseOptions: pauseOptionButtons(false),
   help: [{ rect: r(229, 386, 120, 25), label: 'Menu', action: 'menu' }],
   garage: [
@@ -331,7 +347,7 @@ export const BUTTONS = {
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 680, modes: 680, classicSelect: 600, stats: 760, options: 620, pauseOptions: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 760, sandboxTweaks: 720, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
+export const TALL_H = { title: 680, modes: 680, classicSelect: 600, stats: 760, options: 670, padMap: 640, pauseOptions: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 760, sandboxTweaks: 720, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
@@ -345,8 +361,10 @@ export const TALL_BUTTONS = {
   stats: statsButtons(true, T_BIG),
   options: [
     ...OPTIONS.map(([label, action], i) => ({ rect: optionRow(i, true), label, action, ...T_BIG })),
-    { rect: r(80, 560, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
+    { rect: r(80, 556, 200, 38), label: 'Controller', action: 'padMap', ...T_BIG },
+    { rect: r(80, 606, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
   ],
+  padMap: padMapButtons(true),
   pauseOptions: pauseOptionButtons(true, T_BIG),
   help: [{ rect: r(80, 500, 200, 38), label: 'Menu', action: 'menu', ...T_BIG }],
   garage: [
@@ -1382,6 +1400,20 @@ export class Renderer {
     this.buttons(screen, game);
   }
 
+  /** The Controller screen: which gamepad button does what while driving. */
+  padMap(game) {
+    const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
+    this.text('Controller', cx, tall ? 22 : 14, { size: tall ? 26 : 22, weight: '800' });
+    const note = game.padListen ? 'Press the gamepad button for it (Esc to stop)' : 'Tap an action, then press the gamepad button for it. The menus always use A and B.';
+    this.fitText(note, cx, tall ? 56 : 42, tall ? 330 : 520, { size: tall ? 12.5 : 11, weight: '600', color: 'rgba(255,255,255,0.85)' });
+    this.buttons('padMap', game);
+    if (game.padListen) {
+      const i = PAD_ACTIONS.findIndex(([a]) => a === game.padListen), R = padRow(i, tall);
+      this.ctx.strokeStyle = MILESTONE_GOLD; this.ctx.lineWidth = 2;
+      this.ctx.beginPath(); this.ctx.roundRect?.(R.x - 1, R.y - 1, R.w + 2, R.h + 2, 5); this.ctx.stroke();
+    }
+  }
+
   /** The pause menu's Options, over the dimmed game. */
   pauseOptions(game) {
     this.overlayDim(0.55);
@@ -1727,6 +1759,7 @@ export class Renderer {
         case 'stats': this.stats(game); break;
         case 'help': this.help(game); break;
         case 'options': this.options(game); break;
+        case 'padMap': this.padMap(game); break;
         case 'garage': this.garage(game, v); break;
         case 'classicSelect': this.classicSelect(game); break;
         case 'trialSelect': this.trialSelect(game); break;

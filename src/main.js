@@ -122,6 +122,7 @@ function escape() {
   if (game.escPauses && (game.screen === 'playing' || game.screen === 'paused')) { game.togglePause(); return; }
   if (game.screen === 'playing' && game.selfWreck()) { sound.play('wreck'); return; }
   if (game.screen === 'classicSelect') { doAction('play'); return; }
+  if (game.screen === 'padMap') { if (game.padListen) game.padListen = null; else doAction('options'); return; }
   if (game.sandboxPick) { doAction('sbPickClose'); return; }
   if (game.screen === 'pauseOptions') { doAction('pauseBack'); return; }
   if (game.screen === 'sandboxTweaks') { doAction('tweaksBack'); return; }
@@ -226,6 +227,9 @@ function doAction(a) {
   else if (a === 'endRun') game.endRun();
   else if (a === 'trial') game.showMenu('trialSelect');
   else if (a === 'options') game.showMenu('options');
+  else if (a === 'padMap') game.showMenu('padMap');
+  else if (a.startsWith('padSet:')) game.padListen = game.padListen === a.slice(7) ? null : a.slice(7);
+  else if (a === 'padReset') game.setPad(null);
   else if (/^trial\d+$/.test(a)) game.startTrial(Number(a.slice(5)));
   else if (a === 'garage') game.showMenu('garage');
   else if (a === 'help') game.showMenu('help');
@@ -404,28 +408,45 @@ let padStartWasDown = false;
 let padUpWasDown = false, padDownWasDown = false;
 let padFireWasDown = false, padJumpWasDown = false, padTopWasDown = false, padWreckWasDown = false;
 let padSelectWasDown = false, padBackWasDown = false;
-let padDir = '', padDirNext = 0;          // the stick / d-pad direction held in menus, and when it repeats
+let padDir = '', padDirNext = 0;
+let padHeld = new Set();                  // the buttons held at the last look (the Controller screen)          // the stick / d-pad direction held in menus, and when it repeats
 
 function pollGamepads() {
   const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
   Object.assign(padKeys, emptyKeys());
   let pauseDown = false, startDown = false, upDown = false, downDown = false, fireDown = false, jumpDown = false;
   let leftDown = false, rightDown = false, selectDown = false, backDown = false, topDown = false, wreckDown = false;
+  const M = game.padMap || {};
+  // The Controller screen, waiting for a button: the first one pressed (not one already held).
+  if (game.screen === 'padMap' && game.padListen) {
+    const now = new Set();
+    for (const p of pads) p.buttons.forEach((x, i) => { if (x?.pressed) now.add(i); });
+    const fresh = [...now].find((i) => !padHeld.has(i));
+    padHeld = now;
+    if (fresh !== undefined) { game.setPad(game.padListen, fresh); sound.play('click'); }
+    // (and nothing else this time: the press is used up)
+    padSelectWasDown = padBackWasDown = padStartWasDown = true;
+    return;
+  }
+  padHeld = new Set();
+  for (const p of pads) p.buttons.forEach((x, i) => { if (x?.pressed) padHeld.add(i); });
   for (const p of pads) {
     const b = (i) => !!p.buttons[i]?.pressed;
     const ax = p.axes[0] || 0;
-    padKeys.up ||= b(0) || b(7) || b(12);          // A, right trigger, d-pad up
-    padKeys.down ||= b(1) || b(6) || b(13);        // B, left trigger, d-pad down
+    // (driving: the buttons as set on the Controller screen, game.padMap; the d-pad and stick too)
+    const on = (action) => (M[action] || []).some(b);
+    padKeys.up ||= on('gas') || b(12);
+    padKeys.down ||= on('brake') || b(13);
     padKeys.left ||= b(14) || ax < -0.4;
     padKeys.right ||= b(15) || ax > 0.4;
     padKeys.restart ||= b(0) || b(9);
-    padKeys.one ||= b(0);
-    padKeys.boost ||= b(5);                        // Sandbox: right bumper boosts,
-    fireDown ||= b(2);                             // X fires a missile,
-    jumpDown ||= b(4);                             // and the left bumper jumps;
-    topDown ||= b(3);                              // Y jumps, or flips you upright when you can;
-    wreckDown ||= b(11);                           // the right stick clicked in wrecks the truck
-    pauseDown ||= b(9);                            // Start
+    padKeys.one ||= on('gas');
+    padKeys.boost ||= on('boost');                 // Sandbox: boost (RB),
+    fireDown ||= on('fire');                       // fire a missile (X),
+    jumpDown ||= on('jump');                       // jump (LB);
+    topDown ||= on('top');                         // jump, or flip upright when you can (Y);
+    wreckDown ||= on('wreck');                     // wreck the truck (the right stick clicked in)
+    pauseDown ||= on('pause');                     // Start
     startDown ||= b(0) || b(9);
     upDown ||= b(12) || (p.axes[1] || 0) < -0.5;
     downDown ||= b(13) || (p.axes[1] || 0) > 0.5;
