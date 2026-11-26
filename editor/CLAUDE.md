@@ -40,7 +40,8 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
   events go to `#scroller`.
 - Zoom: pinch (Ctrl+wheel in Chrome/Firefox, `gesture*` events in Safari), Ctrl/⌘+scroll,
   `+`/`-`/`0`, zooming at the pointer. `#mini` along the bottom is the whole level.
-- Tools (`tool`): `paint` (B), `select` (S), `path` (G), `shape` (Q), `start` (T), `finish` (F); each
+- Tools (`tool`): `paint` (B; E picks sky: erase), `select` (S), `path` (G), `shape` (Q: draws a shape,
+  or picks any path to move it and resize it by its box, `shapeDown`), `start` (T), `finish` (F); each
   has a panel (`.tp`). Picking a tile in the tiles switches to Paint.
 - The level is in layers (`compose` makes `L.tiles`, the stage, from them): `L.base` (a loaded
   stage's or file's tiles; paths draw over it), each path's tiles (`g.delta`, `[cell, tile, ...]`,
@@ -68,7 +69,10 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
   all the way round, their ground on the right-hand side (clockwise: ground inside). Painting,
   moving, clearing or dropping tiles over a path's ground pieces runs `cutPaths(cells)`, which cuts
   the curve where it runs through those cells (exactly, with de Casteljau) into separate paths,
-  sharing out its tiles; covering only its dirt doesn't. Saved as `paths` ({ pts, closed, delta,
+  sharing out its tiles; covering only its dirt doesn't. With **Ledges at loose ends** (`#ledges`, on by default),
+  `layLine` lays an open path along its curve plus, at an end in mid-air (not within 1.5 tiles of the
+  level's edge or of ground below it), a straight run to the level's edge, turned towards its ground
+  side squared to an axis: so a path's ground never ends in a sharp point (the guide shows the curve only). Saved as `paths` ({ pts, closed, delta,
   chain }); older files' lists of points and single `path` still open.
 - Select: `box` is the selected area. Moving, Alt-drag copying, nudging, pasting and Duplicate
   make a floating area, `flt = { tiles, x, y, paint }`: the painted layer is `paint` with

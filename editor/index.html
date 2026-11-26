@@ -222,6 +222,7 @@
           <button class="btn" id="pathDel" title="Remove the selected point (Del)">Remove point</button>
           <button class="btn" id="pathForget" title="Remove this path and the tiles it made">Delete path</button>
           <button class="btn" id="pathSwap" title="Put the ground on the other side of the curve">Swap ground side</button></div>
+        <div class="row"><label title="A path that ends in mid-air, away from the level's edge and other ground, carries on as a ledge: it turns towards its ground side and runs straight to the level's edge, so its ground never ends in a sharp point"><input type="checkbox" id="ledges" checked> Ledges at loose ends</label></div>
         <div class="hint"><p>Click to add points; the tiles follow the curve, joining the ground either side, with fill chosen so the dirt's edge carries on from tile to tile. Where a click would add a point, a <b>+</b> shows: at the nearer end of the path, or on the curve itself.</p>
           <p>The ground is on the side with the brown ticks: below a path drawn left to right. A path can go any way: up a wall, back over itself for an overhang, upside down along a ceiling. Turned tiles are used where it needs them.</p>
           <p>Drag a point or a handle to reshape. <kbd>Alt</kbd>-drag a handle to make a corner: its handles then move on their own (the point shows as a diamond) until you <kbd>Alt</kbd>-click the point to line them up again. Double-click a point to make it smooth, right-click to remove it.</p>
@@ -1239,6 +1240,39 @@
       worker.onerror = () => { worker = null; wreqs.clear(); busy.clear(); again.clear(); };
     } catch { worker = null; }
     /** Lay path g's tiles over the layers below it (its old ones go); returns drawPath's result, or undefined while the worker does it. */
+    /**
+     * The line path g is laid along: its curve, and with Ledges at loose ends on, at an end that's
+     * in mid-air (away from the level's edge and from other ground) a ledge: the ground turns towards
+     * its side (the right-hand side of the way the path runs), squared to the nearer of up, down,
+     * left or right, and runs straight to the edge of the level. Shapes go all the way round: none.
+     */
+    function layLine(g, base) {
+      const line = guideLine(g.pts);
+      if (g.closed || !$('ledges').checked || line.length < 4) return line;
+      const W = L.width * TILE, H = L.height * TILE, M = TILE * 1.5;
+      const nearEdge = ([x, y]) => x < M || y < M || x > W - M || y > H - M;
+      const nearGround = ([x, y]) => {
+        const cx = Math.floor(x / TILE), cy = Math.floor(y / TILE);
+        for (let j = cy - 1; j <= cy + 1; j++) for (let i = cx - 1; i <= cx + 1; i++) if (base[j]?.[i] > SKY) return true;
+        return false;
+      };
+      // the way it runs at an end (over its last tile or so), and the axis its ground side is nearest
+      const dirAt = (a, b) => { const d = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[0] - a[0]) / d, (b[1] - a[1]) / d]; };
+      const back = (i, step) => { let j = i, len = 0; while (j + step >= 0 && j + step < line.length && len < TILE) { len += Math.hypot(line[j + step][0] - line[j][0], line[j + step][1] - line[j][1]); j += step; } return line[j]; };
+      const axis = ([dx, dy]) => { const nx = -dy, ny = dx; return Math.abs(nx) > Math.abs(ny) ? [Math.sign(nx), 0] : [0, Math.sign(ny)]; };
+      const toEdge = (p, [ax, ay]) => {
+        const out = [], len = ax > 0 ? W - p[0] : ax < 0 ? p[0] : ay > 0 ? H - p[1] : p[1];
+        for (let s = 8; s < len; s += 8) out.push([p[0] + ax * s, p[1] + ay * s]);
+        out.push([ax > 0 ? W : ax < 0 ? 0 : p[0], ay > 0 ? H : ay < 0 ? 0 : p[1]]);
+        return out;
+      };
+      let out = line;
+      const end = line[line.length - 1], start = line[0];
+      if (!nearEdge(end) && !nearGround(end)) out = [...out, ...toEdge(end, axis(dirAt(back(line.length - 1, -1), end)))];
+      if (!nearEdge(start) && !nearGround(start)) out = [...toEdge(start, axis(dirAt(start, back(0, 1)))).reverse(), ...out];
+      return out;
+    }
+    $('ledges').onchange = () => { for (const g of L.paths) if (!g.closed) layPath(g); save(); };
     function layPath(g, look = false, quick = false) {
       const i = L.paths.indexOf(g);
       if (i < 0) return null;
@@ -1251,11 +1285,11 @@
         busy.add(g);
         const base = below(i);
         wreqs.set(seq, { g, base, look, quick, gen, t0: performance.now() });
-        worker.postMessage({ op: 'lay', seq, level: { width: L.width, height: L.height, tiles: base }, line: guideLine(g.pts), opts });
+        worker.postMessage({ op: 'lay', seq, level: { width: L.width, height: L.height, tiles: base }, line: layLine(g, base), opts });
         return undefined;
       }
       const t0 = performance.now(), base = below(i);
-      const r = drawPath({ width: L.width, height: L.height, tiles: base }, guideLine(g.pts), kit, opts);
+      const r = drawPath({ width: L.width, height: L.height, tiles: base }, layLine(g, base), kit, opts);
       layCost = performance.now() - t0;
       return applyLay(g, r, base, look, quick, gen);
     }
