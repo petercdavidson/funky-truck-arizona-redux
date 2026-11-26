@@ -54,7 +54,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   above the stage's start, real colours at real heights (`Renderer.space` draws it, with stars, in
   every mode but 2006 Mode, with the moon, in its real phase: `moonPhase`, `moonShadow`). The same `game.height` (metres above the start) drives
   the plane steering (`HOLD_HEADING`, `Truck.holdTurn`) and the engine's fade (`engineVolume`). Sandbox's own records (`sb*` in stats.js) go
-  straight into the saved stats (`Game.sandboxStats`).
+  straight into the saved stats (`Game.sandboxStats`), shown on the Sandbox menu's Stats screen (`sandboxStats`).
 - `src/sandbox.js` (no DOM): Sandbox Mode's settings (`funkytruck.sandbox`, choice indices; track 0
   is Endless, then the stages, then the stunt tracks), `applySandbox` (sets the truck's `power`,
   `gravity`, `tiltPower` and `springK`: Truck properties whose defaults are the original's;
@@ -155,7 +155,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   for game state. `Renderer` scales the stage to fit the screen.
 - The physics is a faithful port of the original game. Treat changes to `Truck` / `CollisionWorld`
   as gameplay changes: say so explicitly and add or adjust tests.
-- Screens are `game.screen` strings: `title`, `modes` (the mode picker over the title), `classicSelect`, `stats`, `pauseOptions`, `options`, `padMap`, `help`, `garage`, `practiceSelect`, `trialSelect`, `sandbox`, `stageEditor`, `stageLoad`, `sandboxTweaks`, `playing`,
+- Screens are `game.screen` strings: `title`, `modes` (the mode picker over the title), `classicSelect`, `stats`, `pauseOptions`, `options`, `padMap`, `help`, `garage`, `practiceSelect`, `trialSelect`, `sandbox`, `sandboxStats` (its Stats button), `stageEditor`, `stageLoad`, `sandboxTweaks`, `playing`,
   `paused`, `gameOver`. A new screen needs an entry in `BUTTONS`, a case in `Renderer.draw`, and
   `body[data-screen]` CSS if it affects touch controls.
 - Saved data goes through `game.store` (key prefix `funkytruck.` in localStorage). Validate

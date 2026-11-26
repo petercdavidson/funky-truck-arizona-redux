@@ -58,7 +58,7 @@ until it first lands (in Sandbox, or first boosts). Nothing goes faster than 999
 When the truck is so high that the ground below it is out of sight, an **altitude** reading
 (▼ metres or feet to the ground) comes up under the speedometer (and stays while paused). Outside 2006 Mode,
 higher still (measured from where the stage starts) the sky darkens into space at real heights (deep blue by 20 km, black with stars by 100 km;
-clouds stop at 18 km), the truck darkens with it, and way up (from 45 km) the moon comes down into view, in its real phase for the date and time; from 5 km
+clouds stop at 18 km), the truck darkens with it, and way up, once the sky is black (80 km), the moon comes down into view, in its real phase for the date and time; from 5 km
 it steers more and more like a plane in the air, fully by 10 km (tilting turns it just as down low, but let go
 and it slows to a stop as fast as it got going and holds its heading; never in Classic, under its ceiling);
 and the engine fades out from 1 km to nothing at 20 km, leaving only the rocket. Past the speed of sound the **Mach** number shows under the speed (the speed
@@ -186,7 +186,7 @@ the first landing, or the first boost if that comes sooner). On Endless's course
 and the cars loop: one that's been out of sight for two seconds comes back just out of view.
 Cars never appear or vanish in view: new rival cars come in just out of view to your right, and
 cars taken away in Tweaks go once they're out of sight. Holding the boost roars like a rocket.
-Nothing done in Sandbox counts towards High Scores except its own section: birds whacked, tumbleweeds tumbled, top speed, highest climb and most flips in one jump. Slow motion runs fewer steps a second, not
+Nothing done in Sandbox counts towards High Scores. It keeps its own records instead, on the **Stats** button in the Sandbox menu: birds whacked, tumbleweeds tumbled, top speed, highest climb and most flips in one jump. Slow motion runs fewer steps a second, not
 slower ones, so the physics is exactly the same, only slower. `SANDBOX_ROWS` in `src/sandbox.js`.
 
 ## Endless Mode

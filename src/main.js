@@ -128,6 +128,7 @@ function escape() {
   if (game.sandboxPick) { doAction('sbPickClose'); return; }
   if (game.screen === 'pauseOptions') { doAction('pauseBack'); return; }
   if (game.screen === 'sandboxTweaks') { doAction('tweaksBack'); return; }
+  if (game.screen === 'sandboxStats') { doAction('sandbox'); return; }
   if (game.screen === 'stats' && game.resetConfirm) { doAction('resetNo'); return; }
   if (game.screen !== 'title') goMenu();
 }
@@ -241,6 +242,7 @@ function doAction(a) {
   else if (a === 'stageNext') game.turnStagePage(1);
   else if (a === 'stagePlay') game.startCustom();
   else if (a === 'sbGo') game.startSandbox();
+  else if (a === 'sbStats') game.showMenu('sandboxStats');
   else if (a === 'sbReset') game.resetSandbox();
   else if (a.startsWith('sb:')) { const [, key, d] = a.split(':'); game.stepSandbox(key, Number(d)); }
   else if (a.startsWith('sbPick:')) game.pickSandbox(a.slice(7));
@@ -718,7 +720,7 @@ function applyTestParams() {
   }
   const frames = Number(q.get('frames')) || 0;
   if (q.get('pad') === '1') { game.padConnected = true; navigator.getGamepads = () => [{ buttons: [], axes: [] }]; }
-  const screens = { garage: 'garage', help: 'help', classicSelect: 'classicSelect', practice: 'trialSelect', trials: 'trialSelect', sandboxSetup: 'sandbox', title: 'title', modes: 'modes', stats: 'stats', options: 'options' };
+  const screens = { garage: 'garage', help: 'help', classicSelect: 'classicSelect', practice: 'trialSelect', trials: 'trialSelect', sandboxSetup: 'sandbox', sandboxStats: 'sandboxStats', title: 'title', modes: 'modes', stats: 'stats', options: 'options' };
   if (screens[test]) {
     game.showMenu(screens[test]);
     for (let i = 0; i < 300; i++) game.step();

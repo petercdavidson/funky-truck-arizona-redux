@@ -12,7 +12,7 @@ import { TRIAL_ALL, TRIAL_STUNTS, formatTime, formatGap } from './trial.js';
 import { battleBack, battleFront, battleHud } from './render-battle.js';
 import { circles } from './battle.js';
 import { PAD_ACTIONS, padName } from './pad.js';
-import { cloudsNear, CRITTERS, skyAt, hash2, moonPhase, moonShadow } from './critters.js';
+import { cloudsNear, CRITTERS, skyAt, SKY, hash2, moonPhase, moonShadow } from './critters.js';
 
 /**
  * Sandbox's layers of clouds, farthest first: each moves past at `depth` of the world's speed
@@ -34,7 +34,7 @@ const DEG = Math.PI / 180;
 /** Where the tumbleweed art's round hitbox (50 px across) is centred in assets/tumbleweed.png. */
 const WEED_CENTRE = [30.5, 32.5];
 const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'sandboxTweaks', 'gameOver']);
-const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'padMap', 'help', 'garage', 'classicSelect', 'trialSelect', 'sandbox', 'stageEditor', 'stageLoad']);
+const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'padMap', 'help', 'garage', 'classicSelect', 'trialSelect', 'sandbox', 'sandboxStats', 'stageEditor', 'stageLoad']);
 const AHEAD = '#8ff0a4', BEHIND = '#ffb0a0'; // Time Trial gaps: ahead of / behind your best
 const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
@@ -47,7 +47,7 @@ const MILESTONE_GOLD = '#ffe27a';
  */
 const BACKDROP = { y: 0.06, up: 80, down: 420 };
 const TRUCK_SHADE = 0.6;
-const MOON = { rise: 45, depth: 1 / 4800, r: 240 };   // the moon (see Renderer.moon)   // how far the truck darkens toward the sky's colour as it goes black (at the sky's darkest)
+const MOON = { rise: SKY.find(([, , a]) => a >= 1)[0], depth: 1 / 4800, r: 240 };   // the moon (see Renderer.moon)   // how far the truck darkens toward the sky's colour as it goes black (at the sky's darkest)
 /** The HUD in a tall view: how much bigger, how far down from the top (stage units), and where the middle's news goes (a share of the view's height). */
 const HUD_TALL = { k: 1.5, top: 12, middle: 0.2 };
 
@@ -339,9 +339,10 @@ function sandboxButtons(tall, tweaks, extra = {}) {
   const bottom = tweaks
     ? [{ rect: tall ? r(30, y, 145, 40) : r(170, y, 110, 26), label: 'Reset', action: 'sbReset', ...big },
       { rect: tall ? r(185, y, 145, 40) : r(296, y, 110, 26), label: 'Back', action: 'tweaksBack', ...big }]
-    : [{ rect: tall ? r(20, y, 100, 40) : r(124, y + 2, 100, 26), label: 'Reset', action: 'sbReset', ...big },
-      { rect: tall ? r(130, y, 100, 40) : r(238, y - 2, 100, 34), label: 'Go!', action: 'sbGo', ...(tall ? T_BIG : { size: 15 }) },
-      { rect: tall ? r(240, y, 100, 40) : r(352, y + 2, 100, 26), label: 'Back', action: 'play', ...big }];
+    : [{ rect: tall ? r(14, y, 77, 40) : r(67, y + 2, 100, 26), label: 'Reset', action: 'sbReset', ...big },
+      { rect: tall ? r(99, y, 77, 40) : r(181, y + 2, 100, 26), label: 'Stats', action: 'sbStats', ...big },
+      { rect: tall ? r(184, y, 77, 40) : r(295, y - 2, 100, 34), label: 'Go!', action: 'sbGo', ...(tall ? T_BIG : { size: 15 }) },
+      { rect: tall ? r(269, y, 77, 40) : r(409, y + 2, 100, 26), label: 'Back', action: 'play', ...big }];
   return [...steppers, ...bottom, ...picks];
 }
 
@@ -373,6 +374,7 @@ export const BUTTONS = {
     ...TRIAL_OPTIONS.map(([label, action], i) => option(96 + 26 * i, label, action)),
   ],
   sandbox: sandboxButtons(false, false),
+  sandboxStats: [{ rect: r(228, 330, 120, 25), label: 'Back', action: 'sandbox' }],
   stageEditor: stageEditorButtons(false),
   stageLoad: stageLoadButtons(false),
   sandboxTweaks: sandboxButtons(false, true),
@@ -382,7 +384,7 @@ export const BUTTONS = {
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 680, modes: 680, classicSelect: 600, stats: 800, options: 670, padMap: 640, pauseOptions: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 760, sandboxTweaks: 720, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
+export const TALL_H = { title: 680, modes: 680, classicSelect: 600, stats: 800, options: 670, padMap: 640, pauseOptions: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 760, sandboxStats: 460, sandboxTweaks: 720, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
@@ -418,6 +420,7 @@ export const TALL_BUTTONS = {
   stageEditor: stageEditorButtons(true),
   stageLoad: stageLoadButtons(true),
   sandboxTweaks: sandboxButtons(true, true),
+  sandboxStats: [{ rect: r(80, 380, 200, 40), label: 'Back', action: 'sandbox', ...T_BIG }],
   gameOver: gameOverButtons((i) => ({ ...r(60, 200 + 50 * i, 240, 40), ...T_BIG }),
     (i) => ({ ...r(60 + 125 * (i % 2), 200 + 50 * Math.floor(i / 2), 115, 40), ...T_BIG })),
   paused: pauseButtons((i) => ({ ...r(60, 160 + 48 * i, 240, 40), ...T_BIG })),
@@ -486,6 +489,19 @@ export function hitButton(screen, x, y, game, tall = false) {
   }) || null;
 }
 
+/** Sandbox's own records (its Stats screen, from the Sandbox menu): [label, value] rows. */
+export function sandboxStatRows(game) {
+  const S = game.realStats || game.stats, n = (v) => Math.round(v).toLocaleString('en-US');
+  const or = (v, f) => (v > 0 ? f(v) : '—');
+  return [
+    ['Birds whacked', n(S.sbBirds)],
+    ['Tumbleweeds tumbled', n(S.sbWeeds)],
+    ['Top speed', or(S.sbTopSpeed, (v) => formatSpeed(v, game.imperial))],
+    ['Highest climb', or(S.sbHighest, (v) => formatHeight(v, game.imperial))],
+    ['Most flips in one jump', or(S.sbMostFlips, n)],
+  ];
+}
+
 /** The High Scores screen: [heading] or [label, value] rows, in two columns. */
 export function statsColumns(game) {
   const S = game.stats, n = (v) => Math.round(v).toLocaleString('en-US');
@@ -509,12 +525,6 @@ export function statsColumns(game) {
     ['Longest wheelie', or(S.longestWheelie, secs)],
     ['Best trick chain', or(S.bestChain, (v) => `${n(v)} pts`)],
     ['Longest trick chain', or(S.longestChain, (v) => `${n(v)} tricks`)],
-    ['Sandbox'],
-    ['Birds whacked', n(S.sbBirds)],
-    ['Tumbleweeds tumbled', n(S.sbWeeds)],
-    ['Top speed', or(S.sbTopSpeed, (v) => formatSpeed(v, game.imperial))],
-    ['Highest climb', or(S.sbHighest, (v) => formatHeight(v, game.imperial))],
-    ['Most flips in one jump', or(S.sbMostFlips, n)],
   ], [
     ['Totals'],
     ['Distance driven', dist(S.distance)],
@@ -1064,7 +1074,7 @@ export class Renderer {
   /**
    * The moon (assets/moon.png), big, in today's phase (`moonPicture`). It never fades: it moves past
    * at `MOON.depth` of the world's speed, coming down into view over the top edge as the view's top
-   * climbs past `MOON.rise` km above the stage's start (in any shape of view); sideways there's always
+   * climbs past `MOON.rise` km above the stage's start (where the sky has gone black, `SKY`) (in any shape of view); sideways there's always
    * one across the view.
    */
   moon(game, v) {
@@ -1512,6 +1522,20 @@ export class Renderer {
       }
     }
     this.buttons('stats', game);
+  }
+
+  /** Sandbox's records (`sandboxStatRows`), from the Sandbox menu's Stats. */
+  sandboxStatsScreen(game) {
+    const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
+    this.text('Sandbox Stats', cx, tall ? 40 : 40, { size: tall ? 26 : 22, weight: '900' });
+    const label = { weight: '600', align: 'left', color: 'rgba(255,255,255,0.9)' };
+    const value = { weight: '800', align: 'right' };
+    const [x0, x1, y0, h, size] = tall ? [30, 330, 120, 40, 16] : [138, 438, 110, 36, 15];
+    sandboxStatRows(game).forEach(([name, val], i) => {
+      this.text(name, x0, y0 + h * i, { ...label, size });
+      this.text(val, x1, y0 + h * i, { ...value, size });
+    });
+    this.buttons('sandboxStats', game);
   }
 
   /** How to Play: only the control scheme that's chosen (the arrow keys, or One Button). */
@@ -1992,6 +2016,7 @@ export class Renderer {
         case 'classicSelect': this.classicSelect(game); break;
         case 'trialSelect': this.trialSelect(game); break;
         case 'sandbox': this.sandboxScreen(game, 'sandbox'); break;
+        case 'sandboxStats': this.sandboxStatsScreen(game); break;
         case 'stageEditor': this.stageEditor(game); break;
         case 'stageLoad': this.stageLoad(game); break;
         case 'sandboxTweaks': this.overlayDim(0.55); this.sandboxScreen(game, 'sandboxTweaks'); break;

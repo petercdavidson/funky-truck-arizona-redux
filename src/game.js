@@ -701,7 +701,7 @@ const STATS_SAVE_EVERY = 700;
 export const STAGES_PER_PAGE = 6;
 
 /**
- * Screens: 'title' | 'modes' (the mode picker over the title) | 'stats' | 'options' | 'help' | 'garage' |
+ * Screens: 'title' | 'modes' (the mode picker over the title) | 'stats' | 'sandboxStats' | 'options' | 'help' | 'garage' |
  * 'trialSelect' | 'playing' | 'paused' | 'pauseOptions' | 'gameOver'
  * Modes: 'campaign' (all nine stages), 'practice' (one stage), 'endless' (a generated course),
  * 'trial' (Time Trial: a stage or all nine against the clock, see trial.js), 'sandbox' (any track,
