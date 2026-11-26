@@ -187,6 +187,10 @@ test('missiles blow up on tumbleweeds (never aiming for one), and a bird a missi
   g.step();
   assert.equal(B.fired, 1);
   assert.equal(g.realStats.sbFired, 1);
+  // boosting: counted in distance boosted
+  g.keys.boost = true;
+  for (let i = 0; i < 40; i++) g.step();
+  assert.ok(g.realStats.sbBoosted > 0, `boosted ${g.realStats.sbBoosted} m`);
 });
 
 test('a blast that gets several birds plays the bird hit sound once', () => {

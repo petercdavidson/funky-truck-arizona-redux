@@ -503,6 +503,7 @@ export function sandboxStatColumns(game) {
     ['Longest airtime', or(S.sbMaxAir, secs)],
     ['Most flips in one jump', or(S.sbMostFlips, n)],
     ['Distance driven', formatDistance(S.sbDistance, game.imperial)],
+    ['Distance boosted', formatDistance(S.sbBoosted, game.imperial)],
     ['Birds and Tumbleweeds'],
     ['Birds whacked', n(S.sbBirds)],
     ['Birds shot', n(S.sbBirdsShot)],

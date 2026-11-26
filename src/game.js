@@ -2059,6 +2059,8 @@ export class Game {
     if (!this.wreck && this.landed) {
       this.stats.topSpeed = Math.max(this.stats.topSpeed, this.speedKmh);
       if (this.airSteps === 0) this.stats.distance += t.speed * METRES_PER_TILE / TILE;
+      // (Sandbox: how far the boost carries you, on the ground or in the air; on the ground it's driving too)
+      if (this.battle?.boosting) this.stats.sbBoosted += t.speed * METRES_PER_TILE / TILE;
     }
   }
 
@@ -2139,6 +2141,7 @@ export class Game {
       S.sbBestCombo = Math.max(S.sbBestCombo, B.bestCombo);
     }
     add('sbDistance', R.distance);
+    add('sbBoosted', R.sbBoosted);
     if (!this.wreck) S.sbTopSpeed = Math.max(S.sbTopSpeed, this.speedKmh);
     if (this.landed) S.sbHighest = Math.max(S.sbHighest, this.height);
     S.sbMostFlips = Math.max(S.sbMostFlips, R.mostFlips);

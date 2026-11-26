@@ -13,7 +13,7 @@
  */
 export const SANDBOX_KEYS = ['sbBirds', 'sbWeeds', 'sbTopSpeed', 'sbHighest', 'sbMostFlips',
   'sbBirdsShot', 'sbWeedsBlown', 'sbMaxAir', 'sbDistance', 'sbFired', 'sbOnTarget', 'sbIntercepts',
-  'sbTakedowns', 'sbStomps', 'sbBestCombo', 'sbPassed'];
+  'sbTakedowns', 'sbStomps', 'sbBestCombo', 'sbPassed', 'sbBoosted'];
 
 /** Records (the most in one go) and totals. Times are in 1/70 s steps, distances in metres. */
 export const STAT_KEYS = [
