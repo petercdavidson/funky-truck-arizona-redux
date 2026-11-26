@@ -9,6 +9,8 @@ site on GitHub Pages.
 The title screen has **Play**, **Change Truck**, **High Scores**, **Options** and **How to Play**.
 **Play** dims the title and opens a box of the modes (below); tap one, or **Back** or anywhere
 outside the box to close it (on a keyboard: ↑ / ↓ and Space or Enter; on a gamepad: stick or d-pad and A).
+The truck on the title screen can be knocked about: tap or click it, or on a gamepad jump it (Y or LB) and tip it
+back or forwards (LT / RT, or the right stick).
 **High Scores** shows each mode's best (and the highest stage you've beaten in Classic) and your records and totals across all your runs: longest
 airtime, top speed, most flips in one jump, longest wheelie, best and longest trick chain, distance
 and time driven, runs, flips, each trick, bails and wrecks (`src/stats.js`).
@@ -39,7 +41,11 @@ tall as it is wide (a phone held upright, say), every menu switches to a tall la
 with the title screen's buttons in one column, the Stages screen's stages in a 3×3 grid, and
 everything scaled up to fill the width, so the buttons are much bigger.
 
-**Dynamic camera** (outside 2006 Mode; a switch on the Options screen turns it off): it follows the
+**View Width** (outside 2006 Mode; Options → Camera): Normal, Wide (125%), Wider (150%) or Widest (200%)
+of the usual view, everything smaller; the dynamic camera and the crash cam pull back from there. A track
+narrower than the view (the Halfpipe, pulled back) sits in the middle of it.
+
+**Dynamic camera** (outside 2006 Mode; a switch on Options → Camera turns it off): it follows the
 truck exactly as the original camera does, keeping it in the same place on screen, but pulls the
 frame back when the truck keeps up a good speed (mostly: full pull-back from speed comes at about
 120 km/h) or has been high in the air for a while, up to 1.8 times as much of the world. It never
@@ -56,9 +62,9 @@ turns over in the air, and reads 0 while the truck is being dropped in at the st
 until it first lands (in Sandbox, or first boosts). Nothing goes faster than 9999 km/h, where the speedometer stops (only Sandbox gets near; past 999 km/h there's a little air drag, though ×8 boost straight up still gets there).
 
 When the truck is so high that the ground below it is out of sight, an **altitude** reading
-(▼ metres or feet to the ground) comes up under the speedometer (and stays while paused). Outside 2006 Mode,
+(▼ metres or feet to the ground) comes up under the speedometer (and stays while paused). Past the speed of sound the speedometer shows the Mach number, by the speed of sound where you are: 1,225 km/h at the ground, about 1,060 km/h in the cold air at 11 to 20 km and 980 km/h at the top (so 9,999 km/h is Mach 8.1 at the ground but Mach 10 at 100 km). Outside 2006 Mode,
 higher still (measured from where the stage starts) the sky darkens into space at real heights (deep blue by 20 km, black with stars by 100 km;
-clouds stop at 18 km), the truck darkens with it, and way up, once the sky is black (80 km), the moon comes down into view, in its real phase for the date and time; from 5 km
+Sandbox's clouds, layers of them fixed in the sky, come in from 150 m up, so there are none from the ground, and stop at 18 km), the truck darkens with it, and way up, once the sky is black (80 km), the moon comes down into view, in its real phase for the date and time; from 5 km
 it steers more and more like a plane in the air, fully by 10 km (tilting turns it just as down low, but let go
 and it slows to a stop as fast as it got going and holds its heading; never in Classic, under its ceiling);
 and the engine fades out from 1 km to nothing at 20 km, leaving only the rocket. Past the speed of sound the **Mach** number shows under the speed (the speed
@@ -93,7 +99,7 @@ touching ground underneath it (the chassis bottoming out on a hard landing or a 
 scrape: no damage or scrape sound. Hitting the cab's roof or sides is. Bottoming out never bails a
 trick chain.
 
-**Dynamic crash cam** (outside 2006 Mode; on the Options screen): when the truck is wrecked, the
+**Dynamic crash cam** (outside 2006 Mode; Options → Camera): when the truck is wrecked, the
 camera eases over from the driving camera (in about 1¼ s) and pulls back, up to 8 times the
 usual view, to keep all the scattering pieces in frame, centred on them. A wheel that shoots off
 pulls the camera out with it at once. If the pieces spread further than 8 times the view can show,
@@ -121,8 +127,8 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 
 | Action | Keyboard | Touch | Gamepad |
 | --- | --- | --- | --- |
-| Forwards / reverse | ↑ / ↓ (or W / S) | right-hand pedals (slide between them) | A or RT / B or LT |
-| Tilt back / forwards | ← / → (or A / D) | left-hand buttons (slide between them) | stick or d-pad |
+| Forwards / reverse | ↑ / ↓ (or W / S) | right-hand pedals | A or RT / B or LT |
+| Tilt back / forwards | ← / → (or A / D) | left-hand buttons | stick or d-pad |
 | One Button | Space or ↑ | hold anywhere | A |
 | Pause | P (and Esc in Classic and a timed run in Stages) | ⏸ button | Start |
 | Recover (when offered) | R | Recover button | Y |
@@ -135,8 +141,12 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Sandbox: jump | Z | jump button (left) | LB, or Y |
 | Sandbox: boost (hold) | C or Shift (not with ⌘ or Ctrl, so screenshots don't boost) | boost button (right) | RB |
 
+On a touch screen a finger presses whichever button it's over: it can come down anywhere and slide onto
+a button, or from one to another (a missile or jump button fires when a finger slides onto it). The
+speed, score and other readouts keep clear of a phone's rounded corners and notch.
+
 **Options** (on the title screen) lists each option with what it does, and a button beside it that changes it: sound, the controls (Standard / Pedals or
-One Button), the dynamic camera, the dynamic crash cam, **Units** (metric, or imperial: mph, and
+One Button), **Camera** (its own screen: View Width, the dynamic camera, the dynamic crash cam), **Units** (metric, or imperial: mph, and
 heights in feet, then miles past a mile), and **Show Frame Rate** (frames per second
 in the bottom left corner). **Controller Mappings** (on the Options screen, under Controls, when a gamepad is connected) sets which gamepad button does what while driving: tap an action, then press the button (the menus always use A and B). Options for one mode stay on that
 mode's screen (Classic's Tricks and 2006 Mode checkboxes, one or the other; the Stages screen's Tricks, Damage, 2006 Mode and Ghost). The speaker button in the top
@@ -176,7 +186,7 @@ gold:
 | Enemy Cars | 0 to 8 trucks coming at you, to dodge or take out with missiles, rams and stomps |
 | Birds | None, A Few, Lots, Flocks: they fly across the sky, over the hills; knock them out of it, or shoot them down (missiles home in on them; a hit one squawks, once for a missile however many it gets; a wrecked truck's loose wheels and body knock them down too). They never slow you down |
 | Tumbleweeds | None, A Few, Lots, Loads: a little smaller than a tyre, sitting on the ground, rolling down slopes and coming to rest in piles; light and airy: hit one and it's pushed along (with a rustle), land on one and it squirts out and up, and a blast throws it a long way; in the air they float down and soon stop spinning; a missile that meets one blows up on it (missiles never aim for them) |
-| Clouds | On or Off: layers of them fixed in the sky (more the higher you go), flat, soft-edged shapes, the farthest moving at 1/1000 of the world's speed and the nearest at 1/10, fainter the farther off, so you can tell which way you're flying |
+| Autopilot | Off; Land Level (tilts the truck in the air to land on its wheels); Cruise (that, and holds the gas); Drive Itself (drives as the rival cars do: leans to keep its nose down on climbs, backs up for a run-up when it's stuck, turns itself back over). Whatever you press takes over that much of it |
 | Slow Motion | Off, Half, Quarter |
 | Hitboxes | show what the physics sees: the ground's collision lines (orange where they scrape the cab), the wheels and the cab's roof probe (all that touches the ground), the circles trucks bump each other with (when there are other cars), and a wreck's pieces. The wheels and probe are really points (the dots) kept off the dashed line, the ground pushed out by 21.5 px; on smooth ground that's the same as a 21.5 px circle, but at a corner the original game joins the pushed-out lines short, so a wheel settles into a V and cuts into a peak a little |
 

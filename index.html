@@ -75,7 +75,8 @@
   </div>
 
   <!-- Load Stage's From File (a stage saved from the Stage Editor). -->
-  <input id="stage-file" type="file" accept=".json,application/json" hidden>
+  <!-- (Not display: none, which iOS won't open a picker for; text/plain too, as iOS can't tell what a .json is from some apps) -->
+  <input id="stage-file" type="file" accept=".json,application/json,text/plain" style="position:fixed;left:-9999px;width:1px;height:1px;opacity:0" tabindex="-1" aria-hidden="true">
 
   <!-- The title screen's sound switch, in the top right corner. -->
   <button id="sound-button" aria-label="Sound on or off">

@@ -12,7 +12,7 @@ import { Wreck } from './wreck.js';
 import { TRIAL_ALL, TRIAL_TRACKS, TRIAL_STUNTS, GHOST_EVERY, validBests, validStuntBests, loadGhost, saveGhost, ghostPose } from './trial.js';
 import { validStats, emptyStats, countTrick, countChain, SANDBOX_KEYS } from './stats.js';
 import { Battle } from './battle.js';
-import { validSandbox, applySandbox, stepTraffic, SANDBOX_ROW } from './sandbox.js';
+import { validSandbox, applySandbox, stepTraffic, SANDBOX_ROW, updateAutopilot, autopilotKeys } from './sandbox.js';
 import { validStage, validStages, addStage } from './stages.js';
 import { formTable } from './tile-forms.js';
 
@@ -640,6 +640,11 @@ export const CAMERA = {
  * left round the pieces (stage units, at zoom 1), `maxRate` the most the zoom changes in a step
  * (times the zoom), and `easeIn` the steps it takes to take over from the driving camera.
  */
+/**
+ * The View Width option (outside 2006 Mode): how many times the usual view the camera shows at the
+ * least, [name, zoom]. The dynamic camera and the crash cam pull back from there.
+ */
+export const VIEW_WIDTHS = [['Normal', 1], ['Wide', 1.25], ['Wider', 1.5], ['Widest', 2]];
 export const CRASH_CAM = { maxZoom: 8, margin: 70, maxRate: 0.03, easeIn: 90 };
 /** The slowest a scraping cab or body throws up dirt (px a step). */
 const SCRAPE_DIRT_FROM = 1.5;
@@ -702,7 +707,7 @@ export const STAGES_PER_PAGE = 6;
 
 /**
  * Screens: 'title' | 'modes' (the mode picker over the title) | 'stats' | 'sandboxStats' | 'options' | 'help' | 'garage' |
- * 'trialSelect' | 'playing' | 'paused' | 'pauseOptions' | 'gameOver'
+ * 'trialSelect' | 'playing' | 'paused' | 'pauseOptions' | 'cameraOptions' | 'pauseCamera' | 'gameOver'
  * Modes: 'campaign' (all nine stages), 'practice' (one stage), 'endless' (a generated course),
  * 'trial' (Time Trial: a stage or all nine against the clock, see trial.js), 'sandbox' (any track,
  * the physics as you like, with rival and enemy cars: see sandbox.js and battle.js).
@@ -775,6 +780,8 @@ export class Game {
     this.trialTricks = flag('trialTricks', true);   // Time Trial: tricks spotted and scored
     this.dynamicCamera = flag('dynamicCamera', true);
     this.crashCam = flag('crashCam', true);
+    const vw = this.store.get('viewWidth');
+    this.viewWidth = Number.isInteger(vw) && vw >= 0 && vw < VIEW_WIDTHS.length ? vw : 0;
     this.ghostOn = flag('ghost', true);
     this.showFps = flag('showFps', false);
     this.imperial = flag('imperial', false);
@@ -909,6 +916,15 @@ export class Game {
     this.padListen = null;
     this.store.set('padMap', this.padMap);
   }
+
+  /** Step the View Width option on (wrapping round) and save it. */
+  cycleViewWidth() {
+    this.viewWidth = (this.viewWidth + 1) % VIEW_WIDTHS.length;
+    this.store.set('viewWidth', this.viewWidth);
+  }
+
+  /** The least the camera pulls back: the View Width option, outside 2006 Mode. */
+  get baseZoom() { return this.rules.retro ? 1 : VIEW_WIDTHS[this.viewWidth]?.[1] ?? 1; }
 
   /** The dynamic camera applies outside 2006 Mode, when switched on. */
   get dynamicCameraActive() { return this.dynamicCamera && !this.rules.retro; }
@@ -1197,7 +1213,7 @@ export class Game {
   startStage() { // u8a62
     this.world = this.makeWorld(); this.thin = null; this.weedW = null;
     this.wreck = null; this.selfWrecked = false;
-    this.stuck = 0; this.canUpright = false; this.righting = 0; this.airSteps = 0;
+    this.stuck = 0; this.canUpright = false; this.righting = 0; this.airSteps = 0; this.auto = null;
     this.landed = false; // the truck is dropped in at the start; until it lands it isn't driving
     this.uprightLinger = 0; this.trickCooldown = 0;
     const s = this.levelData.start;
@@ -1207,7 +1223,7 @@ export class Game {
     this.truck.rearWheelRot = 0; this.truck.frontWheelRot = 0;
     this.speedKmh = 0;
     this.altitude = null; this.height = 0;
-    this.zoom = 1; this.zoomV = 0; this.ground = 0; this.groundV = 0; this.camSpeed = 0; this.camSpeedV = 0;
+    this.zoom = this.baseZoom; this.zoomV = 0; this.ground = 0; this.groundV = 0; this.camSpeed = 0; this.camSpeedV = 0;
     this.back = 0; this.backV = 0;
     this.lastFocus = null; this.paceSpeed = 0; this.reversing = 0; this.shiftTotal = [0, 0];
     // Endless (and Sandbox on it) starts near the course's left end, and its first step would add
@@ -1216,8 +1232,8 @@ export class Game {
     // into place once the course behind the start was there.)
     if (this.onCourse && this.truck.T[0] < 40 * TILE) this.scrollWorld(-ENDLESS_SHIFT);
     const sx = s[0] - this.shiftTotal[0], sy = s[1] - this.shiftTotal[1];   // (the start, moved with it)
-    this.camX = Math.min(Math.max(sx - this.camAnchorX, 0), this.maxCamX);       // s4833
-    this.camY = sy - this.viewH / 2;
+    this.camX = this.clampCamX(sx - this.camAnchorX * this.zoom);       // s4833
+    this.camY = sy - this.viewH * this.zoom / 2;
     this.clampCamY();
     this.updateCamera();
     this.ticker = this.mode === 'custom' || this.sandboxCustom ? this.customLevel.name : this.stageName(this.level); this.tickerTimer = 140;   // m2813
@@ -1445,14 +1461,37 @@ export class Game {
 
   // ---- the pause menu's Options
 
-  openPauseOptions() { if (this.screen === 'paused') this.screen = 'pauseOptions'; }
+  openPauseOptions() { if (this.screen === 'paused' || this.screen === 'pauseCamera') this.screen = 'pauseOptions'; }
   closePauseOptions() { if (this.screen === 'pauseOptions') { this.screen = 'paused'; this.pauseStage = 99; } }
+  /** The Camera screen: from Options, or over a paused run from its Options. */
+  openCamera() {
+    if (this.screen === 'options') this.screen = 'cameraOptions';
+    else if (this.screen === 'pauseOptions') this.screen = 'pauseCamera';
+  }
+  closeCamera() {
+    if (this.screen === 'cameraOptions') this.screen = 'options';
+    else if (this.screen === 'pauseCamera') this.screen = 'pauseOptions';
+  }
 
   /** Knock the title screen's truck up from (x, y), in its own coordinates. Returns whether it was hit. */
   kickTitleTruck(x, y) {
     const t = this.garageTruck;
     if ((this.screen !== 'title') || !t.hits(x, y)) return false;
     t.kick(x, y);
+    return true;
+  }
+
+  /**
+   * The title truck from a controller: 'jump' knocks it straight up (from under its middle),
+   * 'back' tips it back (a knock under its front wheel), 'forwards' over forwards (under its rear).
+   */
+  nudgeTitleTruck(how) {
+    const t = this.garageTruck, T = t.T;
+    if (this.screen !== 'title') return false;
+    if (how === 'jump') t.kick(T[0], T[1] + 30);
+    else if (how === 'back') t.kick(T[4], T[5]);
+    else if (how === 'forwards') t.kick(T[2], T[3]);
+    else return false;
     return true;
   }
 
@@ -1523,16 +1562,17 @@ export class Game {
       // Never zoomed in so far that a piece is out of the view as it is now (the camera trails
       // the pieces a little; a wheel that shoots off pulls it out at once). The zoom eases towards
       // whichever is further out, so the two never pull against each other.
-      const cover = Math.min(CRASH_CAM.maxZoom, this.coverZoom(cx, cy));
+      const maxZ = CRASH_CAM.maxZoom * this.baseZoom;
+      const cover = Math.min(maxZ, this.coverZoom(cx, cy));
       this.zoomTo(Math.max(crash.zoom, cover), CRASH_CAM.maxRate * this.zoom * ease);
       // (that keeping-in-view eases in too, or the first moment of a wreck could snap the zoom out)
-      this.zoom = Math.min(CRASH_CAM.maxZoom, Math.max(this.zoom, z0 + (cover - z0) * ease));
+      this.zoom = Math.min(maxZ, Math.max(this.zoom, z0 + (cover - z0) * ease));
       // zoom about the view's middle
       this.camX -= this.viewW * (this.zoom - z0) / 2;
       this.camY -= this.viewH * (this.zoom - z0) / 2;
     }
     else if (this.dynamicCameraActive) this.updateZoom();
-    else { this.zoom = 1; this.back = 0; this.backV = 0; }
+    else { this.zoom = this.baseZoom; this.back = 0; this.backV = 0; }
     // The original camera: it keeps the truck 150 from the left and halfway down, moving a fifth
     // of the way there each step, at most a tile. The dynamic camera is the same with the frame
     // pulled back: distances on the stage scale with the zoom, so on screen it behaves alike.
@@ -1557,9 +1597,19 @@ export class Game {
     }
     const dx = Math.max(Math.min((fx - anchorX * z - this.camX) * k, lim), -lim);
     const dy = Math.max(Math.min((fy - this.viewH * z / 2 - this.camY) * k, lim), -lim);
-    this.camX = Math.min(Math.max(this.camX + dx, 0), this.maxCamX);
+    this.camX = this.clampCamX(this.camX + dx);
     this.camY += dy;
     this.clampCamY();
+  }
+
+  /**
+   * The camera stays inside the level's sides; a level narrower than the view (the Halfpipe, pulled
+   * back) sits in the middle of it. (Before 1.25.0 it was held to the left of it instead: a wreck's
+   * camera pulling back there jumped left, and further out.)
+   */
+  clampCamX(x) {
+    const max = this.maxCamX;
+    return max < 0 ? max / 2 : Math.min(Math.max(x, 0), max);
   }
 
   /**
@@ -1585,16 +1635,22 @@ export class Game {
       x0 = Math.min(x0, W[i]); x1 = Math.max(x1, W[i]); y0 = Math.min(y0, W[i + 1]); y1 = Math.max(y1, W[i + 1]);
     }
     const m = 2 * CRASH_CAM.margin;
-    const fit = Math.max(1, (x1 - x0 + m) / this.viewW, (y1 - y0 + m) / this.viewH);
-    return { centre: [(x0 + x1) / 2, (y0 + y1) / 2], zoom: Math.min(CRASH_CAM.maxZoom, fit) };
+    const fit = Math.max(this.baseZoom, (x1 - x0 + m) / this.viewW, (y1 - y0 + m) / this.viewH);
+    return { centre: [(x0 + x1) / 2, (y0 + y1) / 2], zoom: Math.min(CRASH_CAM.maxZoom * this.baseZoom, fit) };
   }
 
   /** The zoom that shows every piece of the wreck (with the margin) in a view centred on (cx, cy). */
   coverZoom(cx, cy) {
     const W = this.wreck.T, m = CRASH_CAM.margin;
-    let z = 1;
+    // The camera stops at the level's sides (and at a ceiling), so a piece by one is in view with
+    // the view's edge there: no margin past it. (Before 1.25.0 a piece by the right side always
+    // asked for a little more than the view had, so the crash cam pulled out as far as it goes.)
+    const right = this.levelData.width * TILE;
+    let z = this.baseZoom;
     for (let i = 0; i < W.length; i += 2) {
-      z = Math.max(z, (Math.abs(W[i] - cx) + m) / (this.viewW / 2), (Math.abs(W[i + 1] - cy) + m) / (this.viewH / 2));
+      const x = Math.min(Math.max(W[i], m), right - m);
+      const y = this.rules.ceiling ? Math.max(W[i + 1], m) : W[i + 1];
+      z = Math.max(z, (Math.abs(x - cx) + m) / (this.viewW / 2), (Math.abs(y - cy) + m) / (this.viewH / 2));
     }
     return z;
   }
@@ -1604,7 +1660,7 @@ export class Game {
     const w = 0.06;
     let v = this.zoomV + w * w * (target - this.zoom) - 2 * w * this.zoomV;
     v = Math.max(-maxRate, Math.min(maxRate, v));
-    this.zoom = Math.max(1, this.zoom + v); this.zoomV = v;
+    this.zoom = Math.max(this.baseZoom, this.zoom + v); this.zoomV = v;
   }
 
   /** How far below the point (x, y) the ground is (a wheel centre's resting height), up to `max`. */
@@ -1640,12 +1696,13 @@ export class Game {
     [this.ground, this.groundV] = spring(this.ground, this.groundV, height, C.heightW);
     this.ground = Math.max(0, this.ground);
     const ramp = (v, a, b) => Math.max(0, Math.min(1, (v - a) / (b - a)));
-    const target = Math.min(C.maxZoom, 1
+    const base = this.baseZoom;
+    const target = base * Math.min(C.maxZoom, 1
       + ramp(this.camSpeed, C.speedFrom, C.speedTo) * C.speedZoom
       + ramp(this.ground, C.heightFrom, C.heightTo) * C.heightZoom);
     let [z, v] = spring(this.zoom, this.zoomV, target, C.zoomW);
-    v = Math.max(-C.maxRate, Math.min(C.maxRate, v));
-    this.zoom = Math.max(1, this.zoom + v); this.zoomV = v;
+    v = Math.max(-C.maxRate * base, Math.min(C.maxRate * base, v));
+    this.zoom = Math.max(base, this.zoom + v); this.zoomV = v;
     // Reversing: ease the frame back, slowly, and only as far as lookBack.
     [this.back, this.backV] = spring(this.back, this.backV, ramp(backwards, C.backFrom, C.backTo), C.backW);
     this.back = Math.max(0, Math.min(1, this.back));
@@ -1708,6 +1765,12 @@ export class Game {
    * drives or tilts. With both wheels down, tipped past BALANCE_ANGLE, it also tilts back towards level.
    */
   driveKeys() {
+    const k = this.oneButtonKeys();
+    return this.mode === 'sandbox' ? autopilotKeys(this, k) : k;
+  }
+
+  /** The keys, through one-button controls when they're on (see driveKeys). */
+  oneButtonKeys() {
     const k = this.keys;
     if (!this.oneButtonActive) return k;
     const one = k.one || k.up;
@@ -1738,6 +1801,7 @@ export class Game {
     if (!hidden && down && this.landed && this.airSteps > this.stats.maxAir) this.stats.maxAir = this.airSteps;
     this.airSteps = down ? 0 : this.airSteps + 1;
     if (this.airSteps === 0) this.landed = true;
+    if (!hidden && this.mode === 'sandbox') updateAutopilot(this);
     const keys = this.driveKeys();
     t.drive(keys);
     t.spinWheels();

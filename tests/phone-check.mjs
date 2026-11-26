@@ -174,7 +174,16 @@ try {
     await touch('touchMove', [gasL]); await sleep(80);
     const k4 = await keys();
     await touch('touchEnd', []); await sleep(80);
-    check(k3 === 'right' && k4 === 'right', `tilt: slides within its pair, not onto the pedals (${k3}, ${k4})`);
+    // (since 1.25.0 a finger presses whatever button it's over, anywhere on the screen)
+    check(k3 === 'right' && k4 === 'up', `tilt: slides from one button to another, onto the pedals too (${k3}, ${k4})`);
+    // A finger that comes down off the buttons and slides onto one presses it.
+    const sky = [gasL[0] - 300, gasL[1] - 200];
+    await touch('touchStart', [sky]); await sleep(80);
+    const k5 = await keys();
+    await touch('touchMove', [gasL]); await sleep(80);
+    const k6 = await keys();
+    await touch('touchEnd', []); await sleep(80);
+    check(k5 === '' && k6 === 'up', `a finger slid onto the gas from off the buttons presses it (${k5 || 'none'} -> ${k6})`);
     check(await keys() === '', 'nothing held after lifting');
     // Four fingers at once wreck the truck (outside Classic).
     await touch('touchStart', [[100, 100], [200, 100], [300, 100], [400, 100]]); await sleep(80);
@@ -285,7 +294,8 @@ try {
   await load('?test=sandboxSetup&touch=1');
   await shot('phone-portrait-sandbox-settings');
   check(await tapButton('sandbox', 'sb:gravity:-1'), 'sandbox: gravity has a - button');
-  check(await evaluate('window.__funkyTruck.game.sandbox.gravity') === 2, 'sandbox: tapping - lowers the gravity');
+  const grav = await evaluate('window.__funkyTruck.game.sandbox.gravity');
+  check(grav === 2, `sandbox: tapping - lowers the gravity (${grav})`);
   check(await tapButton('sandbox', 'sbGo'), 'sandbox: there is a Go! button');
   check(await evaluate('window.__funkyTruck.game.mode') === 'sandbox', 'sandbox: Go! starts it');
   await sleep(800);

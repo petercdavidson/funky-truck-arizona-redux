@@ -116,7 +116,7 @@ export function moonShadow(phase, n = 48) {
  * up at those heights: an airliner's deeper blue at 10 km, the U-2's dark blue at 20 km, a
  * balloon's navy at 30 km, near black past the stratopause (50 km) and black space by the
  * Kármán line (100 km). Stars come out as it goes dark. Clouds stop at the top of the weather
- * (thunderstorm tops, 12 to 18 km). Returns { color: [r, g, b], alpha, stars, clouds } (0 to 1).
+ * (thunderstorm tops, 12 to 18 km), and come in only once you're up off the ground (CLOUDS_FROM). Returns { color: [r, g, b], alpha, stars, clouds } (0 to 1).
  */
 export const SKY = [
   // km, colour, how much it covers the backdrop
@@ -128,6 +128,8 @@ export const SKY = [
   [80, [1, 3, 12], 1],
   [100, [0, 0, 4], 1],
 ];
+/** Clouds fade in between these heights (km above the start): none from the ground. */
+export const CLOUDS_FROM = [0.15, 0.6];
 export function skyAt(km) {
   const ease = (a, b) => Math.max(0, Math.min(1, (km - a) / (b - a)));
   const t = (x) => x * x * (3 - 2 * x);
@@ -141,7 +143,9 @@ export function skyAt(km) {
     color = c0.map((c, j) => Math.round(c + (c1[j] - c) * f)); alpha = a0 + (a1 - a0) * f;
     break;
   }
-  return { color, alpha, stars: t(ease(30, 90)), clouds: 1 - t(ease(12, 18)) };
+  // (clouds only come in once you're well up off the ground, CLOUDS_FROM km, where there's
+  // nothing else to show which way you're going)
+  return { color, alpha, stars: t(ease(30, 90)), clouds: t(ease(...CLOUDS_FROM)) * (1 - t(ease(12, 18))) };
 }
 
 export class Critters {
@@ -254,6 +258,9 @@ export class Critters {
   knock(b, vx, vy) {
     const R = this.random;
     b.hit = true; b.rest = 0;
+    // how it'll lie once it's down (the renderer's poses): from where it was hit, not the random
+    // numbers, so nothing else the critters do changes
+    b.pose = Math.floor(Math.abs(Math.sin(b.x * 12.9898 + b.y * 78.233) * 43758.5453)) % 1024;
     b.vx = vx; b.vy = vy;
     b.spin = (R() - 0.5) * 0.6;
     for (let i = 0; i < 10; i++) {

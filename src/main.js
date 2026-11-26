@@ -127,6 +127,7 @@ function escape() {
   if (game.screen === 'padMap') { if (game.padListen) game.padListen = null; else doAction('options'); return; }
   if (game.sandboxPick) { doAction('sbPickClose'); return; }
   if (game.screen === 'pauseOptions') { doAction('pauseBack'); return; }
+  if (game.screen === 'cameraOptions' || game.screen === 'pauseCamera') { game.closeCamera(); return; }
   if (game.screen === 'sandboxTweaks') { doAction('tweaksBack'); return; }
   if ((game.screen === 'stats' || game.screen === 'sandboxStats') && game.resetConfirm) { doAction('resetNo'); return; }
   if (game.screen === 'sandboxStats') { doAction('sandbox'); return; }
@@ -186,6 +187,7 @@ window.addEventListener('keydown', (e) => onKey(e, true));
 window.addEventListener('keyup', (e) => onKey(e, false));
 document.addEventListener('visibilitychange', () => { if (document.hidden && game) game.saveStats(); });
 window.addEventListener('blur', () => {
+  window.releaseTouches?.();
   for (const src of [keyboard, touchKeys, padKeys]) Object.assign(src, emptyKeys());
   combineKeys();
   if (game?.screen === 'playing') game.togglePause();
@@ -193,7 +195,27 @@ window.addEventListener('blur', () => {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && game?.screen === 'playing') game.togglePause();
   sound.suspend(document.hidden);
+  if (!document.hidden) resumePage();
 });
+/**
+ * Back on the page (from another app, or the home screen): let go of every finger, put the page
+ * back at the top (iOS can come back with it scrolled a little, so touches land below where they
+ * look as if they should, and the pause button is off the top), and lay it out again.
+ */
+function resumePage() {
+  window.releaseTouches?.();
+  for (const src of [keyboard, touchKeys, padKeys]) Object.assign(src, emptyKeys());
+  if (game) combineKeys();
+  if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+  if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+  // (measured again at the next frame, not now: a menu tap read in between would miss)
+  viewKey = ''; refit = true;
+}
+let refit = false;
+window.addEventListener('pageshow', (e) => { if (e.persisted) resumePage(); });
+window.addEventListener('orientationchange', () => setTimeout(resumePage, 300));
+window.visualViewport?.addEventListener('resize', () => { viewKey = ''; refit = true; });
+window.visualViewport?.addEventListener('scroll', () => { if (window.visualViewport.offsetTop || window.scrollY) window.scrollTo(0, 0); });
 
 function toggleFullscreen() {
   const el = document.documentElement;
@@ -224,6 +246,8 @@ function doAction(a) {
   else if (a === 'stats') game.showMenu('stats');
   else if (a === 'pauseOptions') game.openPauseOptions();
   else if (a === 'pauseBack') game.closePauseOptions();
+  else if (a === 'cameraOptions') game.openCamera();
+  else if (a === 'viewWidth') game.cycleViewWidth();
   else if (a === 'lookReset') game.resetLook();
   else if (a === 'resetAsk') game.askReset();
   else if (a === 'resetNo') game.cancelReset();
@@ -252,7 +276,7 @@ function doAction(a) {
   else if (a === 'tweaksBack') game.closeTweaks();
   else if (a === 'endRun') game.endRun();
   else if (a === 'trial') game.showMenu('trialSelect');
-  else if (a === 'options') game.showMenu('options');
+  else if (a === 'options') { if (game.screen === 'cameraOptions') game.closeCamera(); else game.showMenu('options'); }
   else if (a === 'padMap') game.showMenu('padMap');
   else if (a.startsWith('padSet:')) game.padListen = game.padListen === a.slice(7) ? null : a.slice(7);
   else if (a === 'padReset') game.setPad(null);
@@ -282,6 +306,8 @@ function doAction(a) {
 }
 
 function stagePoint(e) {
+  // (laid out for the screen as it is now: it may have changed, or the window resized, since the last frame)
+  renderer.layout(game);
   const rect = canvas.getBoundingClientRect();
   return renderer.toMenu(e.clientX - rect.left, e.clientY - rect.top);
 }
@@ -297,10 +323,21 @@ canvas.addEventListener('pointerdown', (e) => {
   // The title's truck is drawn over everything, so it's hit first: tap it to knock it up.
   if (onTitleTruck(x, y)) { e.preventDefault(); game.kickTitleTruck(...renderer.toTitleTruck(x, y)); sound.play('boing'); return; }
   const b = hitButton(game.screen, x, y, game, renderer.tall);
+  // From File opens the file picker, which a page may only do on a finger's release on iOS (on
+  // the press, Safari quietly ignores it; before 1.25.0 it did nothing on an iPhone).
+  if (b?.action === 'stageFile' && e.pointerType !== 'mouse') { e.preventDefault(); fileTap = e.pointerId; return; }
   if (b) { e.preventDefault(); doAction(b.action); }
   // A tap away from the mode picker's buttons closes it.
   else if (game.screen === 'modes') { e.preventDefault(); doAction('back'); }
 });
+let fileTap = null;
+canvas.addEventListener('pointerup', (e) => {
+  if (fileTap !== e.pointerId) return;
+  fileTap = null;
+  const b = hitButton(game.screen, ...stagePoint(e), game, renderer.tall);
+  if (b?.action === 'stageFile') { e.preventDefault(); doAction('stageFile'); }
+});
+canvas.addEventListener('pointercancel', () => { fileTap = null; });
 
 canvas.addEventListener('pointermove', (e) => {
   if (e.pointerType === 'touch') return;
@@ -314,68 +351,82 @@ canvas.addEventListener('pointermove', (e) => {
 
 canvas.addEventListener('pointerleave', () => { renderer.hover = null; });
 
-// ---- on-screen driving controls (multi-touch: each button tracks its own pointers)
-
-// A finger can slide from one button of a pair (tilt back / forwards, reverse / forwards) to the
-// other: each finger presses the button of its pair it's over (or was last over).
-for (const group of [...touchUI.querySelectorAll('.pad'), ...touchUI.querySelectorAll('.act[data-key]')]) {
-  const btns = group.matches('[data-key]') ? [group] : [...group.querySelectorAll('[data-key]')];
-  const on = new Map();                  // pointer id -> the button it presses
-  const update = () => {
-    for (const b of btns) {
-      const held = [...on.values()].includes(b);
-      touchKeys[b.dataset.key] = held;
-      b.classList.toggle('held', held);
+// ---- on-screen driving controls (multi-touch)
+//
+// One handler for the whole page, not one per button: each finger presses whichever control it's
+// over now, so a finger can come down anywhere and slide onto a button (or from one to another,
+// across the screen), and a missile or jump button fires when a finger slides onto it too. Where a
+// finger is is tested against the buttons' boxes here (a few px bigger all round), not by the
+// browser's own hit-testing. With one-button controls, a finger on no button is the one button.
+// (Since 1.25.0; before, each button only saw fingers that came down on it.)
+{
+  const fingers = new Map();             // pointer id -> the control it's on (an element, or null)
+  const SLOP = 6;                        // px around a button that still count as on it
+  const controls = () => [...touchUI.querySelectorAll('[data-key], [data-press]')];
+  const shown = (el) => {
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    for (let e = el; e && e !== document.body; e = e.parentElement) {
+      const cs = getComputedStyle(e);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return null;
     }
+    return r;
+  };
+  /** The control under (x, y): the one whose box (with SLOP) it's in, nearest its middle. */
+  const controlAt = (x, y) => {
+    let best = null, bestD = Infinity;
+    for (const el of controls()) {
+      const r = shown(el);
+      if (!r || x < r.left - SLOP || x > r.right + SLOP || y < r.top - SLOP || y > r.bottom + SLOP) continue;
+      const d = Math.hypot(x - (r.left + r.right) / 2, y - (r.top + r.bottom) / 2);
+      if (d < bestD) { best = el; bestD = d; }
+    }
+    return best;
+  };
+  const driving = () => game && (game.screen === 'playing' || game.screen === 'paused') && renderer?.touchMode;
+  const update = () => {
+    const held = new Set(fingers.values());
+    for (const el of controls()) {
+      if (el.dataset.key) { touchKeys[el.dataset.key] = held.has(el); el.classList.toggle('held', held.has(el)); }
+    }
+    touchKeys.one = !!game?.oneButtonActive && [...fingers.values()].some((c) => c === null);
     combineKeys();
   };
-  for (const btn of btns) {
-    btn.addEventListener('pointerdown', (e) => {
-      e.preventDefault();
-      setTouchMode(true);
-      try { btn.setPointerCapture?.(e.pointerId); } catch { /* a pointer that's already gone */ }
-      on.set(e.pointerId, btn);
-      update();
-    });
-    btn.addEventListener('pointermove', (e) => {
-      if (!on.has(e.pointerId)) return;
-      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-key]');
-      if (over && btns.includes(over) && over !== on.get(e.pointerId)) { on.set(e.pointerId, over); update(); }
-    });
-    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-      btn.addEventListener(ev, (e) => { on.delete(e.pointerId); update(); });
-    }
-  }
-}
-
-// Sandbox's fire and jump buttons: a press each (a quick tap still counts).
-for (const btn of touchUI.querySelectorAll('[data-press]')) {
-  btn.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const press = (el) => {
+    if (!el?.dataset.press) return;
+    game.press(el.dataset.press);
+    el.classList.add('held');
+    setTimeout(() => el.classList.remove('held'), 120);
+  };
+  // (The pause, flip and sound buttons keep their own handlers: a finger that comes down on one
+  // isn't a driving finger.)
+  const own = (e) => e.target instanceof Element && e.target.closest('#corner, #sound-button');
+  document.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch' || own(e)) return;
     setTouchMode(true);
-    game.press(btn.dataset.press);
-    btn.classList.add('held');
-    setTimeout(() => btn.classList.remove('held'), 120);
-  });
-}
-
-// One button on a touch screen: holding anywhere on the screen (apart from the pause and flip
-// buttons) is the button. Any number of fingers count as one.
-{
-  const tap = document.getElementById('tap');
-  const pointers = new Set();
-  const update = () => { touchKeys.one = pointers.size > 0; combineKeys(); };
-  tap.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    setTouchMode(true);
-    tap.setPointerCapture?.(e.pointerId);
-    pointers.add(e.pointerId);
+    if (!driving()) return;
+    const el = controlAt(e.clientX, e.clientY);
+    // (every finger is followed, so one that comes down off the buttons can slide onto one; the
+    // canvas still sees those)
+    if (el || game.oneButtonActive) e.preventDefault();
+    fingers.set(e.pointerId, el);
+    press(el);
     update();
-  });
-  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-    tap.addEventListener(ev, (e) => { pointers.delete(e.pointerId); update(); });
+  }, { capture: true });
+  document.addEventListener('pointermove', (e) => {
+    if (!fingers.has(e.pointerId)) return;
+    const el = controlAt(e.clientX, e.clientY);
+    if (el === fingers.get(e.pointerId)) return;
+    fingers.set(e.pointerId, el);
+    press(el);
+    update();
+  }, { capture: true });
+  for (const ev of ['pointerup', 'pointercancel']) {
+    document.addEventListener(ev, (e) => { if (fingers.delete(e.pointerId)) update(); }, { capture: true });
   }
+  // Every finger let go, as when the page is left: iOS doesn't always send the ends of touches
+  // that were down when you switched away, and a finger it never ends would hold its button.
+  window.releaseTouches = () => { fingers.clear(); for (const el of controls()) el.classList.remove('held'); update(); };
 }
 
 // Load Stage's From File: a level saved from the Stage Editor (or anywhere), brought into the game.
@@ -434,6 +485,7 @@ let padPauseWasDown = false;
 let padStartWasDown = false;
 let padUpWasDown = false, padDownWasDown = false;
 let padFireWasDown = false, padJumpWasDown = false, padTopWasDown = false, padWreckWasDown = false;
+let padTitleWas = '';   // the title truck's last controller nudge held ('jump', 'back', 'forwards' or '')
 let padSelectWasDown = false, padBackWasDown = false;
 let padDir = '', padDirNext = 0;
 let padSwallowA = false;                  // A pressed a menu button: it restarts nothing until let go
@@ -445,6 +497,7 @@ function pollGamepads() {
   Object.assign(padKeys, emptyKeys());
   let pauseDown = false, startDown = false, upDown = false, downDown = false, fireDown = false, jumpDown = false;
   let leftDown = false, rightDown = false, selectDown = false, backDown = false, topDown = false, wreckDown = false;
+  let titleNudge = '';
   const M = game.padMap || {};
   // The Controller screen, waiting for a button: the first one pressed (not one already held).
   if (game.screen === 'padMap' && game.padListen) {
@@ -486,6 +539,10 @@ function pollGamepads() {
     rightDown ||= b(15) || ax > 0.5;
     selectDown ||= b(0);
     backDown ||= b(1) || b(8);                     // B, or Back / Select
+    // The title screen's truck: jump it (Y or LB, the jump buttons), or tip it back or forwards
+    // (LT / RT, or the right stick left / right).
+    const rx = p.axes[2] || 0;
+    titleNudge ||= on('top') || on('jump') ? 'jump' : b(6) || rx < -0.5 ? 'back' : b(7) || rx > 0.5 ? 'forwards' : '';
   }
   if (pads.length) {
     if (startDown || selectDown || backDown || upDown || downDown || leftDown || rightDown || pauseDown) navInput = true;
@@ -517,6 +574,7 @@ function pollGamepads() {
       else if (!padTopWasDown) game.press('jump');
     }
     if (wreckDown && !padWreckWasDown && game.screen === 'playing' && game.selfWreck()) sound.play('wreck');
+    if (titleNudge && titleNudge !== padTitleWas && game.nudgeTitleTruck(titleNudge)) sound.play('boing');
     if (padSwallowA && !startDown) padSwallowA = false;
     padKeys.restart = padKeys.restart && game.screen === 'gameOver' && !padSwallowA;
     combineKeys();
@@ -529,6 +587,7 @@ function pollGamepads() {
   padJumpWasDown = jumpDown;
   padTopWasDown = topDown;
   padWreckWasDown = wreckDown;
+  padTitleWas = titleNudge;
   padSelectWasDown = selectDown;
   padBackWasDown = backDown;
 }
@@ -562,6 +621,15 @@ function lerpView(a, b, t) {
 
 let last = 0, acc = 0, prev = null, seenTeleport = -1, seenShift = 0;
 
+/** The screen's safe-area insets (CSS px), read from an element padded by them. */
+const safeProbe = document.createElement('div');
+safeProbe.style.cssText = 'position:fixed;inset:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+document.body.appendChild(safeProbe);
+function safeInsets() {
+  const cs = getComputedStyle(safeProbe), n = (v) => parseFloat(v) || 0;
+  return { t: n(cs.paddingTop), r: n(cs.paddingRight), b: n(cs.paddingBottom), l: n(cs.paddingLeft) };
+}
+
 /** Tell the page where the game view is, so the pause and flip buttons sit inside it. */
 let viewKey = '';
 function placeView() {
@@ -570,6 +638,13 @@ function placeView() {
   const key = `${x.toFixed(1)},${y.toFixed(1)},${w.toFixed(1)},${renderer.viewH.toFixed(1)}`;
   if (key === viewKey) return;
   viewKey = key;
+  // The screen's safe area (clear of rounded corners and a notch) inside the game view, in stage
+  // units, for the HUD.
+  const sa = safeInsets(), u = 1 / (renderer.scale * k), h = renderer.viewH * renderer.scale * k;
+  renderer.safe = {
+    l: Math.max(0, sa.l - x) * u, r: Math.max(0, sa.r - (window.innerWidth - x - w)) * u,
+    t: Math.max(0, sa.t - y) * u, b: Math.max(0, sa.b - (window.innerHeight - y - h)) * u,
+  };
   const st = document.documentElement.style;
   st.setProperty('--view-x', `${x}px`); st.setProperty('--view-y', `${y}px`); st.setProperty('--view-w', `${w}px`);
   st.setProperty('--view-h', `${renderer.viewH * renderer.scale * k}px`);
@@ -586,7 +661,7 @@ function retroPausePlace() {
 
 /** 2006 Mode draws the game at most this often (frames a second), with no smoothing between steps. */
 const RETRO_FPS = 30;
-const RETRO_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'gameOver']);
+const RETRO_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'pauseCamera', 'gameOver']);
 let retroDrawn = -Infinity, drawnScreen = '';
 
 // The frame rate (an option): frames drawn over the last half second, shown in the corner.
@@ -663,6 +738,7 @@ function frame(now) {
   // it waits on), showing the latest step as it is.
   const retro = !!game.rules.retro && RETRO_SCREENS.has(game.screen);
   const draw = !retro || game.screen !== drawnScreen || now - retroDrawn >= 1000 / RETRO_FPS - 4;
+  if (refit && renderer) { refit = false; fit(); }
   if (draw) {
     if (retro) retroDrawn = now;
     drawnScreen = game.screen;
@@ -691,7 +767,7 @@ function showCounts(b) {
 function fit() {
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
   const rect = canvas.getBoundingClientRect();
-  renderer.resize(rect.width, rect.height, dpr);
+  renderer.resize(rect.width, rect.height, dpr, game);
 }
 
 /**

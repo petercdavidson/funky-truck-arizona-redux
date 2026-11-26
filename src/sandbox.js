@@ -34,7 +34,7 @@ export const SANDBOX_ROWS = [
   { key: 'enemies', name: 'Enemy Cars', choices: COUNTS, dflt: 0 },
   { key: 'birds', name: 'Birds', choices: [[0, 'None'], [8, 'A Few'], [18, 'Lots'], [40, 'Flocks']], dflt: 1 },
   { key: 'weeds', name: 'Tumbleweeds', choices: [[0, 'None'], [3, 'A Few'], [8, 'Lots'], [20, 'Loads']], dflt: 1 },
-  { key: 'clouds', name: 'Clouds', choices: [[false, 'Off'], [true, 'On']], dflt: 1 },
+  { key: 'autopilot', name: 'Autopilot', choices: [['off', 'Off'], ['level', 'Land Level'], ['cruise', 'Cruise'], ['drive', 'Drive Itself']], dflt: 0 },
   { key: 'slow', name: 'Slow Motion', choices: [[1, 'Off'], [0.5, 'Half'], [0.25, 'Quarter']], dflt: 0 },
   { key: 'hitboxes', name: 'Hitboxes', choices: [[false, 'Hidden'], [true, 'Shown']], dflt: 0 },
 ];
@@ -206,4 +206,51 @@ export function stepTraffic(game) {
     const v = (k) => sandboxValue(game.sandbox, k);
     if (staying(b.racers).length < v('rivals') || staying(b.enemies).length < v('enemies')) setTraffic(game, v('rivals'), v('enemies'));
   }
+}
+
+/**
+ * Sandbox's Autopilot: 'level' tilts the truck in the air to land on its wheels; 'cruise' holds the
+ * gas too; 'drive' drives itself as the rival cars do (leaning to keep its nose down on climbs,
+ * backing up for a run-up when it's stuck, flipping back over when it's on its roof). Whatever you
+ * press yourself wins: the gas or brake, or a tilt either way, takes over that much of it.
+ * `updateAutopilot` runs once a step (it keeps what it needs: game.auto); `autopilotKeys` only reads.
+ */
+export const AUTO = { level: 8, lookAhead: 10, stuckFor: 280, backFor: 70, flipAfter: 70 };
+
+export function updateAutopilot(game) {
+  const mode = game.mode === 'sandbox' ? sandboxValue(game.sandbox, 'autopilot') : 'off';
+  const t = game.truck, a = (game.auto ||= { best: -Infinity, since: 0, backFor: 0, roof: 0, rot: t.bodyRot, spin: 0 });
+  // how fast it's turning (degrees a step, smoothed; across ±180 the short way)
+  const d = ((t.bodyRot - a.rot + 540) % 360) - 180;
+  a.spin += (d - a.spin) * 0.5; a.rot = t.bodyRot;
+  // (how far along it is: the world's scrolling, on Endless, taken out)
+  const x = t.T[0] + (game.shiftTotal?.[0] || 0);
+  if (mode !== 'drive' || game.wreck || !game.landed) { a.since = 0; a.backFor = 0; a.roof = 0; a.best = x; return; }
+  if (a.backFor > 0) a.backFor--;
+  else if (x > a.best + 1) { a.best = x; a.since = 0; }
+  else if (++a.since > AUTO.stuckFor) { a.backFor = AUTO.backFor + Math.floor(game.random() * 40); a.since = 0; a.best = x; }
+  a.roof = Math.abs(t.bodyRot) > 100 ? a.roof + 1 : 0;
+  if (a.roof > AUTO.flipAfter && game.canUpright) { a.roof = 0; game.upright(); }
+}
+
+export function autopilotKeys(game, k) {
+  const mode = game.mode === 'sandbox' ? sandboxValue(game.sandbox, 'autopilot') : 'off';
+  if (!mode || mode === 'off' || game.wreck) return k;
+  const t = game.truck, a = game.auto || { spin: 0, backFor: 0 };
+  const air = !t.rearContact && !t.frontContact && game.airSteps > 2;
+  const out = { ...k };
+  const tilting = k.left || k.right, pedal = k.up || k.down;
+  if (!tilting) {
+    // where it'll be pointing in a moment (so it doesn't swing past level)
+    const rot = t.bodyRot + a.spin * AUTO.lookAhead;
+    if (air) { out.right = rot < -AUTO.level; out.left = rot > AUTO.level; }
+    else if (mode === 'drive') {
+      if (a.backFor > 0) { out.left = t.bodyRot > 25; out.right = t.bodyRot < -25; }
+      else { out.right = t.bodyRot < -15; out.left = t.bodyRot > 35; }
+    }
+  }
+  if (!pedal && (mode === 'cruise' || mode === 'drive')) {
+    if (mode === 'drive' && a.backFor > 0) out.down = true; else out.up = true;
+  }
+  return out;
 }

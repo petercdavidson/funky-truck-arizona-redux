@@ -3,7 +3,7 @@
 // All drawing uses the original 576x448 stage coordinates (y down, clockwise rotation), scaled to
 // the canvas. Tiles are drawn in device pixels with snapped edges so they never show seams.
 
-import { TILE, STAGE_W, STAGE_H, STEP_HZ, RESET_WAIT, STAGES_PER_PAGE, METRES_PER_TILE } from './game.js';
+import { TILE, STAGE_W, STAGE_H, STEP_HZ, RESET_WAIT, STAGES_PER_PAGE, METRES_PER_TILE, VIEW_WIDTHS } from './game.js';
 import { HUD_FONT, TITLE_FONT, BODY_PAINTS, tileImage } from './assets.js';
 import { TRICK } from './tricks.js';
 import { VERSION, BUILD } from './version.js';
@@ -33,8 +33,8 @@ import { formatSpeed, formatDistance, formatHeight, formatMach, speedoShare } fr
 const DEG = Math.PI / 180;
 /** Where the tumbleweed art's round hitbox (50 px across) is centred in assets/tumbleweed.png. */
 const WEED_CENTRE = [30.5, 32.5];
-const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'sandboxTweaks', 'gameOver']);
-const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'padMap', 'help', 'garage', 'classicSelect', 'trialSelect', 'sandbox', 'sandboxStats', 'stageEditor', 'stageLoad']);
+const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'pauseCamera', 'sandboxTweaks', 'gameOver']);
+const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'cameraOptions', 'padMap', 'help', 'garage', 'classicSelect', 'trialSelect', 'sandbox', 'sandboxStats', 'stageEditor', 'stageLoad']);
 const AHEAD = '#8ff0a4', BEHIND = '#ffb0a0'; // Time Trial gaps: ahead of / behind your best
 const FILL_TILE = 1;   // solid dirt
 const BUTTON_FILL = 'rgba(107, 74, 64, 0.92)';
@@ -81,10 +81,15 @@ const notRetro = (g) => !g.rules.retro;
 const OPTIONS = [
   ['♪ Sound', 'sound', () => 'Engine, landings, tricks and crashes', null, (g) => onOff(g.soundOn)],
   ['Controls', 'oneButton', controlsAbout, null, (g, r) => controlsName(g, r)],
-  ['Dynamic Camera', 'dynamicCamera', () => 'Pulls back to show more when you go fast or fly high', notRetro, (g) => onOff(g.dynamicCamera)],
-  ['Dynamic Crash Cam', 'crashCam', () => 'Pulls back to keep every piece of a wrecked truck in view', notRetro, (g) => onOff(g.crashCam)],
+  ['Camera', 'cameraOptions', () => 'How much you see, and how the camera pulls back', notRetro, () => 'Set ›'],
   ['Units', 'imperial', (g) => (g.imperial ? 'Speeds in mph, heights in feet and miles' : 'Speeds in km/h, heights in metres and kilometres'), notRetro, (g) => (g.imperial ? 'Imperial' : 'Metric')],
   ['Show Frame Rate', 'showFps', () => 'Frames per second, in the bottom left corner', null, (g) => onOff(g.showFps)],
+];
+/** The Camera screen (from Options, and the pause menu's Options), laid out as Options is. */
+const CAMERA_OPTIONS = [
+  ['View Width', 'viewWidth', (g) => `${Math.round(VIEW_WIDTHS[g.viewWidth][1] * 100)}% of the usual view, everything smaller`, null, (g) => VIEW_WIDTHS[g.viewWidth][0]],
+  ['Dynamic Camera', 'dynamicCamera', () => 'Pulls back to show more when you go fast or fly high', null, (g) => onOff(g.dynamicCamera)],
+  ['Dynamic Crash Cam', 'crashCam', () => 'Pulls back to keep every piece of a wrecked truck in view', null, (g) => onOff(g.crashCam)],
 ];
 /** Option row i: where its name goes (x, y) and its button (rect). */
 const optionLine = (i, tall) => (tall ? { x: 22, y: 84 + 70 * i, w: 196, rect: r(232, 84 + 70 * i, 108, 40) }
@@ -105,6 +110,15 @@ function pauseOptionButtons(tall, extra = {}) {
     ];
   });
 }
+/** The Camera screen's buttons (from Options, or over a paused run): a row per option, then Back. */
+function cameraButtons(tall, back, extra = {}) {
+  return [
+    ...CAMERA_OPTIONS.map(([name, action, , , value], i) => ({ rect: optionRow(i, tall), label: value, action, name, line: i, ...extra })),
+    { rect: tall ? r(80, 560, 200, 38) : r(229, 400, 120, 25), label: 'Back', action: back, ...extra },
+  ];
+}
+/** Which rows of options a screen of them shows. */
+const optionsOn = (screen, g) => (screen === 'options' ? optionRows(g) : screen === 'pauseOptions' ? OPTIONS.filter((o) => !o[3] || o[3](g)) : CAMERA_OPTIONS);
 /** The Options screen's buttons: a row per option (placed by where it is in optionRows), then Menu. */
 function optionButtons(tall, extra = {}) {
   const rows = [...OPTIONS.slice(0, 2), ['Controller Mappings', 'padMap', null, null, () => 'Set'], ...OPTIONS.slice(2)];
@@ -358,6 +372,8 @@ export const BUTTONS = {
   options: optionButtons(false),
   padMap: padMapButtons(false),
   pauseOptions: pauseOptionButtons(false),
+  cameraOptions: cameraButtons(false, 'options'),
+  pauseCamera: cameraButtons(false, 'pauseOptions'),
   help: [{ rect: r(229, 386, 120, 25), label: 'Menu', action: 'menu' }],
   garage: [
     { rect: r(160, 413, 120, 25), label: 'Reset Truck', action: 'lookReset' },
@@ -386,7 +402,7 @@ export const BUTTONS = {
 };
 
 export const TALL_W = 360;
-export const TALL_H = { title: 680, modes: 680, classicSelect: 600, stats: 800, options: 670, padMap: 640, pauseOptions: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 760, sandboxStats: 680, sandboxTweaks: 720, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
+export const TALL_H = { title: 680, modes: 680, classicSelect: 600, stats: 800, options: 670, padMap: 640, pauseOptions: 620, cameraOptions: 620, pauseCamera: 620, help: 560, garage: 580, trialSelect: 620, sandbox: 760, sandboxStats: 680, sandboxTweaks: 720, stageEditor: 480, stageLoad: 620, paused: 460, gameOver: 330 };
 /** The tall layouts are used once the view is at least this tall (in stage units, 576 across). */
 export const TALL_FROM = 576;
 const T_BIG = { size: 15 }, T_SMALL = { small: true, size: 12.5 };
@@ -401,6 +417,8 @@ export const TALL_BUTTONS = {
   options: optionButtons(true, T_BIG),
   padMap: padMapButtons(true),
   pauseOptions: pauseOptionButtons(true, T_BIG),
+  cameraOptions: cameraButtons(true, 'options', T_BIG),
+  pauseCamera: cameraButtons(true, 'pauseOptions', T_BIG),
   help: [{ rect: r(80, 500, 200, 38), label: 'Menu', action: 'menu', ...T_BIG }],
   garage: [
     { rect: r(30, 532, 145, 38), label: 'Reset Truck', action: 'lookReset', ...T_BIG },
@@ -591,11 +609,13 @@ export class Renderer {
     return [(x - p.x) / p.k + STAGE_W / 2, (y - p.y) / p.k + 170];
   }
 
-  resize(cssW, cssH, dpr) {
+  resize(cssW, cssH, dpr, game = null) {
     this.canvas.width = Math.round(cssW * dpr);
     this.canvas.height = Math.round(cssH * dpr);
     this.cssPerDevice = 1 / dpr;
-    this.layout(null);
+    // (laid out for the screen showing, so a tap before the next frame lands where it looks: before
+    // 1.25.0 it was laid out for the title screen until then)
+    this.layout(game);
   }
 
   /**
@@ -987,7 +1007,9 @@ export class Renderer {
     this.backdrop(game, v);
     const zoom = game.rules.retro ? 1 : v.zoom || 1;
     const sky = game.rules.retro ? null : this.space(game, v);
-    if (game.mode === 'sandbox' && sandboxValue(game.sandbox, 'clouds') && (sky?.clouds ?? 1) > 0) this.clouds(game, v, zoom, sky?.clouds ?? 1);
+    // (Sandbox's clouds: none from the ground; they come in as you climb, and stop at the top of the weather)
+    const cloudFade = game.mode === 'sandbox' && !game.rules.retro ? skyAt((game.height || 0) / 1000).clouds : 0;
+    if (cloudFade > 0) this.clouds(game, v, zoom, cloudFade);
     this.tiles(game.levelData, v.camX, v.camY, zoom, game.mode === 'custom' || !!game.sandboxCustom);
     ctx.save();
     ctx.beginPath();
@@ -1196,6 +1218,49 @@ export class Renderer {
     });
   }
 
+  /**
+   * A knocked-out bird lying on the ground (`lie`: the ground's slope), in one of four poses picked
+   * by `pose` (on its back with its legs up, on its side with a wing up, face down with its wings
+   * spread, crumpled), either way round and tipped a little. Drawn about its middle, ground below.
+   */
+  deadBird(lie, pose) {
+    const ctx = this.ctx, kind = pose % 4, flip = (pose >> 2) % 2 ? -1 : 1, tip = (((pose >> 3) % 7) - 3) * 0.06;
+    const legs = (pts) => {
+      ctx.save(); ctx.strokeStyle = '#f3e9d2'; ctx.lineWidth = 1; ctx.beginPath();
+      for (const [x0, y0, x1, y1] of pts) { ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); }
+      ctx.stroke(); ctx.restore();
+    };
+    const line = (...p) => { ctx.beginPath(); ctx.moveTo(p[0], p[1]); for (let i = 2; i < p.length; i += 2) ctx.lineTo(p[i], p[i + 1]); ctx.stroke(); };
+    ctx.rotate(lie + tip);
+    ctx.scale(flip, 1);
+    ctx.lineWidth = 2;
+    if (kind === 0) {
+      // on its back, legs in the air (as before 1.25.0)
+      ctx.rotate(Math.PI * 0.9);
+      ctx.beginPath(); ctx.ellipse(0, 0, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+      line(-2, -1, -8, -5); line(2, -1, 7, -6);
+      legs([[-2, 2, -1, 4], [2, 2, 3, 4]]);
+    } else if (kind === 1) {
+      // on its side: one wing flopped up, the other under it along the ground
+      ctx.beginPath(); ctx.ellipse(0, 0.5, 5.5, 2.8, -0.15, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(5, -0.5, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-1, -1); ctx.quadraticCurveTo(-3, -7, -7, -9); ctx.stroke();
+      line(1, 2.5, 6, 3, 10, 2.5);
+      legs([[-4, 0.5, -7.5, -0.5], [-4, 1.5, -7.5, 2]]);
+    } else if (kind === 2) {
+      // face down, wings spread flat out either side
+      ctx.beginPath(); ctx.ellipse(0, 1, 4.5, 2.4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(4.5, 1.5, 1.8, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-1, 0.5); ctx.quadraticCurveTo(-6, -1, -12, 1.5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(1, 0.5); ctx.quadraticCurveTo(6, -1.5, 11, 0); ctx.stroke();
+    } else {
+      // crumpled in a heap, wings folded, one leg sticking up bent
+      ctx.beginPath(); ctx.ellipse(0, 0.5, 4.5, 3.2, 0.3, 0, Math.PI * 2); ctx.fill();
+      line(-3, -1, -6, -3, -5, 1); line(2, -1.5, 5, -3.5);
+      legs([[-0.5, -2.5, -1, -6], [-1, -6, 1, -7.5], [1.5, -2.5, 2.5, -5.5]]);
+    }
+  }
+
   /** Sandbox's birds (flapping, or knocked tumbling), tumbleweeds and loose feathers. */
   critters(C, t = 1) {
     const ctx = this.ctx;
@@ -1230,11 +1295,13 @@ export class Renderer {
       } else {
         // knocked out: tumbling, wings folded; lying on the ground once it's down (and fading)
         ctx.globalAlpha = b.rest > 300 ? Math.max(0, 1 - (b.rest - 300) / 100) : 1;
-        ctx.rotate(b.rest ? (b.lie ?? 0) + Math.PI * 0.9 : b.rot);
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.ellipse(0, 0, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.moveTo(-2, -1); ctx.lineTo(-8, -5); ctx.moveTo(2, -1); ctx.lineTo(7, -6); ctx.stroke();
-        if (b.rest) { ctx.strokeStyle = '#f3e9d2'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-2, 2); ctx.lineTo(-1, 4); ctx.moveTo(2, 2); ctx.lineTo(3, 4); ctx.stroke(); }
+        if (b.rest) this.deadBird(b.lie ?? 0, b.pose ?? 0);
+        else {
+          ctx.rotate(b.rot);
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.ellipse(0, 0, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.moveTo(-2, -1); ctx.lineTo(-8, -5); ctx.moveTo(2, -1); ctx.lineTo(7, -6); ctx.stroke();
+        }
       }
       ctx.restore();
     }
@@ -1336,11 +1403,14 @@ export class Renderer {
     const ctx = this.ctx, tall = this.viewH > this.viewW * 1.15;
     const k = tall ? HUD_TALL.k : 1, top = tall ? HUD_TALL.top : 0;
     if (game.battle?.opts.weapons) battleHud(this, game);
+    // Clear of the screen's rounded corners and notch (the safe area, in stage units: main.js
+    // keeps it up to date; nothing on a screen without them).
+    const S = this.safe || { l: 0, r: 0, t: 0, b: 0 };
     ctx.save();
-    ctx.translate(0, top);
+    ctx.translate(S.l, top + S.t);
     ctx.scale(k, k);
-    this.hudW = this.viewW / k;
-    this.hudH = (this.viewH - top) / k;
+    this.hudW = (this.viewW - S.l - S.r) / k;
+    this.hudH = (this.viewH - top - S.t) / k;
     this.hudDrop = tall ? Math.max(0, (this.viewH * HUD_TALL.middle - top) / k - 82) : 0;
     try { this.hudInner(game); } finally { ctx.restore(); }
   }
@@ -1618,9 +1688,10 @@ export class Renderer {
   /** The Options screen: each option as a button, with a line on what it does. */
   options(game, screen = 'options') {
     const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
-    this.text('Options', cx, tall ? 28 : 18, { size: tall ? 26 : 22, weight: '800' });
+    const camera = screen === 'cameraOptions' || screen === 'pauseCamera';
+    this.text(camera ? 'Camera' : 'Options', cx, tall ? 28 : 18, { size: tall ? 26 : 22, weight: '800' });
     // Each option's name and what it does, as text beside its button.
-    const rows = screen === 'options' ? optionRows(game) : OPTIONS.filter((o) => !o[3] || o[3](game));
+    const rows = optionsOn(screen, game);
     for (const b of buttonsFor(screen, tall)) {
       if (b.name === undefined || (b.show && !b.show(game))) continue;
       const i = typeof b.line === 'function' ? b.line(game) : b.line, L = optionLine(i, tall);
@@ -1651,10 +1722,10 @@ export class Renderer {
     }
   }
 
-  /** The pause menu's Options, over the dimmed game. */
-  pauseOptions(game) {
+  /** The pause menu's Options (or its Camera screen), over the dimmed game. */
+  pauseOptions(game, screen = 'pauseOptions') {
     this.overlayDim(0.55);
-    this.options(game, 'pauseOptions');
+    this.options(game, screen);
   }
 
   /**
@@ -2021,6 +2092,8 @@ export class Renderer {
         case 'stats': this.stats(game); break;
         case 'help': this.help(game); break;
         case 'options': this.options(game); break;
+        case 'cameraOptions': this.options(game, 'cameraOptions'); break;
+        case 'pauseCamera': this.pauseOptions(game, 'pauseCamera'); break;
         case 'padMap': this.padMap(game); break;
         case 'garage': this.garage(game, v); break;
         case 'classicSelect': this.classicSelect(game); break;
