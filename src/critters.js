@@ -13,6 +13,8 @@
 // same every time, so they stay put in the sky (a long way up there are more of them). They show
 // which way you're going when there's no ground in sight.
 
+import { WRECK } from './wreck.js';
+
 const TILE = 64;
 export const CRITTERS = {
   birdRadius: 9,          // px: how near the truck a bird is hit
@@ -30,6 +32,11 @@ export const CRITTERS = {
   weedStill: 0.12,        // px/step: a tumbleweed moving less than this...
   weedSettle: 25,         // ...for this many steps comes to rest (asleep: it stays put until something moves it)
   weedRub: 0.2,           // the share of the speed two tumbleweeds slide against each other with that they lose each step
+  weedGravity: 0.5,       // tumbleweeds are light: this share of the truck's gravity pulls them down...
+  weedAir: 0.008,         // ...and they lose this share of their speed each step in the air (so they float down)
+  weedSpinAir: 0.06,      // a big, airy ball: in the air it loses this share of its spin each step
+  weedLand: 1.0,          // the truck coming down on one squirts it out sideways and up, this many times as fast as it came down
+  weedBlast: 3,           // a blast throws a tumbleweed this many times as hard as a bird
 };
 
 /** A small, repeatable hash of two integers to [0, 1). */
@@ -70,6 +77,40 @@ export function cloudsNear(x0, y0, x1, y1, top = 0, seed = 0, density = 1, depth
     }
   }
   return out;
+}
+
+/**
+ * The sky's colour high up (every mode but 2006 Mode): how much it darkens over the backdrop's
+ * blue, and to what, at `km` above where the stage starts, from what the sky looks like straight
+ * up at those heights: an airliner's deeper blue at 10 km, the U-2's dark blue at 20 km, a
+ * balloon's navy at 30 km, near black past the stratopause (50 km) and black space by the
+ * Kármán line (100 km). Stars come out as it goes dark. Clouds stop at the top of the weather
+ * (thunderstorm tops, 12 to 18 km). Returns { color: [r, g, b], alpha, stars, clouds } (0 to 1).
+ */
+export const SKY = [
+  // km, colour, how much it covers the backdrop
+  [6, [74, 128, 205], 0],
+  [10, [42, 98, 196], 0.28],
+  [20, [23, 63, 143], 0.62],
+  [30, [11, 32, 86], 0.84],
+  [50, [4, 12, 42], 0.95],
+  [80, [1, 3, 12], 1],
+  [100, [0, 0, 4], 1],
+];
+export function skyAt(km) {
+  const ease = (a, b) => Math.max(0, Math.min(1, (km - a) / (b - a)));
+  const t = (x) => x * x * (3 - 2 * x);
+  let color = SKY[0][1], alpha = 0;
+  if (km >= SKY[SKY.length - 1][0]) { color = SKY[SKY.length - 1][1]; alpha = 1; }
+  else for (let i = 1; i < SKY.length; i++) {
+    const [k0, c0, a0] = SKY[i - 1], [k1, c1, a1] = SKY[i];
+    if (km > k1) continue;
+    if (km <= k0) break;
+    const f = (km - k0) / (k1 - k0);
+    color = c0.map((c, j) => Math.round(c + (c1[j] - c) * f)); alpha = a0 + (a1 - a0) * f;
+    break;
+  }
+  return { color, alpha, stars: t(ease(30, 90)), clouds: 1 - t(ease(12, 18)) };
 }
 
 export class Critters {
@@ -166,7 +207,7 @@ export class Critters {
       const y = h.y - 1;
       if (!sky(h.x, y - CRITTERS.weedRadius)) continue;   // (out in the open, under the sky)
       if (Math.abs(y - view.cy) < view.hh + 30 && Math.abs(x - view.cx) < view.hw + 30) continue;   // (never in sight)
-      this.weeds.push({ x: h.x, y, px: h.x, py: y, vx: 0, vy: 0, rot: this.random() * 6, life: 0, cool: 0, still: 0, sleep: false });
+      this.weeds.push({ x: h.x, y, px: h.x, py: y, vx: 0, vy: 0, rot: this.random() * 6, spin: 0, life: 0, cool: 0, still: 0, sleep: false, ground: true });
       return true;
     }
     return false;
@@ -186,19 +227,25 @@ export class Critters {
 
   /** An explosion at (x, y): birds within `radius` are knocked out, tumbleweeds thrown. */
   blast(x, y, radius, power) {
+    let heard = false;   // (one bird hit sound for the blast, however many birds it gets)
     for (const b of this.birds) {
       const dx = b.x - x, dy = b.y - y, d = Math.hypot(dx, dy) || 1;
       if (d > radius) continue;
       const k = power * (1 - d / radius) + 1;
-      if (!b.hit) { this.knock(b, dx / d * k, dy / d * k - 1); this.events.push({ kind: 'bird', x: b.x, y: b.y, speed: k, blast: true }); }
+      if (!b.hit) {
+        this.knock(b, dx / d * k, dy / d * k - 1);
+        if (!heard) this.events.push({ kind: 'bird', x: b.x, y: b.y, speed: k, blast: true });
+        heard = true;
+      }
       else if (!b.rest) { b.vx += dx / d * k; b.vy += dy / d * k; }
     }
     for (const w of this.weeds) {
       const dx = w.x - x, dy = w.y - y, d = Math.hypot(dx, dy) || 1;
       if (d > radius) continue;
-      const k = power * (1 - d / radius);
+      const k = power * CRITTERS.weedBlast * (1 - d / radius) + 2;
       w.sleep = false; w.still = 0;
-      w.vx += dx / d * k; w.vy += dy / d * k - k * 0.5;
+      w.vx += dx / d * k; w.vy += dy / d * k - k * 0.6;
+      w.spin = (w.spin || 0) + (this.random() - 0.5) * 0.02 * k + Math.sign(dx) * 0.01 * k;
     }
   }
 
@@ -209,14 +256,15 @@ export class Critters {
   get flying() { return this.birds.filter((b) => !b.hit); }
 
   /**
-   * One step. `truck`: the Truck (read only, never changed), or null (a wreck hits nothing).
+   * One step. `truck`: the Truck (read only, never changed), or null (wrecked: then `wreck`'s
+   * loose pieces, its body and wheels, hit things instead; also read only).
    * `view`: { cx, cy, hw, hh } in world px. `world`: the collision world for tumbleweeds (pushed
    * out by their size); `thin`: the one for birds (pushed out a little). `bottom`: below that,
    * something's fallen out of the level and goes. `sky(x, y)`: whether there's open sky straight
    * up from there (nothing comes in where there isn't: in a pipe, under the ground). `events`
    * isn't emptied here (a missile's blast before the step adds to it): the game empties it.
    */
-  step(truck, view, world, thin, gravity = CRITTERS.gravity, bottom = Infinity, sky = () => true) {
+  step(truck, view, world, thin, gravity = CRITTERS.gravity, bottom = Infinity, sky = () => true, wreck = null) {
     const C = CRITTERS, R = this.random;
     // (where each was, for drawing between steps)
     for (const A of [this.birds, this.weeds, this.feathers]) for (const o of A) { o.px = o.x; o.py = o.y; }
@@ -224,12 +272,21 @@ export class Critters {
     this.birds = this.birds.filter((b) => !gone(b) && !(b.hit && b.rest > 400));
     this.weeds = this.weeds.filter((w) => !gone(w));
     // new ones out of sight, the way you're heading
-    const heading = truck ? [truck.T[0] - truck.P[0], truck.T[1] - truck.P[1]] : [0, 0];
+    const heading = truck ? [truck.T[0] - truck.P[0], truck.T[1] - truck.P[1]] : wreck ? [wreck.T[0] - wreck.P[0], wreck.T[1] - wreck.P[1]] : [0, 0];
     if (this.birds.length < this.wantBirds && R() < 0.25) this.spawnBird(view, thin, heading, sky);
     if (this.weeds.length < this.wantWeeds && R() < 0.15) this.spawnWeed(view, world, heading, sky);
     // what hits: circles round the truck's chassis centre and its wheels (and how fast each moves)
     const T = truck?.T, P = truck?.P;
     const hitters = truck ? [0, 1, 2].map((p) => [T[p * 2], T[p * 2 + 1], T[p * 2] - P[p * 2], T[p * 2 + 1] - P[p * 2 + 1], p ? truck.wheelRadius + 6 : C.truckRadius]) : [];
+    if (!truck && wreck) {
+      // a wreck: its loose wheels, and its body (a circle round its middle)
+      const WT = wreck.T, WP = wreck.P;
+      for (const w of wreck.wheels) hitters.push([WT[w.p * 2], WT[w.p * 2 + 1], WT[w.p * 2] - WP[w.p * 2], WT[w.p * 2 + 1] - WP[w.p * 2 + 1], WRECK.wheelRadius + 6]);
+      let vx = 0, vy = 0;
+      for (const i of wreck.body) { vx += WT[i * 2] - WP[i * 2]; vy += WT[i * 2 + 1] - WP[i * 2 + 1]; }
+      const [cx, cy] = wreck.centre;
+      hitters.push([cx, cy, vx / wreck.body.length, vy / wreck.body.length, C.truckRadius * 0.8]);
+    }
     const inView = (o) => Math.abs(o.x - view.cx) < view.hw + 60 && Math.abs(o.y - view.cy) < view.hh + 60;
     const hitBy = (o, r) => hitters.find(([x, y, , , hr]) => (o.x - x) ** 2 + (o.y - y) ** 2 < (r + hr) ** 2);
 
@@ -282,13 +339,16 @@ export class Critters {
         const h = hitBy(w, C.weedRadius);
         if (h && Math.hypot(h[2], h[3]) > 0.3) { w.sleep = false; w.still = 0; } else continue;
       }
-      w.vy += gravity;
-      w.vx *= 0.999;
+      // light and airy: a weak pull down, and the air slows it (so it floats down, and drifts far)
+      w.vy += gravity * C.weedGravity;
+      if (!w.ground) { w.vx *= 1 - C.weedAir; w.vy *= 1 - C.weedAir; } else w.vx *= 0.999;
       const fall = w.vy;
       const n = Critters.move(w, world, w.vy > 3 ? C.weedBounce : 0, 0.004);
+      w.ground = !!n;
       if (n && fall > 2.5 && inView(w)) this.events.push({ kind: 'weedBounce', x: w.x, y: w.y, speed: fall });
-      // rolling: it turns as far as it goes along
-      w.rot += w.vx / C.weedRadius;
+      // on the ground it rolls (turning as far as it goes along); in the air its spin soon dies away
+      if (n) w.spin = w.vx / C.weedRadius; else w.spin = (w.spin || 0) * (1 - C.weedSpinAir);
+      w.rot += w.spin;
       if (n && Math.hypot(w.vx, w.vy) < 0.02) { w.vx = 0; w.vy = 0; }
       const h = hitBy(w, C.weedRadius);
       if (h) {
@@ -298,7 +358,13 @@ export class Critters {
         const vn = (w.vx - vx) * nx + (w.vy - vy) * ny;
         if (vn < 0) {
           w.vx -= (1 + C.weedKick) * vn * nx; w.vy -= (1 + C.weedKick) * vn * ny;
-          w.vy = Math.max(w.vy, Math.min(vy, 0) - 3);
+          w.vy = Math.max(w.vy, Math.min(vy, 0) - 5);
+          // the truck coming down on it: squeezed out from under, sideways and up
+          if (vy > 1.5 && hy < w.y + C.weedRadius) {
+            const pop = vy * C.weedLand, side = Math.sign(dx) || (R() < 0.5 ? -1 : 1);
+            w.vx += side * pop * 0.8 + vx * 0.5; w.vy = Math.min(w.vy, -pop * 0.9);
+            w.spin = side * pop * 0.02;
+          }
           if (!w.cool && inView(w)) this.events.push({ kind: 'weed', x: w.x, y: w.y, speed: -vn });
           w.cool = 12;
         }

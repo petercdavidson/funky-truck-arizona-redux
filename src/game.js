@@ -1310,11 +1310,11 @@ export class Game {
     this.shiftWorld(L.period * TILE, L.drop * TILE);
   }
 
-  /** Sandbox's birds and tumbleweeds: a step, round the view (a wrecked truck hits nothing). */
+  /** Sandbox's birds and tumbleweeds: a step, round the view (a wrecked truck's loose pieces hit them). */
   stepCritters() {
     const z = this.zoom, hw = this.viewW * z / 2, hh = this.viewH * z / 2;
     const view = { cx: this.camX + hw, cy: this.camY + hh, hw, hh };
-    this.critters.step(this.wreck ? null : this.truck, view, this.weedWorld, this.thinWorld, this.truck.gravity, this.levelData.height * TILE + 400, (x, y) => this.skyAbove(x, y));
+    this.critters.step(this.wreck ? null : this.truck, view, this.weedWorld, this.thinWorld, this.truck.gravity, this.levelData.height * TILE + 400, (x, y) => this.skyAbove(x, y), this.wreck);
   }
 
   /**

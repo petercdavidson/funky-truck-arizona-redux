@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Game } from '../src/game.js';
-import { cloudsNear, CRITTERS } from '../src/critters.js';
+import { cloudsNear, CRITTERS, Critters, skyAt } from '../src/critters.js';
 import { SoundWatcher } from '../src/sound-events.js';
 
 const data = JSON.parse(readFileSync(new URL('../assets/levels.json', import.meta.url)));
@@ -179,4 +179,49 @@ test('missiles blow up on tumbleweeds (never aiming for one), and a bird a missi
   let heard = 0;
   for (let i = 0; i < 30; i++) { g.step(); heard += sw.observe(g).events.filter((e) => e.type === 'bird').length; }
   assert.equal(heard, 1, 'the bird hit sound');
+});
+
+test('a blast that gets several birds plays the bird hit sound once', () => {
+  const C = new Critters(() => 0.5);
+  for (let i = 0; i < 4; i++) C.birds.push({ x: i * 5, y: 0, vx: 1, vy: 0, dir: 1, flap: 0, hit: false, spin: 0, rot: 0, rest: 0, life: 0 });
+  C.blast(0, 10, 80, 6);
+  assert.ok(C.birds.every((b) => b.hit));
+  assert.equal(C.events.filter((e) => e.kind === 'bird').length, 1);
+});
+
+test('a wrecked truck\'s loose pieces still knock birds down', () => {
+  const g = new Game(data);
+  g.sandbox.birds = 0; g.sandbox.weeds = 0;
+  g.startSandbox();
+  for (let i = 0; i < 30; i++) g.step();
+  g.selfWreck();
+  assert.ok(g.wreck);
+  const W = g.wreck, w = W.wheels[0];
+  const bird = { x: W.T[w.p * 2] + 5, y: W.T[w.p * 2 + 1], vx: 1, vy: 0, dir: 1, flap: 0, hit: false, spin: 0, rot: 0, rest: 0, life: 0 };
+  g.critters.birds = [bird];
+  g.stepCritters();
+  assert.ok(bird.hit, 'the loose wheel hit the bird');
+});
+
+test('tumbleweeds are light: a blast throws one far, and its spin soon dies in the air', () => {
+  const C = new Critters(() => 0.5);
+  const world = { collide: () => null, down: () => null };
+  const w = { x: 40, y: 0, vx: 0, vy: 0, rot: 0, spin: 0.3, life: 0, cool: 0, ground: false };
+  C.weeds = [w];
+  C.blast(0, 0, 80, 6);
+  assert.ok(w.vx > 8, `thrown at ${w.vx.toFixed(1)} px/step`);
+  const spin = Math.abs(w.spin);
+  for (let i = 0; i < 70; i++) C.step(null, { cx: w.x, cy: w.y, hw: 9e6, hh: 9e6 }, world, world);
+  assert.ok(Math.abs(w.spin) < spin * 0.05, 'spin gone within a second in the air');
+  assert.ok(w.vy < 12, `falls gently (${w.vy.toFixed(1)} px/step after a second)`);
+});
+
+test('the sky darkens into space with height (real colours at real heights)', () => {
+  assert.equal(skyAt(0).alpha, 0);
+  let last = -1;
+  for (let km = 0; km <= 120; km += 5) { const s = skyAt(km); assert.ok(s.alpha >= last); last = s.alpha; }
+  assert.equal(skyAt(100).alpha, 1);
+  assert.ok(skyAt(100).color.every((c) => c < 10), 'black at the Kármán line');
+  assert.equal(skyAt(10).stars, 0); assert.equal(skyAt(100).stars, 1);
+  assert.equal(skyAt(5).clouds, 1); assert.equal(skyAt(25).clouds, 0);
 });

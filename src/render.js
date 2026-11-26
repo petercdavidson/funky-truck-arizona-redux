@@ -3,7 +3,7 @@
 // All drawing uses the original 576x448 stage coordinates (y down, clockwise rotation), scaled to
 // the canvas. Tiles are drawn in device pixels with snapped edges so they never show seams.
 
-import { TILE, STAGE_W, STAGE_H, STEP_HZ, RESET_WAIT, STAGES_PER_PAGE } from './game.js';
+import { TILE, STAGE_W, STAGE_H, STEP_HZ, RESET_WAIT, STAGES_PER_PAGE, METRES_PER_TILE } from './game.js';
 import { HUD_FONT, TITLE_FONT, BODY_PAINTS, tileImage } from './assets.js';
 import { TRICK } from './tricks.js';
 import { VERSION, BUILD } from './version.js';
@@ -12,7 +12,7 @@ import { TRIAL_ALL, TRIAL_STUNTS, formatTime, formatGap } from './trial.js';
 import { battleBack, battleFront, battleHud } from './render-battle.js';
 import { circles } from './battle.js';
 import { PAD_ACTIONS, padName } from './pad.js';
-import { cloudsNear, CRITTERS } from './critters.js';
+import { cloudsNear, CRITTERS, skyAt, hash2 } from './critters.js';
 
 /**
  * Sandbox's layers of clouds, farthest first: each moves past at `depth` of the world's speed
@@ -947,7 +947,8 @@ export class Renderer {
     const ctx = this.ctx;
     this.backdrop(game, v);
     const zoom = game.rules.retro ? 1 : v.zoom || 1;
-    if (game.mode === 'sandbox' && sandboxValue(game.sandbox, 'clouds')) this.clouds(game, v, zoom);
+    const sky = game.rules.retro ? null : this.space(game, v, zoom);
+    if (game.mode === 'sandbox' && sandboxValue(game.sandbox, 'clouds') && (sky?.clouds ?? 1) > 0) this.clouds(game, v, zoom, sky?.clouds ?? 1);
     this.tiles(game.levelData, v.camX, v.camY, zoom, game.mode === 'custom' || !!game.sandboxCustom);
     ctx.save();
     ctx.beginPath();
@@ -982,12 +983,51 @@ export class Renderer {
   }
 
   /**
+   * High up, the sky darkens over the backdrop into black space (`skyAt`: real colours at real
+   * heights above where the stage starts, at the middle of the view), and the stars come out:
+   * two layers, fixed in the sky but for a slight drift as you go (a thousandth of the world's
+   * speed and less), so you can still see you're moving. Returns the sky (for the clouds' fade),
+   * or null down low.
+   */
+  space(game, v, zoom) {
+    const [sx, sy] = game.shiftTotal || [0, 0];
+    const above = (game.levelData.start[1] - sy) - (v.camY + this.viewH * zoom / 2);
+    const km = above / TILE * METRES_PER_TILE / 1000;
+    if (km <= 6) return null;
+    const sky = skyAt(km), ctx = this.ctx, c = this.canvas;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = sky.alpha;
+    ctx.fillStyle = `rgb(${sky.color.join(',')})`;
+    ctx.fillRect(0, 0, c.width, c.height);
+    if (sky.stars > 0) {
+      const sc = this.scale, CELL = 70, W = c.width / sc, H = c.height / sc;
+      ctx.fillStyle = '#fff';
+      for (const [depth, seed, size] of [[1 / 4000, 3, 1], [1 / 1200, 5, 1.6]]) {
+        // the view's top left in this layer's star space (stage px)
+        const ox = (v.camX + sx) * depth - this.offX / sc, oy = (v.camY + sy) * depth - this.offY / sc;
+        for (let cy = Math.floor(oy / CELL); cy <= Math.floor((oy + H) / CELL); cy++) {
+          for (let cx = Math.floor(ox / CELL); cx <= Math.floor((ox + W) / CELL); cx++) {
+            if (hash2(cx, cy, 40 + seed) > 0.55) continue;
+            const x = (cx + hash2(cx, cy, 41 + seed)) * CELL - ox, y = (cy + hash2(cx, cy, 42 + seed)) * CELL - oy;
+            const b = hash2(cx, cy, 43 + seed), r = size * (0.5 + 0.7 * b) * sc;
+            ctx.globalAlpha = sky.stars * (0.35 + 0.65 * b);
+            ctx.fillRect(Math.round(x * sc - r / 2), Math.round(y * sc - r / 2), Math.max(1, r), Math.max(1, r));
+          }
+        }
+      }
+    }
+    ctx.restore();
+    return sky;
+  }
+
+  /**
    * Sandbox's clouds: layers of them far off behind the world (`CLOUD_LAYERS`), each moving past
    * slower than it does (its `depth` of the world's speed) and zooming out less, and fixed in its
    * own far sky (in cloud space: the world with the course's scrolling taken out, times the
    * depth), so you can see which way you're going with no ground in sight.
    */
-  clouds(game, v, zoom) {
+  clouds(game, v, zoom, fade = 1) {
     const ctx = this.ctx, [sx, sy] = game.shiftTotal;
     // Flat white shapes, softened with a blur where the browser can (canvas filters).
     const canBlur = 'filter' in ctx;
@@ -1004,7 +1044,7 @@ export class Renderer {
       ctx.fillStyle = '#fff';
       for (const c of cloudsNear(x0 - 300, y0 - 200, x0 + w + 300, y0 + h + 200, 0, layer, 0.45, p)) {
         // its puffs filled as one shape
-        ctx.globalAlpha = c.alpha * 0.85 * alpha;
+        ctx.globalAlpha = c.alpha * 0.85 * alpha * fade;
         ctx.beginPath();
         for (const [dx, dy, r] of c.puffs) {
           const px = c.x + dx * size, py = c.y + dy * size, R = r * size;

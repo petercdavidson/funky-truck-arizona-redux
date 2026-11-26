@@ -49,8 +49,10 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `src/critters.js` (no DOM): Sandbox's birds and tumbleweeds (`game.critters`, own physics and own
   random numbers; they read the truck and never change it; they collide with the ground as wheels do,
   `Critters.move` with `world.collide`; they go out of sight behind and come in out of sight ahead;
-  your missiles home in on birds, `flying`, and blasts knock both) and its clouds (`cloudsNear`: a hash of
-  the sky, fixed in cloud space, the world less `game.shiftTotal`). Counts are Sandbox settings.
+  your missiles home in on birds, `flying`, and blasts knock both; a wreck's loose pieces hit them too) and its clouds (`cloudsNear`: a hash of
+  the sky, fixed in cloud space, the world less `game.shiftTotal`). Counts are Sandbox settings. Also `skyAt`: the sky darkening into space with height
+  above the stage's start, real colours at real heights (`Renderer.space` draws it, with stars, in
+  every mode but 2006 Mode).
 - `src/sandbox.js` (no DOM): Sandbox Mode's settings (`funkytruck.sandbox`, choice indices; track 0
   is Endless, then the stages, then the stunt tracks), `applySandbox` (sets the truck's `power`,
   `gravity`, `tiltPower` and `springK`: Truck properties whose defaults are the original's;
