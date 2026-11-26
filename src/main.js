@@ -450,13 +450,16 @@ function pollGamepads() {
     for (const p of pads) p.buttons.forEach((x, i) => { if (x?.pressed) now.add(i); });
     const fresh = [...now].find((i) => !padHeld.has(i));
     padHeld = now;
-    if (fresh !== undefined) { game.setPad(game.padListen, fresh); sound.play('click'); }
+    if (fresh !== undefined) { sound.unlock(); game.setPad(game.padListen, fresh); sound.play('click'); }
     // (and nothing else this time: the press is used up)
     padSelectWasDown = padBackWasDown = padStartWasDown = true;
     return;
   }
+  const wasHeld = padHeld;
   padHeld = new Set();
   for (const p of pads) p.buttons.forEach((x, i) => { if (x?.pressed) padHeld.add(i); });
+  // A fresh button press: try to start the sound (browsers that count it as a gesture allow it).
+  if ([...padHeld].some((i) => !wasHeld.has(i))) sound.unlock();
   for (const p of pads) {
     const b = (i) => !!p.buttons[i]?.pressed;
     const ax = p.axes[0] || 0;
@@ -649,6 +652,7 @@ function frame(now) {
   // Tell the page which screen this is before drawing, so the on-screen controls always match it.
   const ds = document.body.dataset;
   if (ds.screen !== game.screen) ds.screen = game.screen;
+  game.soundBlocked = game.soundOn && !sound.ready && !document.hidden && game.padConnected;
   const snd = game.soundOn ? '1' : '0';
   if (ds.sound !== snd) ds.sound = snd;
   const retroOn = game.rules?.retro ? '1' : '0';

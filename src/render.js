@@ -1999,6 +1999,13 @@ export class Renderer {
         case 'pauseOptions': this.pauseOptions(game); break;
         case 'gameOver': this.gameOver(game); break;
       }
+      // Sound is on but the browser hasn't let it start (a controller press doesn't count as
+      // the click or key press it waits for): say how to start it.
+      if (game.soundBlocked) {
+        this.stageTransform();
+        this.text('♪ Click or press any key to start the sound', this.viewW / 2, this.viewH - 24,
+          { size: 12, weight: '700', color: 'rgba(255,255,255,0.85)', shadow: '#000' });
+      }
     } finally {
       ctx.restore();
     }
