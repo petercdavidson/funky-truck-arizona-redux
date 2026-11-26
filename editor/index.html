@@ -431,19 +431,29 @@
           raw[y][x] = d[i + 1]; rawSrc[y][x] = 1;
         }
       }
-      for (let y = 0; y < H; y++) for (let x = x0; x < x1; x++) { const p = L.paint[y][x]; if (p !== NONE) { raw[y][x] = p; rawSrc[y][x] = 2; } }
-      // a path's own ground pieces show over anything painted there, so a path never has a gap in
-      // its ground (painting over them breaks the path instead: cutPaths)
-      for (const g of L.paths) {
-        if (!g.chain.length) continue;
-        const on = new Set(g.chain), d = g.delta;
-        for (let i = 0; i < d.length; i += 2) {
-          const k = d[i], x = k % W;
-          if (x < x0 || x >= x1 || !on.has(k)) continue;
+      // Every path's own ground pieces show over the other paths' tiles (one path's dirt or sky
+      // never takes away another's ground: two paths with their ground the same way, one over the
+      // other, keep both grounds, and the sky or dirt between them is marked as a problem), and
+      // over anything painted (painting over them breaks the path instead: cutPaths). Where two
+      // paths' pieces want the same cell, the lower path's win.
+      const chains = L.paths.filter((g) => g.chain.length).map((g) => {
+        const on = new Set(g.chain), d = g.delta, cells = [];
+        let sum = 0;
+        for (let i = 0; i < d.length; i += 2) if (on.has(d[i])) { cells.push(d[i], d[i + 1]); sum += Math.floor(d[i] / W); }
+        return { cells, low: sum / Math.max(1, cells.length / 2) };
+      }).sort((a, b) => a.low - b.low);
+      const stamp = (onlyPainted) => {
+        for (const { cells } of chains) for (let i = 0; i < cells.length; i += 2) {
+          const k = cells[i], x = k % W;
+          if (x < x0 || x >= x1) continue;
           const y = (k - x) / W;
-          if (L.paint[y][x] !== NONE) { raw[y][x] = d[i + 1]; rawSrc[y][x] = 1; }
+          if (onlyPainted && L.paint[y][x] === NONE) continue;
+          raw[y][x] = cells[i + 1]; rawSrc[y][x] = 1;
         }
-      }
+      };
+      stamp(false);
+      for (let y = 0; y < H; y++) for (let x = x0; x < x1; x++) { const p = L.paint[y][x]; if (p !== NONE) { raw[y][x] = p; rawSrc[y][x] = 2; } }
+      stamp(true);
       const t = raw.map((r) => r.slice());
       const r = fillRuns(t, kit, (x, y) => L.paint[y][x] === SKY);
       bad.clear();

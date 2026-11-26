@@ -116,8 +116,10 @@ nine stages are only a check, not the source of the rules: they were made by han
 mistakes. The rules come from the tile sheet itself and from the user's fixes.
 
 - **Layers**, not one grid: a path's tiles are its own (`g.delta`), so moving or deleting it leaves
-  nothing behind. A path's ground pieces (`g.chain`) always show, even under painted tiles: a path
-  never has a gap in its collision (1.24.14; painting over them breaks the path instead).
+  nothing behind. A path's ground pieces (`g.chain`) always show, even under painted tiles or another
+  path's dirt: a path never has a gap in its collision (1.24.14; painting over them breaks the path
+  instead; 1.24.18: over other paths too, the lower path's pieces winning a cell, and ground the same
+  way between two paths is marked a problem rather than one path wiping out the other).
 - **Ground fill** (`fillRuns`): straight out from each surface's ground side: up or down only from
   tiles whose collision runs the full width, sideways only from tiles whose collision runs the full
   height (the user's rule). Runs pass through dirt and art. Then any patch of sky that ground closes
