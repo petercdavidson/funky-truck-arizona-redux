@@ -71,6 +71,13 @@ export class SoundWatcher {
     if (playing && game.milestone && game.milestone.n !== this.milestone) events.push({ type: game.milestone.sound || 'milestone' });
     // Battle Mode says what happened each step (missiles, explosions, pickups...).
     if (game.battle) for (const e of game.battle.events) events.push(e);
+    // Sandbox's tumbleweeds: hit by the truck, or bouncing off the ground or each other.
+    if (playing && game.critters) {
+      for (const e of game.critters.events) {
+        if (e.kind === 'weed') events.push({ type: 'weed', force: Math.min(1, e.speed / 10) });
+        else if (e.kind === 'weedBounce') events.push({ type: 'weed', force: Math.min(0.6, e.speed / 12), soft: true });
+      }
+    }
     this.milestone = game.milestone?.n ?? this.milestone;
     if (game.tickerTimer > this.tickerTimer || game.ticker !== this.ticker) {
       if (game.ticker.startsWith('Stage Complete')) events.push({ type: 'stage' });

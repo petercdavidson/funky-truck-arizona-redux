@@ -21,9 +21,12 @@ export const CRITTERS = {
   gravity: 0.11,          // px/step² for things falling (the truck's own, at Earth gravity)
   gone: 500,              // px out of sight: further than that, it goes (and a new one comes)
   look: 26,               // steps a bird looks ahead for ground in its way
+  wallLook: 90,           // px ahead a bird sees a wall it should turn back from
+  turn: 0.07,             // px/step² a bird's speed changes by as it turns round
   clear: 70,              // px a bird keeps above the ground
   highest: 150 * 64 / 2.5, // px: no bird comes in more than 150 m above the ground
   weedBounce: 0.12,       // the share of a tumbleweed's speed into the ground it bounces back with
+  weedKick: 0.15,         // ...and off the truck (its tyres, its chassis): pushed along, hardly thrown
 };
 
 /** A small, repeatable hash of two integers to [0, 1). */
@@ -38,26 +41,27 @@ export function hash2(x, y, seed = 0) {
  * The clouds whose middles are in the box (x0, y0)-(x1, y1), in cloud space (the world with
  * the course's scrolling taken out). Each: { x, y, w, h, puffs: [[dx, dy, r], ...], alpha }.
  * One may sit in each cell of a CELL_W x CELL_H grid; above `top` (the level's top) there are
- * more, higher up more still.
+ * more, higher up more still. Each layer of clouds (`seed`) has its own, `density` times as many.
  */
 export const CLOUD_CELL = [520, 300];
-export function cloudsNear(x0, y0, x1, y1, top = 0) {
+export function cloudsNear(x0, y0, x1, y1, top = 0, seed = 0, density = 1) {
   const [CW, CH] = CLOUD_CELL, out = [];
   for (let cy = Math.floor(y0 / CH) - 1; cy <= Math.floor(y1 / CH) + 1; cy++) {
     const height = top - cy * CH;   // how far above the level's top (px)
-    const chance = height < -2 * TILE ? 0 : height < 6 * TILE ? 0.18 : height < 30 * TILE ? 0.45 : 0.6;
+    const chance = density * (height < -2 * TILE ? 0 : height < 6 * TILE ? 0.18 : height < 30 * TILE ? 0.45 : 0.6);
     if (!chance) continue;
     for (let cx = Math.floor(x0 / CW) - 1; cx <= Math.floor(x1 / CW) + 1; cx++) {
-      if (hash2(cx, cy, 1) >= chance) continue;
-      const w = 110 + 190 * hash2(cx, cy, 2), h = w * (0.32 + 0.12 * hash2(cx, cy, 3));
-      const x = (cx + 0.15 + 0.7 * hash2(cx, cy, 4)) * CW, y = (cy + 0.15 + 0.7 * hash2(cx, cy, 5)) * CH;
-      const n = 4 + Math.floor(4 * hash2(cx, cy, 6)), puffs = [];
+      if (hash2(cx, cy, 1 + 16 * seed) >= chance) continue;
+      const H = (k) => hash2(cx, cy, k + 16 * seed);
+      const w = 110 + 190 * H(2), h = w * (0.32 + 0.12 * H(3));
+      const x = (cx + 0.15 + 0.7 * H(4)) * CW, y = (cy + 0.15 + 0.7 * H(5)) * CH;
+      const n = 4 + Math.floor(4 * H(6)), puffs = [];
       for (let i = 0; i < n; i++) {
         const t = n > 1 ? i / (n - 1) : 0.5;
-        const r = h * (0.45 + 0.35 * Math.sin(Math.PI * t)) * (0.85 + 0.3 * hash2(cx * 7 + i, cy, 7));
+        const r = h * (0.45 + 0.35 * Math.sin(Math.PI * t)) * (0.85 + 0.3 * hash2(cx * 7 + i, cy, 7 + 16 * seed));
         puffs.push([(t - 0.5) * (w - h * 0.6), h * 0.12 - r * 0.35, r]);
       }
-      out.push({ x, y, w, h, puffs, alpha: 0.55 + 0.35 * hash2(cx, cy, 8) });
+      out.push({ x, y, w, h, puffs, alpha: 0.55 + 0.35 * H(8) });
     }
   }
   return out;
@@ -72,7 +76,7 @@ export class Critters {
     this.feathers = [];
     this.wantBirds = 0;
     this.wantWeeds = 0;
-    this.events = [];  // this step's hits: { kind: 'bird' | 'weed', x, y, speed } (for sounds)
+    this.events = [];  // this step's hits: { kind: 'bird' | 'weed' (the truck hit them) | 'weedBounce' (a tumbleweed off the ground or another), x, y, speed } (for sounds; tumbleweeds' only in sight)
   }
 
   /** How many birds and tumbleweeds to keep about. */
@@ -140,7 +144,8 @@ export class Critters {
       for (let i = 0; i < n; i++) {
         const bx = x - dir * i * (20 + 30 * R()), by = y + (R() - 0.5) * 50;
         if (i && (!Critters.openSky(world, bx, by, CRITTERS.clear) || !sky(bx, by))) continue;
-        this.birds.push({ x: bx, y: by, px: bx, py: by, vx: dir * (1.6 + 1.2 * R()), vy: 0, dir, flap: R() * 6, hit: false, spin: 0, rot: 0, rest: 0, life: 0 });
+        const cruise = 1.6 + 1.2 * R();
+        this.birds.push({ x: bx, y: by, px: bx, py: by, vx: dir * cruise, vy: 0, dir, cruise, flap: R() * 6, hit: false, spin: 0, rot: 0, rest: 0, life: 0 });
       }
       return true;
     }
@@ -216,6 +221,7 @@ export class Critters {
     // what hits: circles round the truck's chassis centre and its wheels (and how fast each moves)
     const T = truck?.T, P = truck?.P;
     const hitters = truck ? [0, 1, 2].map((p) => [T[p * 2], T[p * 2 + 1], T[p * 2] - P[p * 2], T[p * 2 + 1] - P[p * 2 + 1], p ? truck.wheelRadius + 6 : C.truckRadius]) : [];
+    const inView = (o) => Math.abs(o.x - view.cx) < view.hw + 60 && Math.abs(o.y - view.cy) < view.hh + 60;
     const hitBy = (o, r) => hitters.find(([x, y, , , hr]) => (o.x - x) ** 2 + (o.y - y) ** 2 < (r + hr) ** 2);
 
     for (const b of this.birds) {
@@ -228,9 +234,20 @@ export class Critters {
         const ahead = thin.collide(b.x, b.y, b.x + b.vx * C.look, b.y + b.vy * C.look + C.clear * 0.5);
         const under = thin.down(b.x + b.vx * 8, b.y, b.y + C.clear);
         if (ahead || under) b.vy = Math.max(-2.5, b.vy - 0.18);
-        const wall = thin.collide(b.x, b.y, b.x + b.dir * 34, b.y);
-        if (wall && Math.abs(wall.nx) > 0.6) { b.dir = -b.dir; b.vx = -b.vx; }
-        if (Critters.move(b, thin, 0, 0)) { b.dir = -b.dir; b.vx = -b.vx; b.vy = -1.5; }
+        // a wall ahead: turn round, smoothly (slowing, then speeding up the other way, rising a
+        // little as it goes round); `dir` is the way it's turning to
+        const cruise = b.cruise || 2, going = Math.sign(b.vx) || b.dir;
+        if (going === b.dir) {
+          const wall = thin.collide(b.x, b.y, b.x + b.dir * C.wallLook, b.y);
+          if (wall && Math.abs(wall.nx) > 0.6) b.dir = -b.dir;
+        }
+        const want = b.dir * cruise;
+        if (Math.abs(want - b.vx) > 1e-6) {
+          b.vx += Math.max(-C.turn, Math.min(C.turn, want - b.vx));
+          if (Math.sign(b.vx) !== b.dir) b.vy -= 0.04;
+        }
+        // flown into something anyway: it stops dead that way and turns from there
+        if (Critters.move(b, thin, 0, 0)) { b.dir = -going; b.vy = Math.min(b.vy, -0.8); }
         const h = hitBy(b, C.birdRadius);
         if (h) {
           // knocked away with (most of) the truck's speed, and a bit outward from it
@@ -251,17 +268,29 @@ export class Critters {
       w.life++;
       w.vy += gravity;
       w.vx *= 0.999;
+      const fall = w.vy;
       const n = Critters.move(w, world, w.vy > 3 ? C.weedBounce : 0, 0.004);
+      if (n && fall > 2.5 && inView(w)) this.events.push({ kind: 'weedBounce', x: w.x, y: w.y, speed: fall });
       // rolling: it turns as far as it goes along
       w.rot += w.vx / C.weedRadius;
       if (n && Math.hypot(w.vx, w.vy) < 0.02) { w.vx = 0; w.vy = 0; }
       if (w.cool) w.cool--;
-      const h = !w.cool && hitBy(w, C.weedRadius);
+      const h = hitBy(w, C.weedRadius);
       if (h) {
-        const [hx, hy, vx, vy] = h, dx = w.x - hx, dy = w.y - hy, d = Math.hypot(dx, dy) || 1, sp = Math.hypot(vx, vy);
-        w.vx = vx * 1.1 + dx / d * 2; w.vy = Math.min(vy, 0) - 2 - sp * 0.4 + dy / d;
-        w.cool = 20;
-        this.events.push({ kind: 'weed', x: w.x, y: w.y, speed: sp });
+        // pushed out of the truck's way and given the speed it meets the truck with, bouncing off
+        // with only a little of it (a soft, light thing): along, not thrown into the air
+        const [hx, hy, vx, vy, hr] = h, dx = w.x - hx, dy = w.y - hy, d = Math.hypot(dx, dy) || 1, nx = dx / d, ny = dy / d;
+        const vn = (w.vx - vx) * nx + (w.vy - vy) * ny;
+        if (vn < 0) {
+          w.vx -= (1 + C.weedKick) * vn * nx; w.vy -= (1 + C.weedKick) * vn * ny;
+          w.vy = Math.max(w.vy, Math.min(vy, 0) - 3);
+          if (!w.cool && inView(w)) this.events.push({ kind: 'weed', x: w.x, y: w.y, speed: -vn });
+          w.cool = 12;
+        }
+        const ox = w.vx, oy = w.vy, out = C.weedRadius + hr - d;
+        w.vx = nx * out; w.vy = ny * out;
+        Critters.move(w, world, 0, 0);
+        w.vx = ox; w.vy = oy;
       }
     }
 
@@ -280,6 +309,7 @@ export class Critters {
       }
       const vn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
       if (vn < 0) {
+        if (vn < -1.5 && inView(a)) this.events.push({ kind: 'weedBounce', x: a.x, y: a.y, speed: -vn });
         const k = -vn * (1 + C.weedBounce) / 2;
         a.vx -= k * nx; a.vy -= k * ny; b.vx += k * nx; b.vy += k * ny;
       }

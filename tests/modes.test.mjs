@@ -649,13 +649,15 @@ test('the pause screen names the run', async () => {
 });
 
 test('the tall menu layouts keep every button on the page, apart from the others, and big enough to tap', async () => {
-  const { TALL_BUTTONS, TALL_W, TALL_H, BUTTONS, hitButton } = await import('../src/render.js');
+  const { TALL_BUTTONS, TALL_W, TALL_H, BUTTONS, hitButton, rectOf } = await import('../src/render.js');
   const g = new Game(data);
+  // (with a gamepad connected, so the Options screen has every row)
+  const at = (b) => rectOf(b, { padConnected: true });
   for (const [screen, list] of Object.entries(TALL_BUTTONS)) {
     if (!list.length) continue;
     for (const kind of [null, (b) => b.show({ mode: 'endless', rules: {} })]) {
       // (Sandbox's list of choices is checked on its own, below: it opens over the rest.)
-      const shown = list.filter((b) => !b.picker && (!b.show || !kind || kind(b)));
+      const shown = list.filter((b) => !b.picker && (!b.show || !kind || kind(b))).map((b) => ({ ...b, rect: at(b) }));
       shown.forEach((b, i) => {
         const { x, y, w, h } = b.rect;
         assert.ok(x >= 0 && y >= 0 && x + w <= TALL_W && y + h <= TALL_H[screen], `${screen} ${b.action} is on the page`);

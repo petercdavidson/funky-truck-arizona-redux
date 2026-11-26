@@ -14,8 +14,18 @@ import { circles } from './battle.js';
 import { PAD_ACTIONS, padName } from './pad.js';
 import { cloudsNear, CRITTERS } from './critters.js';
 
-/** How far off Sandbox's clouds are: they move past at this share of the world's speed. */
-const CLOUD_DEPTH = 0.3;
+/**
+ * Sandbox's layers of clouds, farthest first: each moves past at `depth` of the world's speed,
+ * and the farther off, the smaller and fainter.
+ */
+const CLOUD_LAYERS = [
+  { depth: 0.01, size: 0.4, alpha: 0.3 },
+  { depth: 0.025, size: 0.5, alpha: 0.4 },
+  { depth: 0.05, size: 0.62, alpha: 0.52 },
+  { depth: 0.1, size: 0.76, alpha: 0.66 },
+  { depth: 0.17, size: 0.88, alpha: 0.8 },
+  { depth: 0.25, size: 1, alpha: 0.92 },
+];
 import { SANDBOX_ROWS, SANDBOX_ROW, sandboxValue } from './sandbox.js';
 import { formatSpeed, formatDistance, formatHeight, speedoShare } from './units.js';
 
@@ -59,19 +69,25 @@ function controlsAbout(g, r) {
 const notRetro = (g) => !g.rules.retro;
 
 /**
- * The Options screen: [label, action, what it does, applies(game)]. The pause menu's Options
- * shows only those that apply to the run (the cameras and units aren't 2006 Mode's).
+ * The Options screen: [name, action, what it does, applies(game), its setting]. Each row is the
+ * name and what it does as text, with the setting in a button that changes it. The pause menu's
+ * Options shows only those that apply to the run (the cameras and units aren't 2006 Mode's).
  */
 const OPTIONS = [
-  [(g) => `♪ Sound: ${onOff(g.soundOn)}`, 'sound', () => 'Engine, landings, tricks and crashes'],
-  [(g, r) => `Controls: ${controlsName(g, r)}`, 'oneButton', controlsAbout],
-  [(g) => `Dynamic Camera: ${onOff(g.dynamicCamera)}`, 'dynamicCamera', () => 'Pulls back to show more when you go fast or fly high', notRetro],
-  [(g) => `Dynamic Crash Cam: ${onOff(g.crashCam)}`, 'crashCam', () => 'Pulls back to keep every piece of a wrecked truck in view', notRetro],
-  [(g) => `Units: ${g.imperial ? 'Imperial' : 'Metric'}`, 'imperial', (g) => (g.imperial ? 'Speeds in mph, heights in feet and miles' : 'Speeds in km/h, heights in metres and kilometres'), notRetro],
-  [(g) => `Show Frame Rate: ${onOff(g.showFps)}`, 'showFps', () => 'Frames per second, in the bottom left corner'],
+  ['♪ Sound', 'sound', () => 'Engine, landings, tricks and crashes', null, (g) => onOff(g.soundOn)],
+  ['Controls', 'oneButton', controlsAbout, null, (g, r) => controlsName(g, r)],
+  ['Dynamic Camera', 'dynamicCamera', () => 'Pulls back to show more when you go fast or fly high', notRetro, (g) => onOff(g.dynamicCamera)],
+  ['Dynamic Crash Cam', 'crashCam', () => 'Pulls back to keep every piece of a wrecked truck in view', notRetro, (g) => onOff(g.crashCam)],
+  ['Units', 'imperial', (g) => (g.imperial ? 'Speeds in mph, heights in feet and miles' : 'Speeds in km/h, heights in metres and kilometres'), notRetro, (g) => (g.imperial ? 'Imperial' : 'Metric')],
+  ['Show Frame Rate', 'showFps', () => 'Frames per second, in the bottom left corner', null, (g) => onOff(g.showFps)],
 ];
-const optionRow = (i, tall) => (tall ? r(50, 90 + 78 * i, 260, 40) : r(178, 66 + 54 * i, 220, 26));
-const optionAbout = (action) => OPTIONS.find((o) => o[1] === action)?.[2];
+/** Option row i: where its name goes (x, y) and its button (rect). */
+const optionLine = (i, tall) => (tall ? { x: 22, y: 84 + 70 * i, w: 196, rect: r(232, 84 + 70 * i, 108, 40) }
+  : { x: 78, y: 58 + 46 * i, w: 290, rect: r(386, 58 + 46 * i, 110, 28) });
+const optionRow = (i, tall) => optionLine(i, tall).rect;
+/** The Options screen's rows: the options, with Controller Mappings after Controls when a gamepad is connected. */
+const optionRows = (g) => OPTIONS.flatMap((o) => (o[1] === 'oneButton' && g.padConnected ? [o, ['Controller Mappings', 'padMap', () => 'Which gamepad button does what', null, () => 'Set']] : [o]));
+const optionIndex = (g, action) => optionRows(g).findIndex((o) => o[1] === action);
 
 /** The pause menu's Options: the options that apply, in 2006 Mode or not, then Back. */
 function pauseOptionButtons(tall, extra = {}) {
@@ -79,10 +95,19 @@ function pauseOptionButtons(tall, extra = {}) {
     const when = (g) => !!g.rules?.retro === retro;
     const list = OPTIONS.filter((o) => !o[3] || o[3]({ rules: { retro } }));
     return [
-      ...list.map(([label, action], i) => ({ rect: optionRow(i, tall), label, action, show: when, ...extra })),
+      ...list.map(([name, action, , , value], i) => ({ rect: optionRow(i, tall), label: value, action, name, line: i, show: when, ...extra })),
       { rect: tall ? r(80, 560, 200, 38) : r(229, 400, 120, 25), label: 'Back', action: 'pauseBack', show: when, ...extra },
     ];
   });
+}
+/** The Options screen's buttons: a row per option (placed by where it is in optionRows), then Menu. */
+function optionButtons(tall, extra = {}) {
+  const rows = [...OPTIONS.slice(0, 2), ['Controller Mappings', 'padMap', null, null, () => 'Set'], ...OPTIONS.slice(2)];
+  return [
+    ...rows.map(([name, action, , , value]) => ({ rect: (g) => optionRow(optionIndex(g, action), tall), label: value, action, name,
+      line: (g) => optionIndex(g, action), show: action === 'padMap' ? (g) => !!g.padConnected : undefined, ...extra })),
+    { rect: tall ? r(80, 600, 200, 38) : r(229, 404, 120, 25), label: 'Menu', action: 'menu', ...extra },
+  ];
 }
 
 /** The Controller screen: a row per action (tap it, then press the button for it), Reset and Back. */
@@ -316,11 +341,7 @@ export const BUTTONS = {
     { rect: modesBack(false), label: 'Back', action: 'back' },
   ],
   stats: statsButtons(false),
-  options: [
-    ...OPTIONS.map(([label, action], i) => ({ rect: optionRow(i, false), label, action })),
-    { rect: r(160, 400, 120, 25), label: 'Controller', action: 'padMap' },
-    { rect: r(296, 400, 120, 25), label: 'Menu', action: 'menu' },
-  ],
+  options: optionButtons(false),
   padMap: padMapButtons(false),
   pauseOptions: pauseOptionButtons(false),
   help: [{ rect: r(229, 386, 120, 25), label: 'Menu', action: 'menu' }],
@@ -362,11 +383,7 @@ export const TALL_BUTTONS = {
     { rect: modesBack(true), label: 'Back', action: 'back', ...T_BIG },
   ],
   stats: statsButtons(true, T_BIG),
-  options: [
-    ...OPTIONS.map(([label, action], i) => ({ rect: optionRow(i, true), label, action, ...T_BIG })),
-    { rect: r(80, 556, 200, 38), label: 'Controller', action: 'padMap', ...T_BIG },
-    { rect: r(80, 606, 200, 38), label: 'Menu', action: 'menu', ...T_BIG },
-  ],
+  options: optionButtons(true, T_BIG),
   padMap: padMapButtons(true),
   pauseOptions: pauseOptionButtons(true, T_BIG),
   help: [{ rect: r(80, 500, 200, 38), label: 'Menu', action: 'menu', ...T_BIG }],
@@ -956,31 +973,36 @@ export class Renderer {
   }
 
   /**
-   * Sandbox's clouds: far off, behind the world, so they move past slower than it does
-   * (`CLOUD_DEPTH` of its speed) and zoom out less, and fixed in that far sky (in cloud space: the
-   * world with the course's scrolling taken out, times the depth), so you can see which way you're
-   * going with no ground in sight.
+   * Sandbox's clouds: layers of them far off behind the world (`CLOUD_LAYERS`), each moving past
+   * slower than it does (its `depth` of the world's speed) and zooming out less, and fixed in its
+   * own far sky (in cloud space: the world with the course's scrolling taken out, times the
+   * depth), so you can see which way you're going with no ground in sight.
    */
   clouds(game, v, zoom) {
-    const ctx = this.ctx, [sx, sy] = game.shiftTotal, p = CLOUD_DEPTH;
-    const cz = zoom ** p, w = this.viewW * cz, h = this.viewH * cz;
-    // the view's middle in cloud space
-    const mx = (v.camX + sx + this.viewW * zoom / 2) * p, my = (v.camY + sy + this.viewH * zoom / 2) * p;
-    const x0 = mx - w / 2, y0 = my - h / 2;
-    ctx.save();
-    ctx.scale(1 / cz, 1 / cz);
-    ctx.translate(-x0, -y0);
-    for (const c of cloudsNear(x0 - 300, y0 - 200, x0 + w + 300, y0 + h + 200, 0)) {
-      // a soft shadow underneath, then the cloud: its puffs filled as one shape (paler, far off)
-      for (const [col, oy, a] of [['rgba(120,140,170,1)', 5, 0.2], ['#fff', 0, 0.85]]) {
-        ctx.globalAlpha = c.alpha * a;
-        ctx.fillStyle = col;
-        ctx.beginPath();
-        for (const [dx, dy, r] of c.puffs) { ctx.moveTo(c.x + dx + r, c.y + dy + oy); ctx.arc(c.x + dx, c.y + dy + oy, r, 0, Math.PI * 2); }
-        ctx.fill();
+    const ctx = this.ctx, [sx, sy] = game.shiftTotal;
+    CLOUD_LAYERS.forEach(({ depth: p, size, alpha }, layer) => {
+      const cz = zoom ** p, w = this.viewW * cz, h = this.viewH * cz;
+      // the view's middle in this layer's cloud space
+      const mx = (v.camX + sx + this.viewW * zoom / 2) * p, my = (v.camY + sy + this.viewH * zoom / 2) * p;
+      const x0 = mx - w / 2, y0 = my - h / 2;
+      ctx.save();
+      ctx.scale(1 / cz, 1 / cz);
+      ctx.translate(-x0, -y0);
+      for (const c of cloudsNear(x0 - 300, y0 - 200, x0 + w + 300, y0 + h + 200, 0, layer, 0.45)) {
+        // a soft shadow underneath, then the cloud: its puffs filled as one shape
+        for (const [col, oy, a] of [['rgba(120,140,170,1)', 5 * size, 0.2], ['#fff', 0, 0.85]]) {
+          ctx.globalAlpha = c.alpha * a * alpha;
+          ctx.fillStyle = col;
+          ctx.beginPath();
+          for (const [dx, dy, r] of c.puffs) {
+            const px = c.x + dx * size, py = c.y + dy * size + oy, R = r * size;
+            ctx.moveTo(px + R, py); ctx.arc(px, py, R, 0, Math.PI * 2);
+          }
+          ctx.fill();
+        }
       }
-    }
-    ctx.restore();
+      ctx.restore();
+    });
   }
 
   /** Sandbox's birds (flapping, or knocked tumbling), tumbleweeds and loose feathers. */
@@ -1018,7 +1040,9 @@ export class Renderer {
       ctx.fillStyle = '#3b2b25';
       if (!b.hit) {
         // a gull's M: wings up and down as it flaps
-        ctx.scale(b.dir, 1);
+        // facing the way it flies; narrower as it turns round (seen side on, then end on)
+        const face = Math.max(-1, Math.min(1, b.vx / (b.cruise || 2)));
+        ctx.scale(Math.abs(face) < 0.2 ? (Math.sign(face) || b.dir) * 0.2 : face, 1);
         const f = Math.sin(b.flap) * 6;
         ctx.lineWidth = 2.2;
         ctx.beginPath();
@@ -1400,12 +1424,15 @@ export class Renderer {
   /** The Options screen: each option as a button, with a line on what it does. */
   options(game, screen = 'options') {
     const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2;
-    this.text('Options', cx, tall ? 28 : 18, { size: tall ? 26 : 22, weight: '800', shadow: screen === 'options' ? null : 'rgba(38,38,38,0.7)' });
+    this.text('Options', cx, tall ? 28 : 18, { size: tall ? 26 : 22, weight: '800' });
+    // Each option's name and what it does, as text beside its button.
+    const rows = screen === 'options' ? optionRows(game) : OPTIONS.filter((o) => !o[3] || o[3](game));
     for (const b of buttonsFor(screen, tall)) {
-      const about = screen === 'options' && b.action === 'sandbox' ? null : optionAbout(b.action);
-      if (!about || (b.show && !b.show(game))) continue;
-      const { y, h } = b.rect;
-      this.fitText(about(game, this), cx, y + h + (tall ? 8 : 5), tall ? 330 : 400, { size: tall ? 13 : 11, weight: '600', color: 'rgba(255,255,255,0.85)' });
+      if (b.name === undefined || (b.show && !b.show(game))) continue;
+      const i = typeof b.line === 'function' ? b.line(game) : b.line, L = optionLine(i, tall);
+      const about = rows[i]?.[2];
+      this.text(b.name, L.x, L.y - (tall ? 1 : 2), { size: tall ? 16 : 14, weight: '800', align: 'left' });
+      if (about) this.wrapText(about(game, this), L.x, L.y + (tall ? 20 : 16), L.w, { size: tall ? 12 : 10.5, weight: '600', color: 'rgba(255,255,255,0.8)', align: 'left' }, tall ? 15 : 12.5);
     }
     this.buttons(screen, game);
   }
@@ -1468,7 +1495,7 @@ export class Renderer {
   /** Sandbox's settings: before a run (with the track and Go!), or during one (Tweaks). Tap a value for a list of all its choices. */
   sandboxScreen(game, screen) {
     const tall = this.tall, cx = (tall ? TALL_W : STAGE_W) / 2, tweaks = screen === 'sandboxTweaks';
-    const shadow = tweaks ? 'rgba(38,38,38,0.7)' : null;
+    const shadow = null;
     this.text(tweaks ? 'Tweaks' : 'Sandbox', cx, tall ? 16 : 12, { size: tall ? 26 : 22, weight: '900', shadow });
     const sub = tweaks ? 'Changes take effect at once' : 'Set things up, then go wild. Nothing here counts towards High Scores.';
     this.fitText(sub, cx, tall ? 48 : 42, tall ? 330 : 540, { size: tall ? 13 : 11.5, weight: '600', color: 'rgba(255,255,255,0.85)', shadow });
@@ -1702,8 +1729,8 @@ export class Renderer {
 
   paused(game) {
     this.overlayDim(0.3);
-    const name = { weight: '700', color: 'rgba(255,255,255,0.9)', shadow: 'rgba(38,38,38,0.7)' };
-    const big = { weight: '900', shadow: 'rgba(38,38,38,0.85)' };
+    const name = { weight: '700', color: 'rgba(255,255,255,0.9)' };
+    const big = { weight: '900' };
     const hint = this.touchMode ? '' : 'Press P to resume play';
     if (this.tall) {
       const cx = TALL_W / 2;
@@ -1734,13 +1761,38 @@ export class Renderer {
     if (low.width !== STAGE_W || low.height !== STAGE_H) { low.width = STAGE_W; low.height = STAGE_H; }
     const real = { canvas: this.canvas, ctx: this.ctx, scale: this.scale, offX: this.offX, offY: this.offY };
     Object.assign(this, { canvas: low, ctx: low.getContext('2d'), scale: 1, offX: 0, offY: 0 });
-    try { this.paint(game, v); } finally { Object.assign(this, real); }
+    try {
+      this.paint(game, v);
+      if (game.screen === 'playing' && this.retroPause) this.retroPauseButton(this.retroPause);
+    } finally { Object.assign(this, real); }
     const ctx = this.ctx;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(low, this.offX, this.offY, Math.round(STAGE_W * this.scale), Math.round(STAGE_H * this.scale));
+  }
+
+  /**
+   * 2006 Mode's pause button: the page's own button (main.js leaves it see-through and gives its
+   * place, in stage units, and how many stage units a CSS pixel is) drawn into the 576x448 frame,
+   * so it comes out in the same big pixels as the rest.
+   */
+  retroPauseButton({ x, y, w, h, f }) {
+    const ctx = this.ctx, cx = x + w / 2, cy = y + h / 2, R = w / 2;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(70, 48, 40, 0.45)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy, R - Math.max(1, 2 * f) / 2, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(1, 2 * f); ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)'; ctx.stroke();
+    // the icon: 22 CSS px across for its 24 units, two bars from 6 to 18 at 9 and 15
+    const u = (22 * f) / 24;
+    ctx.lineWidth = Math.max(1, 2.6 * u); ctx.lineCap = 'round'; ctx.strokeStyle = '#fff';
+    ctx.beginPath();
+    for (const bx of [9, 15]) { ctx.moveTo(cx + (bx - 12) * u, cy - 6 * u); ctx.lineTo(cx + (bx - 12) * u, cy + 6 * u); }
+    ctx.stroke();
+    ctx.restore();
   }
 
   /** Draw a frame, its layout worked out (into the 576x448 canvas, in 2006 Mode). */

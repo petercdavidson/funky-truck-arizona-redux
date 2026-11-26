@@ -12,7 +12,7 @@
 // SoundWatcher (sound-events.js) decides when cues happen; this file decides how they sound.
 
 export const CUES = ['start', 'land', 'bump', 'flip', 'trick', 'flipCount', 'milestone', 'stage', 'win', 'wreck', 'click', 'boing',
-  'missile', 'enemyMissile', 'boom', 'crunch', 'pickup', 'jump', 'boost', 'takedown', 'wave', 'count', 'go'];
+  'missile', 'enemyMissile', 'boom', 'crunch', 'weed', 'pickup', 'jump', 'boost', 'takedown', 'wave', 'count', 'go'];
 
 
 const note = (n) => 440 * Math.pow(2, (n - 69) / 12); // MIDI note number -> Hz
@@ -189,6 +189,13 @@ const SET = {
   crunch(k, { force = 0.5 } = {}) {
     hit(k, { pitch: 0.7 + Math.random() * 0.2, force });
     noise(k, { t: 0.03, dur: 0.18, gain: 0.08 + force * 0.12, type: 'bandpass', f: 2600, f2: 900, Q: 3 });
+  },
+  /** A tumbleweed hit: a dry rustle and crackle of twigs, and a soft thump (`soft`: off the ground or another one, quieter). */
+  weed(k, { force = 0.5, soft = false } = {}) {
+    const g = (soft ? 0.5 : 1) * (0.35 + 0.65 * force);
+    noise(k, { dur: 0.16 + 0.1 * force, gain: 0.16 * g, type: 'bandpass', f: 3200 + Math.random() * 800, f2: 1600, Q: 1.2, attack: 0.004 });
+    for (let i = 0; i < 3 + Math.round(3 * force); i++) noise(k, { t: Math.random() * 0.12, dur: 0.018, gain: 0.07 * g, type: 'bandpass', f: 2500 + Math.random() * 3000, Q: 4, attack: 0.001 });
+    tone(k, { f: 150 + Math.random() * 30, f2: 70, dur: 0.09, gain: 0.07 * g, attack: 0.003 });
   },
   /** A pickup: a quick bright arpeggio. */
   pickup(k) { melody(k, [84, 88, 91, 96], 0.05, (f, t) => bell(k, f, t, 0.1, 0.35)); },

@@ -35,10 +35,11 @@ export const MAX_SPEED = 9999 / KMH_PER_PX_STEP;
 /**
  * Air drag, only past 999 km/h (no stage, nor anything short of Sandbox's boost or gravity, gets
  * near): each step a truck going faster loses DRAG[0] times how far over it is, plus DRAG[1] times
- * that squared (px/step), so let off the boost and it's soon back down.
+ * that squared (px/step). Light enough that Sandbox's ×8 boost, pointing straight up, still gains
+ * speed all the way to MAX_SPEED.
  */
 export const DRAG_FROM = 999 / KMH_PER_PX_STEP;
-export const DRAG = [0.005, 1.5e-5];
+export const DRAG = [0.0002, 3e-7];
 const dragLoss = (v) => (v <= DRAG_FROM ? 0 : Math.min(v - DRAG_FROM, DRAG[0] * (v - DRAG_FROM) + DRAG[1] * (v - DRAG_FROM) ** 2));
 /** How many choices Sandbox setting `key` has. */
 
@@ -1799,6 +1800,11 @@ export class Game {
     if (!this.onCourse && !this.isStunt && canFinish && this.focus[0] >= this.finishX) {
       this.ticker = 'Stage Complete !'; this.tickerTimer = 140; this.endTimer = 210;
       this.bankTricks(); // a chain still going at the finish line is paid out
+      // Classic: the stage counts as beaten now, so quitting before the next one starts keeps it.
+      if (this.mode === 'campaign' && this.damage < 1000 && this.level + 1 > this.stats.classicStage) {
+        this.stats.classicStage = this.level + 1;
+        this.saveStats();
+      }
     }
     if (this.damage === 1000 && this.rules.damage) {
       this.ticker = 'Your truck is wrecked - Game over !'; this.tickerTimer = 140; this.endTimer = 210;

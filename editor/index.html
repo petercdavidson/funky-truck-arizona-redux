@@ -81,6 +81,16 @@
     .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; }
     .hint { color: var(--dim); font-size: 12px; margin: 6px 0 0; }
     .hint p { margin: 3px 0; }
+    /* A tool's gestures, a line each: what you do (a chip), then what it does. */
+    .keys { display: grid; grid-template-columns: auto 1fr; gap: 3px 8px; align-items: baseline; font-size: 12px; color: var(--dim); margin: 8px 0 0; }
+    .keys > b { font: 600 11px ui-monospace, Menlo, monospace; background: #45403b; border-radius: 3px; padding: 1px 5px; color: #ddd; white-space: nowrap; justify-self: start; }
+    /* The rest of a tool's notes, tucked away behind an i. */
+    details.more { font-size: 12px; color: var(--dim); margin-top: 6px; }
+    details.more > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+    details.more > summary::-webkit-details-marker { display: none; }
+    details.more > summary::before { content: 'i'; display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--dim); font: italic 700 10px Georgia, serif; }
+    details.more[open] > summary { margin-bottom: 4px; }
+    details.more p { margin: 3px 0; }
     .tp { display: none; }
     .tp.on { display: block; }
     .cur { display: flex; gap: 12px; align-items: center; }
@@ -213,9 +223,10 @@
           <button class="btn" id="selDel">Clear <kbd>Del</kbd></button>
           <button class="btn" id="selAll">Select all <kbd>⌘A</kbd></button>
         </div>
-        <div class="hint"><p>Drag a box. Drag inside it to <b>move</b> it; <kbd>Alt</kbd>-drag to move a <b>copy</b>. Arrow keys nudge it a tile.</p>
-          <p>A pasted area follows the pointer until you click to put it down; a duplicate floats over the original till you drag it away. A moved or pasted area <b>floats</b> over the stage (it isn't part of it yet) until you click outside it, press <kbd>Enter</kbd> or switch tools, so you can keep moving it without wiping what's underneath.</p>
-          <p>Tiles put down by hand sit over the tiles paths make. Moving, clearing or covering a path's own ground pieces breaks the path there; covering the dirt under it doesn't.</p></div>
+        <div class="keys"><b>Drag</b><span>select a box</span><b>Drag inside</b><span>move it</span><b>Alt-drag</b><span>move a copy</span><b>Arrows</b><span>nudge a tile</span><b>Enter</b><span>put it down</span></div>
+        <details class="more"><summary>More</summary>
+          <p>A moved or pasted area floats over the stage until you click outside it, press <kbd>Enter</kbd> or switch tools.</p>
+          <p>Hand-placed tiles sit over path tiles. Moving or covering a path's ground pieces breaks the path there.</p></details>
       </div>
       <div class="tp" data-tp="path">
         <div class="row"><button class="btn" id="pathNew" title="Keep this path and its tiles, and start another curve (Esc)">New path</button>
@@ -223,12 +234,11 @@
           <button class="btn" id="pathForget" title="Remove this path and the tiles it made">Delete path</button>
           <button class="btn" id="pathSwap" title="Put the ground on the other side of the curve">Swap ground side</button></div>
         <div class="row"><label title="A path that ends in mid-air, away from the level's edge and other ground, carries on as a ledge: it turns towards its ground side and runs straight to the level's edge, so its ground never ends in a sharp point"><input type="checkbox" id="ledges" checked> Ledges at loose ends</label></div>
-        <div class="hint"><p>Click to add points; the tiles follow the curve, joining the ground either side, with fill chosen so the dirt's edge carries on from tile to tile. Where a click would add a point, a <b>+</b> shows: at the nearer end of the path, or on the curve itself.</p>
-          <p>The ground is on the side with the brown ticks: below a path drawn left to right. A path can go any way: up a wall, back over itself for an overhang, upside down along a ceiling. Turned tiles are used where it needs them.</p>
-          <p>Drag a point or a handle to reshape. <kbd>Alt</kbd>-drag a handle to make a corner: its handles then move on their own (the point shows as a diamond) until you <kbd>Alt</kbd>-click the point to line them up again. Double-click a point to make it smooth, right-click to remove it.</p>
-          <p>Drag an end of a path onto an end of another to join them (a green ring shows where); onto its own other end, it goes all the way round.</p>
-          <p>Right-click away from the points (or press <kbd>Esc</kbd>) to finish this path. Click another path's point to edit that path. A path's tiles go with it: move or delete it and they go too. Ground above a gap of sky (an overhang) is left alone.</p>
-          <p>The ground's shape follows as you drag; the art around it catches up a moment after you stop.</p></div>
+        <div class="keys"><b>Click</b><span>add a point (where the <b style="background:none;padding:0">+</b> shows)</span><b>Drag</b><span>reshape</span><b>Right-click</b><span>remove a point</span><b>Alt-drag</b><span>handle: make a corner</span><b>Double-click</b><span>make a point smooth</span><b>Esc</b><span>finish the path</span></div>
+        <details class="more"><summary>More</summary>
+          <p>The ground is on the side with the brown ticks. A path can go any way: up walls, over itself, along ceilings.</p>
+          <p>Drag an end onto another path's end to join them (green ring); onto its own other end to close it.</p>
+          <p>A path's tiles go with it. The art catches up a moment after you stop dragging.</p></details>
       </div>
       <div class="tp" data-tp="shape">
         <div class="row"><span class="toggles" id="shapeKinds">
@@ -239,7 +249,9 @@
           <label title="A lump of ground in the air, its surface facing out"><input type="radio" name="shapeSide" value="out" checked>Ground out</label>
           <label title="A hole that shape in the ground (a cave), its surface facing in"><input type="radio" name="shapeSide" value="in">Ground in</label></span></div>
         <div class="row"><button class="btn" id="shapeDel" title="Delete the picked shape (or path) and the tiles it made (Delete)">Delete shape</button></div>
-        <div class="hint"><p>Drag a box to draw the shape. <kbd>Shift</kbd> keeps it as wide as it's tall.</p><p>Click a shape (or any path) to pick it: drag it to move it, drag the handles of its box to resize it (<kbd>Shift</kbd> keeps its proportions). Ground in / out and the kind change the picked shape; <kbd>Delete</kbd> deletes it. Right-click or <kbd>Esc</kbd> lets go.</p><p>A shape is a path that goes all the way round: reshape it with the Path tool (<kbd>G</kbd>), and Swap ground side turns a lump into a hole.</p></div>
+        <div class="keys"><b>Drag</b><span>draw (<kbd>Shift</kbd>: even)</span><b>Click</b><span>pick a shape</span><b>Drag it</b><span>move</span><b>Handles</b><span>resize</span><b>Delete</b><span>delete it</span><b>Esc</b><span>let go</span></div>
+        <details class="more"><summary>More</summary>
+          <p>A shape is a closed path: reshape it with the Path tool (<kbd>G</kbd>). Swap ground side turns a lump into a hole.</p></details>
       </div>
       <div class="tp" data-tp="start">
         <div class="hint"><p>Click (or drag) where the truck drops in.</p><p id="startInfo"></p></div>

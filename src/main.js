@@ -82,7 +82,7 @@ function moveMenuHighlight(dx, dy) {
   const list = navButtons(game.screen, game, renderer.tall);
   if (!list.length) return;
   renderer.padHover = true;               // outlined, so it shows from across the room
-  if (!list.includes(renderer.hover)) { renderer.hover = list[0]; return; }
+  if (!list.includes(renderer.hover)) { renderer.hover = (game.screen === 'sandbox' && list.find((b) => b.action === 'sbGo')) || list[0]; return; }
   const c = (b) => { const R = rectOf(b, game); return [R.x + R.w / 2, R.y + R.h / 2]; };
   const [x0, y0] = c(renderer.hover);
   let best = null, bestScore = Infinity;
@@ -94,6 +94,8 @@ function moveMenuHighlight(dx, dy) {
     const score = along + 2.5 * across;
     if (score < bestScore) { bestScore = score; best = b; }
   }
+  // Sandbox's settings: up off the top goes to Go!
+  if (!best && dy < 0 && game.screen === 'sandbox') best = list.find((b) => b.action === 'sbGo') || null;
   if (!best) {
     // Off the edge: wrap round to the furthest button the other way, in line if there's one.
     for (const b of list) {
@@ -437,6 +439,7 @@ let padHeld = new Set();                  // the buttons held at the last look (
 
 function pollGamepads() {
   const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
+  game.padConnected = pads.length > 0;     // the Options screen shows Controller Mappings
   Object.assign(padKeys, emptyKeys());
   let pauseDown = false, startDown = false, upDown = false, downDown = false, fireDown = false, jumpDown = false;
   let leftDown = false, rightDown = false, selectDown = false, backDown = false, topDown = false, wreckDown = false;
@@ -567,6 +570,15 @@ function placeView() {
   st.setProperty('--view-h', `${renderer.viewH * renderer.scale * k}px`);
 }
 
+/** 2006 Mode: where the pause button is, in stage units, for the renderer to draw it in big pixels. */
+const pauseButton = document.getElementById('pause-button');
+function retroPausePlace() {
+  const b = pauseButton.getBoundingClientRect(), c = canvas.getBoundingClientRect();
+  const k = renderer.cssPerDevice, f = 1 / (renderer.scale * k);   // stage units per CSS pixel
+  if (!b.width) { renderer.retroPause = null; return; }
+  renderer.retroPause = { x: ((b.left - c.left) / k - renderer.offX) / renderer.scale, y: ((b.top - c.top) / k - renderer.offY) / renderer.scale, w: b.width * f, h: b.height * f, f };
+}
+
 /** 2006 Mode draws the game at most this often (frames a second), with no smoothing between steps. */
 const RETRO_FPS = 30;
 const RETRO_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'gameOver']);
@@ -593,7 +605,9 @@ function highlightNewMenu() {
   if (!navInput || game.screen === 'playing') return;
   const list = navButtons(game.screen, game, renderer.tall);
   if (list.includes(renderer.hover)) { renderer.padHover = true; return; }
-  if (list.length) { renderer.hover = list[0]; renderer.padHover = true; }
+  // Sandbox's settings start on Go!, everything else on its first button.
+  const first = (game.screen === 'sandbox' && !game.sandboxPick && list.find((b) => b.action === 'sbGo')) || list[0];
+  if (first) { renderer.hover = first; renderer.padHover = true; }
 }
 
 function frame(now) {
@@ -646,6 +660,7 @@ function frame(now) {
   if (draw) {
     if (retro) retroDrawn = now;
     drawnScreen = game.screen;
+    if (retro) retroPausePlace();
     const cur = snapshot();
     const t = !retro && ['playing', 'title', 'modes', 'garage'].includes(game.screen) ? Math.min(acc / DT, 1) : 1;
     renderer.draw(game, prev ? lerpView(prev, cur, t) : { ...cur, B: cur.B && lerpBattle(null, cur.B, 1) });
@@ -698,6 +713,7 @@ function applyTestParams() {
     Object.assign(game.look, { body, tyre, hub, paint: Number.isInteger(paint) ? paint : body });
   }
   const frames = Number(q.get('frames')) || 0;
+  if (q.get('pad') === '1') { game.padConnected = true; navigator.getGamepads = () => [{ buttons: [], axes: [] }]; }
   const screens = { garage: 'garage', help: 'help', classicSelect: 'classicSelect', practice: 'trialSelect', trials: 'trialSelect', sandboxSetup: 'sandbox', title: 'title', modes: 'modes', stats: 'stats', options: 'options' };
   if (screens[test]) {
     game.showMenu(screens[test]);

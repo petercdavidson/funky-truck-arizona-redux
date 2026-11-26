@@ -150,6 +150,16 @@ body[data-screen="playing"] #corner { display: flex; }
 #corner svg { width: 22px; height: 22px; flex: none; }
 #corner button:hover { background: rgba(110, 76, 64, 0.7); }
 #pause-button { width: 44px; }
+/* 2006 Mode: the game draws the button itself, in its own big pixels (Renderer.retroPauseButton);
+   the page's button is only where it is pressed. */
+body[data-retro="1"] #pause-button {
+  background: transparent;
+  border-color: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+body[data-retro="1"] #pause-button:hover { background: transparent; }
+body[data-retro="1"] #pause-button svg { visibility: hidden; }
 #corner #upright-button {
   display: none !important;
   grid-auto-flow: column;

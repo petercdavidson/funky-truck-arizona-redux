@@ -53,7 +53,7 @@ Outside 2006 Mode the HUD has a **speedometer** in km/h, or mph with the **Units
 the stage is 2.5 m). Its bar is quasi-logarithmic: it moves at everyday speeds and is full at
 300 km/h. It reads the speed of the truck's centre of mass, so it stays steady while the truck
 turns over in the air, and reads 0 while the truck is being dropped in at the start of a stage,
-until it first lands. Nothing goes faster than 9999 km/h (only Sandbox gets near).
+until it first lands. Nothing goes faster than 9999 km/h (only Sandbox gets near; past 999 km/h there's a little air drag, though ×8 boost straight up still gets there).
 
 When the truck is so high that the ground below it is out of sight, an **altitude** reading
 (▼ metres or feet to the ground) comes up under the speedometer. Outside 2006 Mode the backdrop moves
@@ -127,10 +127,10 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Sandbox: jump | Z | jump button (left) | LB, or Y |
 | Sandbox: boost (hold) | C or Shift (not with ⌘ or Ctrl, so screenshots don't boost) | boost button (right) | RB |
 
-**Options** (on the title screen) has the switches for sound, the controls (Standard / Pedals or
+**Options** (on the title screen) lists each option with what it does, and a button beside it that changes it: sound, the controls (Standard / Pedals or
 One Button), the dynamic camera, the dynamic crash cam, **Units** (metric, or imperial: mph, and
 heights in feet, then miles past a mile), and **Show Frame Rate** (frames per second
-in the bottom left corner). **Controller** (on the Options screen) sets which gamepad button does what while driving: tap an action, then press the button (the menus always use A and B). Options for one mode stay on that
+in the bottom left corner). **Controller Mappings** (on the Options screen, under Controls, when a gamepad is connected) sets which gamepad button does what while driving: tap an action, then press the button (the menus always use A and B). Options for one mode stay on that
 mode's screen (Classic's Tricks and 2006 Mode checkboxes, one or the other; the Stages screen's Tricks, Damage, 2006 Mode and Ghost). The speaker button in the top
 right corner of the title screen switches the sound on and off too.
 
@@ -167,8 +167,8 @@ gold:
 | Rival Cars | 0 to 8 trucks going your way, to race (they can't be wrecked) |
 | Enemy Cars | 0 to 8 trucks coming at you, to dodge or take out with missiles, rams and stomps |
 | Birds | None, A Few, Lots, Flocks: they fly across the sky, over the hills; knock them out of it, or shoot them down (missiles home in on them). They never slow you down |
-| Tumbleweeds | None, A Few, Lots, Loads: sitting on the ground, rolling down slopes; hit one and it flies |
-| Clouds | On or Off: fixed in the sky (more of them the higher you go), so you can tell which way you're flying |
+| Tumbleweeds | None, A Few, Lots, Loads: sitting on the ground, rolling down slopes; hit one and it's pushed along (with a rustle) |
+| Clouds | On or Off: layers of them fixed in the sky (more the higher you go), the farthest moving at 1% of the world's speed and the nearest at 25%, fainter the farther off, so you can tell which way you're flying |
 | Slow Motion | Off, Half, Quarter |
 | Hitboxes | show what the physics sees: the ground's collision lines (orange where they scrape the cab), the wheels and the cab's roof probe (all that touches the ground), the circles trucks bump each other with (when there are other cars), and a wreck's pieces. The wheels and probe are really points (the dots) kept off the dashed line, the ground pushed out by 21.5 px; on smooth ground that's the same as a 21.5 px circle, but at a corner the original game joins the pushed-out lines short, so a wheel settles into a V and cuts into a peak a little |
 

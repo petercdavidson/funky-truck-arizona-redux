@@ -326,8 +326,9 @@ test('the garage can reset the truck to the one you start with', () => {
   assert.deepEqual(store.get('truckLook'), g.look);
 });
 
-test('air drag: nothing below 999 km/h, and a truck going 3000 km/h is soon slowed', async () => {
-  const { DRAG_FROM, KMH_PER_PX_STEP } = await import('../src/game.js');
+test('air drag: nothing below 999 km/h, a truck going 3000 km/h is slowed, and ×8 boost straight up still reaches the cap', async () => {
+  const { DRAG_FROM, KMH_PER_PX_STEP, MAX_SPEED } = await import('../src/game.js');
+  const { BATTLE } = await import('../src/battle.js');
   const g = new Game(data);
   g.startSandbox();
   settle(g, 150);
@@ -340,5 +341,16 @@ test('air drag: nothing below 999 km/h, and a truck going 3000 km/h is soon slow
   const speeds = [];
   for (let s = 0; s < 210; s++) { g.capSpeed(); for (let i = 0; i < 10; i += 2) { const d = t.T[i] - t.P[i]; t.P[i] = t.T[i]; t.T[i] += d; } if (s % 70 === 69) speeds.push(Math.round(v())); }
   console.log('3000 km/h, coasting with drag only, after 1 s, 2 s, 3 s:', speeds.join(', '));
-  assert.ok(speeds[2] < 1500 && speeds[2] > 999);
+  assert.ok(speeds[0] < 3000 && speeds[2] < speeds[1] && speeds[1] < speeds[0] && speeds[2] > 999);
+  // ×8 boost pointing straight up, against gravity: faster every step until the cap.
+  const up = 8 * BATTLE.boost.push - 0.11, vy = () => { let y = 0; for (let i = 1; i < 10; i += 2) y += t.P[i] - t.T[i]; return y / 5; };
+  for (let i = 0; i < 10; i += 2) { t.P[i] = t.T[i]; t.P[i + 1] = t.T[i + 1] + 1000 / KMH_PER_PX_STEP; }
+  let last = vy(), steps = 0;
+  while (vy() < MAX_SPEED - 1e-6 && steps < 5000) {
+    for (let i = 0; i < 10; i += 2) { const dx = t.T[i] - t.P[i], dy = t.T[i + 1] - t.P[i + 1]; t.P[i] = t.T[i]; t.P[i + 1] = t.T[i + 1]; t.T[i] += dx; t.T[i + 1] += dy - up; }
+    g.capSpeed(); steps++;
+    assert.ok(vy() > last - 1e-9, `still gaining at ${Math.round(vy() * KMH_PER_PX_STEP)} km/h`); last = vy();
+  }
+  console.log(`×8 boost straight up: 1000 km/h to ${Math.round(vy() * KMH_PER_PX_STEP)} km/h in ${(steps / 70).toFixed(1)} s`);
+  assert.ok(vy() >= MAX_SPEED - 1e-6);
 });
