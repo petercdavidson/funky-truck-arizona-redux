@@ -19,7 +19,9 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # (macOS on ARM, as the Classic parity fixtures were recorded on: Linux x86 differs from it in
+    # the sixth decimal place of the truck's position after a few hundred steps)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
