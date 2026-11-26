@@ -166,8 +166,8 @@ gold:
 | Air Jumps | jump again in mid-air |
 | Rival Cars | 0 to 8 trucks going your way, to race (they can't be wrecked) |
 | Enemy Cars | 0 to 8 trucks coming at you, to dodge or take out with missiles, rams and stomps |
-| Birds | None, A Few, Lots, Flocks: they fly across the sky, and you can knock them out of it (they never slow you down) |
-| Tumbleweeds | None, A Few, Lots, Loads: rolling along the ground in the wind; hit one and it flies |
+| Birds | None, A Few, Lots, Flocks: they fly across the sky, over the hills; knock them out of it, or shoot them down (missiles home in on them). They never slow you down |
+| Tumbleweeds | None, A Few, Lots, Loads: sitting on the ground, rolling down slopes; hit one and it flies |
 | Clouds | On or Off: fixed in the sky (more of them the higher you go), so you can tell which way you're flying |
 | Slow Motion | Off, Half, Quarter |
 | Hitboxes | show what the physics sees: the ground's collision lines (orange where they scrape the cab), the wheels and the cab's roof probe (all that touches the ground), the circles trucks bump each other with (when there are other cars), and a wreck's pieces. The wheels and probe are really points (the dots) kept off the dashed line, the ground pushed out by 21.5 px; on smooth ground that's the same as a 21.5 px circle, but at a corner the original game joins the pushed-out lines short, so a wheel settles into a V and cuts into a peak a little |

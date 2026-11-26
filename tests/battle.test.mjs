@@ -15,7 +15,7 @@ const seeded = (seed) => { let s = seed; return () => (s = (s * 16807) % 2147483
 /** A Sandbox run on Endless's course, landed, with no cars unless asked for. */
 function battle({ seed = 1, store, rivals = 0, enemies = 0 } = {}) {
   const g = new Game(data, { random: seeded(seed), store });
-  g.sandbox = { ...defaultSandbox(), course: 0, rivals, enemies };
+  g.sandbox = { ...defaultSandbox(), course: 0, rivals, enemies, birds: 0, weeds: 0 };   // (no birds in the way of the missiles)
   g.startSandbox();
   for (let i = 0; i < 150; i++) g.step();
   assert.ok(g.landed);

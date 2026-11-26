@@ -58,3 +58,27 @@ test('hitting critters changes nothing about the truck', () => {
   assert.ok(lots.hits >= 10, `${lots.hits} hits`);
   assert.equal(lots.T, none.T);
 });
+
+test('nothing goes through the ground: tumbleweeds sit and roll on it, birds fly over it and fall onto it', () => {
+  let seed = 11;
+  const g = new Game(data, { random: () => ((seed = (seed * 16807) % 2147483647) / 2147483647) });
+  g.sandbox.birds = 3; g.sandbox.weeds = 3; g.sandbox.power = 3;
+  g.startSandbox();
+  g.keys.up = true;
+  let checked = 0, under = 0, sky = 0;
+  const below = (w, o) => !!w.down(o.x, o.y - 1200, o.y - 3);   // ground over it: it's in the ground
+  for (let i = 0; i < 3000 && g.screen === 'playing'; i++) {
+    g.step();
+    if (i % 60 === 30) {
+      const t = g.truck.T;
+      // knock a bird out right by the truck now and then, to see it land
+      g.critters.birds.push({ x: t[0] + 4, y: t[1] - 4, vx: 0, vy: 0, dir: 1, flap: 0, hit: false, spin: 0, rot: 0, rest: 0, life: 0 });
+    }
+    if (i % 10) continue;
+    for (const w of g.critters.weeds) { checked++; if (below(g.world, w)) under++; }
+    for (const b of g.critters.birds) { checked++; if (below(g.thinWorld, b)) under++; if (!b.hit) sky++; }
+  }
+  assert.ok(checked > 500 && sky > 100, `${checked} looked at`);
+  assert.equal(under, 0, `${under} of ${checked} in the ground`);
+  assert.ok(g.critters.birds.some((b) => b.rest > 0), 'a knocked bird has landed');
+});

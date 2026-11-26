@@ -573,9 +573,11 @@ export class Battle {
       let target = null;
       if (m.owner === 'you') {
         let bestD = BATTLE.missile.range;
-        for (const e of this.enemies.length ? this.enemies : this.racers) {
-          if (e.wreck) continue;
-          const [ex, ey] = e.centre, d = Math.hypot(ex - m.x, ey - m.y);
+        // (and Sandbox's birds: the nearest of them all ahead; never its tumbleweeds)
+        const aims = (this.enemies.length ? this.enemies : this.racers).filter((e) => !e.wreck).map((e) => e.centre);
+        for (const b of g.critters?.flying || []) aims.push([b.x, b.y]);
+        for (const [ex, ey] of aims) {
+          const d = Math.hypot(ex - m.x, ey - m.y);
           if (d < bestD && Math.abs(wrapAngle(Math.atan2(ey - m.y, ex - m.x) - m.ang)) < BATTLE.missile.cone) { bestD = d; target = [ex, ey]; }
         }
       } else if (you) target = you.centre();
@@ -592,6 +594,7 @@ export class Battle {
       // Hitting a truck.
       const hits = (T, s) => circles(T, s).some((c) => Math.hypot(c.x - m.x, c.y - m.y) < c.r + 5);
       if (m.owner === 'you' && this.bots.some((e) => !e.wreck && hits(e.truck.T, e.s))) { this.blowMissile(m, m.x, m.y); continue; }
+      if (m.owner === 'you' && g.critters?.flying.some((b) => Math.hypot(b.x - m.x, b.y - m.y) < 14)) { this.blowMissile(m, m.x, m.y); continue; }
       if (m.owner === 'enemy' && you && hits(you.T, 1)) { this.blowMissile(m, m.x, m.y); continue; }
       if (--m.life <= 0) { this.blowMissile(m, m.x, m.y, 0.6); continue; }
     }
@@ -628,6 +631,7 @@ export class Battle {
     }
     for (let n = 0; n < (big ? 10 : 6); n++) this.bit('smoke', x + (this.random - 0.5) * radius * 0.5, y + (this.random - 0.5) * radius * 0.4, (this.random - 0.5) * 1.5, -0.4 - this.random * 0.6, 60 + this.random * 30);
     const you = g.wreck ? null : g.truck;
+    g.critters?.blast(x, y, radius, power);
     if (you) blastPoints(you.T, you.P, 1, x, y, radius, power * (yours ? 0.6 : 1));
     if (g.wreck) blastPoints(g.wreck.T, g.wreck.P, 1, x, y, radius, power);
     for (const e of this.bots) {

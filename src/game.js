@@ -1294,7 +1294,7 @@ export class Game {
   stepCritters() {
     const z = this.zoom, hw = this.viewW * z / 2, hh = this.viewH * z / 2;
     const view = { cx: this.camX + hw, cy: this.camY + hh, hw, hh };
-    this.critters.step(this.wreck ? null : this.truck, view, this.thinWorld, this.truck.gravity);
+    this.critters.step(this.wreck ? null : this.truck, view, this.world, this.thinWorld, this.truck.gravity, this.levelData.height * TILE + 400);
   }
 
   /** Move everything (truck, wreck, dirt, camera) left by dx and up by dy. */

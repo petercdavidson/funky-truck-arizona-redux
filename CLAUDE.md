@@ -47,7 +47,9 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   the real world. `src/render-battle.js` draws them. Battle Mode and Rally Mode, which this was
   written for, are out of the game; they're kept, playable, on the `feat/battle-rally` branch.
 - `src/critters.js` (no DOM): Sandbox's birds and tumbleweeds (`game.critters`, own physics and own
-  random numbers; they read the truck and never change it) and its clouds (`cloudsNear`: a hash of
+  random numbers; they read the truck and never change it; they collide with the ground as wheels do,
+  `Critters.move` with `world.collide`; they go out of sight behind and come in out of sight ahead;
+  your missiles home in on birds, `flying`, and blasts knock both) and its clouds (`cloudsNear`: a hash of
   the sky, fixed in cloud space, the world less `game.shiftTotal`). Counts are Sandbox settings.
 - `src/sandbox.js` (no DOM): Sandbox Mode's settings (`funkytruck.sandbox`, choice indices; track 0
   is Endless, then the stages, then the stunt tracks), `applySandbox` (sets the truck's `power`,

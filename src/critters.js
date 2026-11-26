@@ -1,11 +1,13 @@
 // critters.js — Sandbox's birds and tumbleweeds, and where its clouds are. No DOM access (runs
 // under Node for tests).
 //
-// Birds fly across the sky in little flocks; drive (or fly) into one and it's knocked tumbling,
-// in a puff of feathers, and falls to the ground. Tumbleweeds roll along the ground in the wind,
-// hopping over bumps; hit one and it's sent flying. Each has its own simple physics, and neither
-// ever touches the truck: they're scenery you can hit. They live near the view: one that's been
-// left far behind comes back, out of sight, somewhere ahead.
+// Birds fly across the sky in little flocks, climbing over the ground and turning back from walls;
+// drive (or fly) into one, or blow it up with a missile (missiles home in on them), and it's
+// knocked tumbling, in a puff of feathers, and falls to the ground. Tumbleweeds sit on the ground
+// and roll down slopes; hit one and it's sent flying. Both collide with the ground as the truck's
+// wheels do (the collision world's lines, pushed out by their size), so nothing falls through it,
+// and neither ever touches the truck: they're scenery you can hit. They live round the view: one
+// left behind out of sight goes, and a new one comes in out of sight, the way you're heading.
 //
 // Clouds aren't simulated: `cloudsNear` says where they are from a hash of where you look, the
 // same every time, so they stay put in the sky (a long way up there are more of them). They show
@@ -14,11 +16,12 @@
 const TILE = 64;
 export const CRITTERS = {
   birdRadius: 9,          // px: how near the truck a bird is hit
-  weedRadius: 18,         // px: a tumbleweed's size
+  weedRadius: 21.5,       // px: a tumbleweed's size (the collision world's own push-out, a wheel's)
   truckRadius: 46,        // px round the truck's chassis centre and its wheels that hits things
   gravity: 0.11,          // px/step² for things falling (the truck's own, at Earth gravity)
-  wind: 0.012,            // px/step² pushing tumbleweeds along
-  farAway: 1400,          // px from the view's middle: further than that, it comes back elsewhere
+  gone: 500,              // px out of sight: further than that, it goes (and a new one comes)
+  look: 26,               // steps a bird looks ahead for ground in its way
+  clear: 70,              // px a bird keeps above the ground
 };
 
 /** A small, repeatable hash of two integers to [0, 1). */
@@ -59,7 +62,7 @@ export function cloudsNear(x0, y0, x1, y1, top = 0) {
 }
 
 export class Critters {
-  /** `random` returns [0, 1) (the game's, so tests can fix it). */
+  /** `random` returns [0, 1). */
   constructor(random = Math.random) {
     this.random = random;
     this.birds = [];
@@ -82,60 +85,126 @@ export class Critters {
     for (const A of [this.birds, this.weeds, this.feathers]) for (const o of A) { o.x -= dx; o.y -= dy; }
   }
 
-  /** The ground's height under x, from y up to `depth` px below; null if there's none. */
-  static groundAt(world, x, y, depth = 900) {
-    const h = world?.down(x, y, y + depth);
-    return h ? h.y + (world.offset || 0) : null;
-  }
-
   /**
-   * A new bird somewhere just out of sight round the view (centre cx, cy; half sizes hw, hh),
-   * flying across it. A flock is a few together.
+   * Move o by its velocity through `world` (one-sided lines pushed out by o's size): where it would
+   * cross one, it's put back out of it, and its velocity loses what went into the ground (keeping
+   * `bounce` of it) and `rub` of what went along it. Returns the line's normal it hit, or null.
    */
-  spawnBird(view, flock = null) {
-    const R = this.random;
-    let x, y, dir;
-    if (flock) { dir = flock.dir; x = flock.x - dir * (20 + 30 * R()); y = flock.y + (R() - 0.5) * 50; }
-    else {
-      dir = R() < 0.5 ? -1 : 1;
-      // from the side it flies away from, or above or below
-      x = view.cx - dir * (view.hw + 60 + 200 * R());
-      y = view.cy + (R() - 0.5) * 2 * view.hh * 1.2;
+  static move(o, world, bounce = 0, rub = 0) {
+    const nx = o.x + o.vx, ny = o.y + o.vy;
+    const h = world.collide(o.x, o.y, nx, ny);
+    if (!h) { o.x = nx; o.y = ny; return null; }
+    o.x = h.x; o.y = h.y;
+    const vn = o.vx * h.nx + o.vy * h.ny;
+    if (vn < 0) {
+      const tx = o.vx - vn * h.nx, ty = o.vy - vn * h.ny;
+      o.vx = tx * (1 - rub) - vn * bounce * h.nx; o.vy = ty * (1 - rub) - vn * bounce * h.ny;
     }
-    const b = { x, y, vx: dir * (1.6 + 1.2 * R()), vy: 0, dir, flap: R() * 6, hit: false, spin: 0, rot: 0, rest: 0, life: 0 };
-    this.birds.push(b);
-    return b;
+    return [h.nx, h.ny];
   }
 
-  /** A new tumbleweed out of sight on the ground, upwind of the view. */
-  spawnWeed(view, world) {
-    const R = this.random;
-    const side = R() < 0.5 ? -1 : 1;
-    const x = view.cx + side * (view.hw + 80 + 300 * R());
-    const g = Critters.groundAt(world, x, view.cy - view.hh * 2, view.hh * 6);
-    if (g === null) return null;
-    const w = { x, y: g - CRITTERS.weedRadius, vx: (0.5 + R()) * (side > 0 ? -1 : 1) * 0.6, vy: 0, rot: R() * 6, flying: false, life: 0 };
-    this.weeds.push(w);
-    return w;
+  /** Whether (x, y) is open sky with room below it: no ground over it, and none within `clear` under it. */
+  static openSky(world, x, y, clear) {
+    if (world.down(x, y - 1200, y)) return false;
+    return !world.down(x, y, y + clear);
   }
 
   /**
-   * One step. `truck`: the Truck (read only, never changed). `view`: { cx, cy, hw, hh } in world
-   * px. `world`: the CollisionWorld (for the ground under tumbleweeds and falling birds).
+   * Where a new one goes: just out of sight round the view (centre cx, cy; half sizes hw, hh) on
+   * the side you're heading for (any side when you're slow), at [x, y].
    */
-  step(truck, view, world, gravity = CRITTERS.gravity) {
+  spawnPoint(view, heading) {
+    const R = this.random, [vx, vy] = heading, sp = Math.hypot(vx, vy);
+    const out = 60 + 260 * R();
+    if (sp > 2 && Math.abs(vy) > Math.abs(vx) * 1.5) {
+      // going up or down: above or below the view
+      const s = Math.sign(vy);
+      return [view.cx + (R() - 0.5) * 2 * view.hw * 1.3, view.cy + s * (view.hh + out)];
+    }
+    const s = sp > 2 ? Math.sign(vx) : R() < 0.5 ? -1 : 1;
+    return [view.cx + s * (view.hw + out), view.cy + (R() - 0.5) * 2 * view.hh * 1.3];
+  }
+
+  /** A new bird (and a few more in a flock with it) in open sky out of sight. */
+  spawnBird(view, world, heading) {
+    const R = this.random;
+    for (let tries = 0; tries < 6; tries++) {
+      const [x, y] = this.spawnPoint(view, heading);
+      if (!Critters.openSky(world, x, y, CRITTERS.clear)) continue;
+      const dir = R() < 0.5 ? -1 : 1;
+      const n = 1 + Math.min(this.wantBirds - this.birds.length - 1, Math.floor(R() * 4));
+      for (let i = 0; i < n; i++) {
+        const bx = x - dir * i * (20 + 30 * R()), by = y + (R() - 0.5) * 50;
+        if (i && !Critters.openSky(world, bx, by, CRITTERS.clear)) continue;
+        this.birds.push({ x: bx, y: by, vx: dir * (1.6 + 1.2 * R()), vy: 0, dir, flap: R() * 6, hit: false, spin: 0, rot: 0, rest: 0, life: 0 });
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /** A new tumbleweed out of sight, on the first ground down from above the view. */
+  spawnWeed(view, world, heading) {
+    for (let tries = 0; tries < 6; tries++) {
+      const [x] = this.spawnPoint(view, [heading[0], 0]);
+      const h = world.down(x, view.cy - view.hh - 1200, view.cy + view.hh + 1200);
+      if (!h || h.ny > -0.5) continue;   // (only on ground facing up)
+      const y = h.y - 1;
+      if (Math.abs(y - view.cy) < view.hh + 30 && Math.abs(x - view.cx) < view.hw + 30) continue;   // (never in sight)
+      this.weeds.push({ x: h.x, y, vx: 0, vy: 0, rot: this.random() * 6, life: 0, cool: 0 });
+      return true;
+    }
+    return false;
+  }
+
+  /** Knock bird b away with velocity (vx, vy): it tumbles, with a puff of feathers. */
+  knock(b, vx, vy) {
+    const R = this.random;
+    b.hit = true; b.rest = 0;
+    b.vx = vx; b.vy = vy;
+    b.spin = (R() - 0.5) * 0.6;
+    for (let i = 0; i < 10; i++) {
+      const a = R() * Math.PI * 2, s = 0.5 + R() * 2.5;
+      this.feathers.push({ x: b.x, y: b.y, vx: vx * 0.3 + Math.cos(a) * s, vy: vy * 0.3 + Math.sin(a) * s, rot: R() * 6, spin: (R() - 0.5) * 0.3, life: 90 + R() * 80 });
+    }
+  }
+
+  /** An explosion at (x, y): birds within `radius` are knocked out, tumbleweeds thrown. */
+  blast(x, y, radius, power) {
+    for (const b of this.birds) {
+      const dx = b.x - x, dy = b.y - y, d = Math.hypot(dx, dy) || 1;
+      if (d > radius) continue;
+      const k = power * (1 - d / radius) + 1;
+      if (!b.hit) { this.knock(b, dx / d * k, dy / d * k - 1); this.events.push({ kind: 'bird', x: b.x, y: b.y, speed: k }); }
+      else if (!b.rest) { b.vx += dx / d * k; b.vy += dy / d * k; }
+    }
+    for (const w of this.weeds) {
+      const dx = w.x - x, dy = w.y - y, d = Math.hypot(dx, dy) || 1;
+      if (d > radius) continue;
+      const k = power * (1 - d / radius);
+      w.vx += dx / d * k; w.vy += dy / d * k - k * 0.5;
+    }
+  }
+
+  /** The birds still flying (what missiles home in on). */
+  get flying() { return this.birds.filter((b) => !b.hit); }
+
+  /**
+   * One step. `truck`: the Truck (read only, never changed), or null (a wreck hits nothing).
+   * `view`: { cx, cy, hw, hh } in world px. `world`: the collision world for tumbleweeds (pushed
+   * out by their size); `thin`: the one for birds (pushed out a little). `bottom`: below that,
+   * something's fallen out of the level and goes.
+   */
+  step(truck, view, world, thin, gravity = CRITTERS.gravity, bottom = Infinity) {
     const C = CRITTERS, R = this.random;
     this.events.length = 0;
-    const far = (o) => Math.abs(o.x - view.cx) > C.farAway + view.hw || Math.abs(o.y - view.cy) > C.farAway + view.hh;
-    // keep the numbers up (a few at a time: no crowd appearing at once)
-    this.birds = this.birds.filter((b) => !far(b) && !(b.hit && b.rest > 400));
-    this.weeds = this.weeds.filter((w) => !far(w));
-    if (this.birds.length < this.wantBirds && R() < 0.05) {
-      const lead = this.spawnBird(view);
-      const n = Math.min(this.wantBirds - this.birds.length, Math.floor(R() * 4));
-      for (let i = 0; i < n; i++) this.spawnBird(view, lead);
-    }
-    if (this.weeds.length < this.wantWeeds && R() < 0.03) this.spawnWeed(view, world);
+    const gone = (o) => o.y > bottom || Math.abs(o.x - view.cx) > view.hw + C.gone || Math.abs(o.y - view.cy) > view.hh + C.gone;
+    this.birds = this.birds.filter((b) => !gone(b) && !(b.hit && b.rest > 400));
+    this.weeds = this.weeds.filter((w) => !gone(w));
+    // new ones out of sight, the way you're heading
+    const heading = truck ? [truck.T[0] - truck.P[0], truck.T[1] - truck.P[1]] : [0, 0];
+    if (this.birds.length < this.wantBirds && R() < 0.25) this.spawnBird(view, thin, heading);
+    if (this.weeds.length < this.wantWeeds && R() < 0.15) this.spawnWeed(view, world, heading);
     // what hits: circles round the truck's chassis centre and its wheels (and how fast each moves)
     const T = truck?.T, P = truck?.P;
     const hitters = truck ? [0, 1, 2].map((p) => [T[p * 2], T[p * 2 + 1], T[p * 2] - P[p * 2], T[p * 2 + 1] - P[p * 2 + 1], p ? truck.wheelRadius + 6 : C.truckRadius]) : [];
@@ -145,61 +214,47 @@ export class Critters {
       b.life++;
       if (!b.hit) {
         b.flap += 0.35;
-        b.vy += (Math.sin(b.life * 0.03 + b.flap * 0.1) * 0.02) - b.vy * 0.05;
-        b.x += b.vx; b.y += b.vy;
+        // a gentle drift up and down
+        b.vy += Math.sin(b.life * 0.03 + b.flap * 0.1) * 0.02 - b.vy * 0.05;
+        // ground in the way ahead, or too near below: climb; a wall right ahead: turn back
+        const ahead = thin.collide(b.x, b.y, b.x + b.vx * C.look, b.y + b.vy * C.look + C.clear * 0.5);
+        const under = thin.down(b.x + b.vx * 8, b.y, b.y + C.clear);
+        if (ahead || under) b.vy = Math.max(-2.5, b.vy - 0.18);
+        const wall = thin.collide(b.x, b.y, b.x + b.dir * 34, b.y);
+        if (wall && Math.abs(wall.nx) > 0.6) { b.dir = -b.dir; b.vx = -b.vx; }
+        if (Critters.move(b, thin, 0, 0)) { b.dir = -b.dir; b.vx = -b.vx; b.vy = -1.5; }
         const h = hitBy(b, C.birdRadius);
         if (h) {
-          // knocked away with (most of) the truck's speed, and a bit outward from it, spinning
-          const [hx, hy, vx, vy] = h, dx = b.x - hx, dy = b.y - hy, d = Math.hypot(dx, dy) || 1;
-          const sp = Math.hypot(vx, vy);
-          b.hit = true;
-          b.vx = vx * 0.9 + dx / d * (2 + sp * 0.3); b.vy = vy * 0.9 + dy / d * (2 + sp * 0.3) - 2;
-          b.spin = (R() - 0.5) * 0.6;
-          for (let i = 0; i < 10; i++) {
-            const a = R() * Math.PI * 2, s = 0.5 + R() * 2.5;
-            this.feathers.push({ x: b.x, y: b.y, vx: b.vx * 0.3 + Math.cos(a) * s, vy: b.vy * 0.3 + Math.sin(a) * s, rot: R() * 6, spin: (R() - 0.5) * 0.3, life: 90 + R() * 80 });
-          }
+          // knocked away with (most of) the truck's speed, and a bit outward from it
+          const [hx, hy, vx, vy] = h, dx = b.x - hx, dy = b.y - hy, d = Math.hypot(dx, dy) || 1, sp = Math.hypot(vx, vy);
+          this.knock(b, vx * 0.9 + dx / d * (2 + sp * 0.3), vy * 0.9 + dy / d * (2 + sp * 0.3) - 2);
           this.events.push({ kind: 'bird', x: b.x, y: b.y, speed: sp });
         }
       } else if (b.rest === 0) {
-        // tumbling down until it lands
+        // tumbling down until it lands (bouncing off walls)
         b.vy += gravity; b.vx *= 0.995;
-        b.x += b.vx; b.y += b.vy; b.rot += b.spin;
-        const g = Critters.groundAt(world, b.x, b.y - b.vy - 8, Math.abs(b.vy) + 16);
-        if (g !== null && b.y + 4 >= g) { b.y = g - 4; b.rest = 1; }
+        const n = Critters.move(b, thin, 0.3, 0.3);
+        b.rot += b.spin;
+        if (n && n[1] < -0.5 && Math.abs(b.vy) < 1.2) { b.rest = 1; b.vx = b.vy = 0; b.lie = Math.atan2(n[1], n[0]) + Math.PI / 2; }
       } else b.rest++;
     }
 
     for (const w of this.weeds) {
       w.life++;
-      const g = Critters.groundAt(world, w.x, w.y - 40, 80 + Math.max(0, w.vy) + 400);
-      if (g === null) { w.vy += gravity; w.x += w.vx; w.y += w.vy; w.rot += w.vx / C.weedRadius; continue; }
-      // the slope under it, from either side
-      const gl = Critters.groundAt(world, w.x - 12, w.y - 60, 500) ?? g, gr = Critters.groundAt(world, w.x + 12, w.y - 60, 500) ?? g;
-      const slope = (gr - gl) / 24;
-      const onGround = w.y + C.weedRadius >= g - 1;
-      if (onGround) {
-        // rolling: gravity down the slope, the wind, rolling friction; now and then a little hop
-        w.vx += gravity * slope / Math.sqrt(1 + slope * slope) + C.wind * Math.sign(w.vx || 1) - w.vx * 0.01;
-        if (Math.abs(w.vy) < 0.5 && R() < 0.01) w.vy = -1.5 - R() * 2;
-      }
       w.vy += gravity;
-      w.x += w.vx; w.y += w.vy;
-      const g2 = Critters.groundAt(world, w.x, w.y - 40, 80 + Math.max(0, w.vy) + 400) ?? g;
-      if (w.y + C.weedRadius > g2) {
-        w.y = g2 - C.weedRadius;
-        if (w.vy > 0) w.vy = w.vy > 1.5 ? -w.vy * 0.45 : 0;
-        w.flying = false;
-      }
+      w.vx *= 0.999;
+      const n = Critters.move(w, world, w.vy > 2 ? 0.4 : 0, 0.004);
+      // rolling: it turns as far as it goes along
       w.rot += w.vx / C.weedRadius;
-      const h = hitBy(w, C.weedRadius);
-      if (h && !w.cool) {
+      if (n && Math.hypot(w.vx, w.vy) < 0.02) { w.vx = 0; w.vy = 0; }
+      if (w.cool) w.cool--;
+      const h = !w.cool && hitBy(w, C.weedRadius);
+      if (h) {
         const [hx, hy, vx, vy] = h, dx = w.x - hx, dy = w.y - hy, d = Math.hypot(dx, dy) || 1, sp = Math.hypot(vx, vy);
         w.vx = vx * 1.1 + dx / d * 2; w.vy = Math.min(vy, 0) - 2 - sp * 0.4 + dy / d;
-        w.flying = true; w.cool = 20;
+        w.cool = 20;
         this.events.push({ kind: 'weed', x: w.x, y: w.y, speed: sp });
       }
-      if (w.cool) w.cool--;
     }
 
     for (const f of this.feathers) {

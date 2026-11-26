@@ -1018,7 +1018,7 @@ export class Renderer {
       } else {
         // knocked out: tumbling, wings folded; lying on the ground once it's down (and fading)
         ctx.globalAlpha = b.rest > 300 ? Math.max(0, 1 - (b.rest - 300) / 100) : 1;
-        ctx.rotate(b.rest ? Math.PI * 0.9 : b.rot);
+        ctx.rotate(b.rest ? (b.lie ?? 0) + Math.PI * 0.9 : b.rot);
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.ellipse(0, 0, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
         ctx.beginPath(); ctx.moveTo(-2, -1); ctx.lineTo(-8, -5); ctx.moveTo(2, -1); ctx.lineTo(7, -6); ctx.stroke();
