@@ -238,7 +238,8 @@
         <div class="row"><span class="toggles" id="shapeSides">
           <label title="A lump of ground in the air, its surface facing out"><input type="radio" name="shapeSide" value="out" checked>Ground out</label>
           <label title="A hole that shape in the ground (a cave), its surface facing in"><input type="radio" name="shapeSide" value="in">Ground in</label></span></div>
-        <div class="hint"><p>Drag a box to draw the shape. <kbd>Shift</kbd> keeps it as wide as it's tall.</p><p>Click a shape (or any path) to pick it: drag it to move it, drag the handles of its box to resize it (<kbd>Shift</kbd> keeps its proportions). Ground in / out and the kind change the picked shape. Right-click or <kbd>Esc</kbd> lets go.</p><p>A shape is a path that goes all the way round: reshape it with the Path tool (<kbd>G</kbd>), and Swap ground side turns a lump into a hole.</p></div>
+        <div class="row"><button class="btn" id="shapeDel" title="Delete the picked shape (or path) and the tiles it made (Delete)">Delete shape</button></div>
+        <div class="hint"><p>Drag a box to draw the shape. <kbd>Shift</kbd> keeps it as wide as it's tall.</p><p>Click a shape (or any path) to pick it: drag it to move it, drag the handles of its box to resize it (<kbd>Shift</kbd> keeps its proportions). Ground in / out and the kind change the picked shape; <kbd>Delete</kbd> deletes it. Right-click or <kbd>Esc</kbd> lets go.</p><p>A shape is a path that goes all the way round: reshape it with the Path tool (<kbd>G</kbd>), and Swap ground side turns a lump into a hole.</p></div>
       </div>
       <div class="tp" data-tp="start">
         <div class="hint"><p>Click (or drag) where the truck drops in.</p><p id="startInfo"></p></div>
@@ -249,7 +250,7 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" id="tilesCard">
       <h2>Tiles <span class="grow"></span>
         <span class="toggles" id="palForms" title="Show the sheet turned: pick a tile to paint it that way round">
           <label title="As in the sheet"><input type="radio" name="palForm" value="0" checked>Upright</label>
@@ -1097,7 +1098,7 @@
       }
       const id = L.tiles[c.y]?.[c.x];
       $('where').textContent = id === undefined ? `${L.width} × ${L.height} tiles` : `column ${c.x} · row ${c.y} · ${(c.x * METRES_PER_TILE).toFixed(1)} m · tile ${tileLabel(id)}${id === SKY && L.paint[c.y][c.x] !== SKY ? '' : ` (${L.paint[c.y][c.x] === SKY ? 'erased' : SRC_NAMES[src[c.y][c.x]]})`}`;
-      scroller.style.cursor = spaceDown ? 'grab' : tool === 'select' && follow ? 'copy' : tool === 'select' && inBox(c) ? 'move' : tool === 'path' ? (pathHover || dragging?.path ? 'pointer' : 'copy') : 'crosshair';
+      scroller.style.cursor = spaceDown ? 'grab' : tool === 'select' && follow ? 'copy' : tool === 'select' && inBox(c) ? 'move' : tool === 'path' ? (pathHover || dragging?.path ? 'pointer' : 'copy') : tool === 'shape' ? shapeCursor(c) : 'crosshair';
       drawOver();
     });
     window.addEventListener('mousemove', (e) => {
@@ -1414,14 +1415,22 @@
      * Where a point clicked at c goes in path P: on the curve where the click is on it, else at the
      * nearer end (after the last point when the path is just starting).
      */
-    function insertAt(P, c) {
-      if (P.length < 2) return P.length;
-      let bestD = Infinity, bestI = -1;
+    /**
+     * Where a point clicked at c goes in path P, as { i, at }: `at` the place on the curve (px) when
+     * the click is on it (the new point goes there), else null.
+     */
+    function nearCurve(P, c) {
+      if (P.length < 2) return { i: P.length, at: null };
+      let bestD = Infinity, bestI = -1, at = null;
       for (let i = 0; i < segs(P); i++) {
         const q = cubic(P, i);
-        for (let k = 0; k <= 24; k++) { const [x, y] = bez(q, k / 24), d = Math.hypot((x - c.px) * Z, (y - c.py) * Z); if (d < bestD) { bestD = d; bestI = i + 1; } }
+        for (let k = 0; k <= 48; k++) { const [x, y] = bez(q, k / 48), d = Math.hypot((x - c.px) * Z, (y - c.py) * Z); if (d < bestD) { bestD = d; bestI = i + 1; at = { x, y }; } }
       }
-      if (bestD <= 14 || P.closed) return bestI;
+      if (bestD <= 14) return { i: bestI, at };
+      if (P.closed) return { i: bestI, at: null };
+      return { i: insertAtEnd(P, c), at: null };
+    }
+    function insertAtEnd(P, c) {
       const d0 = Math.hypot(P[0].x - c.px, P[0].y - c.py), d1 = Math.hypot(P[P.length - 1].x - c.px, P[P.length - 1].y - c.py);
       return d0 < d1 ? 0 : P.length;
     }
@@ -1463,8 +1472,8 @@
       }
       // a new point (on a new path if none is being edited)
       if (!AP()) { L.paths.push({ id: L.nextId++, pts: [], delta: [], chain: [] }); activate(L.paths.length - 1); }
-      const P = AP().pts, i = insertAt(P, c);
-      P.splice(i, 0, { x: c.px, y: c.py, auto: true });
+      const P = AP().pts, { i, at } = nearCurve(P, c);
+      P.splice(i, 0, { x: at ? at.x : c.px, y: at ? at.y : c.py, auto: true });
       pathSel = i;
       dragging = { path: true, p: L.ap, i, part: 'pt' };
       layGuide();
@@ -1537,13 +1546,18 @@
       }
       // where a click would add a point, and the curve it would make
       if (editing && hover && !pathHover && !dragging && !spaceDown) {
-        const P = AP()?.pts || [], X = hover.px * Z, Y = hover.py * Z;
-        const i = insertAt(P, hover), prev = P[i - 1] || (P.closed ? P[P.length - 1] : null), next = P[i] || (P.closed ? P[0] : null);
-        ox.setLineDash([5, 4]); ox.strokeStyle = 'rgba(255,61,139,0.8)'; ox.lineWidth = 1.5;
-        ox.beginPath();
-        if (prev) { ox.moveTo(prev.x * Z, prev.y * Z); ox.lineTo(X, Y); }
-        if (next) { ox.moveTo(X, Y); ox.lineTo(next.x * Z, next.y * Z); }
-        ox.stroke(); ox.setLineDash([]);
+        const P = AP()?.pts || [], { i, at } = nearCurve(P, hover);
+        // on the curve: the new point goes on it, there; off it, it's joined on to the end (or,
+        // round a closed path, between the points either side)
+        const X = (at ? at.x : hover.px) * Z, Y = (at ? at.y : hover.py) * Z;
+        if (!at) {
+          const prev = P[i - 1] || (P.closed ? P[P.length - 1] : null), next = P[i] || (P.closed ? P[0] : null);
+          ox.setLineDash([5, 4]); ox.strokeStyle = 'rgba(255,61,139,0.8)'; ox.lineWidth = 1.5;
+          ox.beginPath();
+          if (prev) { ox.moveTo(prev.x * Z, prev.y * Z); ox.lineTo(X, Y); }
+          if (next) { ox.moveTo(X, Y); ox.lineTo(next.x * Z, next.y * Z); }
+          ox.stroke(); ox.setLineDash([]);
+        }
         ox.fillStyle = 'rgba(255,255,255,0.55)'; ox.strokeStyle = '#000';
         ox.fillRect(X - 5, Y - 5, 10, 10); ox.strokeRect(X - 5, Y - 5, 10, 10);
         ox.fillStyle = '#000'; ox.font = 'bold 13px system-ui, sans-serif'; ox.textAlign = 'left';
@@ -1651,6 +1665,15 @@
       recompose(old); drawOver(); save();
       say('Deleted that path and the tiles it made.');
     };
+    /** The Shape tool: delete the picked shape (or path). */
+    function shapeDelete() {
+      const g = AP();
+      if (!g) { say('Click a shape to pick it first.'); return; }
+      remember(); const old = g.delta; L.paths.splice(L.ap, 1); L.ap = -1; pathSel = -1;
+      recompose(old); drawOver(); save();
+      say(g.closed ? 'Deleted that shape and the tiles it made.' : 'Deleted that path and the tiles it made.');
+    }
+    $('shapeDel').onclick = shapeDelete;
 
     // ---- the Shape tool: a closed path round a box, ground inside (out) or outside (in)
     function shapePts(a, b, square) {
@@ -1718,6 +1741,24 @@
       if (!g?.closed) return;
       const r = document.querySelector(`input[name=shapeSide][value=${sideOf(g)}]`);
       if (r) r.checked = true;
+    }
+    /** Which handle's resize arrows show for each of a box's handles. */
+    const HANDLE_CURSOR = { lt: 'nwse-resize', rb: 'nwse-resize', rt: 'nesw-resize', lb: 'nesw-resize', t: 'ns-resize', b: 'ns-resize', l: 'ew-resize', r: 'ew-resize' };
+    /**
+     * The Shape tool's pointer over c: resize arrows on a handle of the picked shape's box, the move
+     * cross inside the box or over another shape or path (a click picks it to move), else drawing.
+     */
+    function shapeCursor(c) {
+      const d = dragging;
+      if (d?.xform) return d.xform === 'move' ? 'move' : HANDLE_CURSOR[d.xform];
+      if (d?.shape) return 'crosshair';
+      const g = AP(), b = g && pathBox(g);
+      if (b) {
+        const h = boxHandles(b).find(([, x, y]) => Math.hypot((x - c.px) * Z, (y - c.py) * Z) <= HIT);
+        if (h) return HANDLE_CURSOR[h[0]];
+        if (c.px >= b.x0 && c.px <= b.x1 && c.py >= b.y0 && c.py <= b.y1) return 'move';
+      }
+      return L.paths.some((q, k) => k !== L.ap && q.pts.length > 1 && onPath(q, c, HIT * 1.5)) ? 'move' : 'crosshair';
     }
     function shapeDown(e, c) {
       const g = AP();
@@ -1901,6 +1942,7 @@
       document.querySelectorAll('.tool').forEach((b) => b.classList.toggle('on', b.dataset.tool === t));
       document.querySelectorAll('.tp').forEach((p) => p.classList.toggle('on', p.dataset.tp === t));
       $('toolTitle').textContent = TITLES[t];
+      $('tilesCard').hidden = t !== 'paint';   // (the tiles are only for painting)
       if (t === 'start') $('startInfo').textContent = `The truck drops in ${(L.start[0] / TILE * METRES_PER_TILE).toFixed(1)} m along.`;
       if (t === 'finish') $('finishInfo').textContent = Number.isFinite(L.finish) ? `Now ${Math.round(L.finish / TILE * METRES_PER_TILE)} m along.` : 'There is none now.';
       drawOver();
@@ -1932,7 +1974,7 @@
         return;
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (tool === 'path') pathDeletePoint(); else if (tool === 'select') selClear();
+        if (tool === 'path') pathDeletePoint(); else if (tool === 'select') selClear(); else if (tool === 'shape') shapeDelete();
         e.preventDefault(); return;
       }
       if (e.key === 'Escape') {
