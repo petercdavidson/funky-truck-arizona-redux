@@ -1273,16 +1273,34 @@
       const dirAt = (a, b) => { const d = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[0] - a[0]) / d, (b[1] - a[1]) / d]; };
       const back = (i, step) => { let j = i, len = 0; while (j + step >= 0 && j + step < line.length && len < TILE) { len += Math.hypot(line[j + step][0] - line[j][0], line[j + step][1] - line[j][1]); j += step; } return line[j]; };
       const axis = ([dx, dy]) => { const nx = -dy, ny = dx; return Math.abs(nx) > Math.abs(ny) ? [Math.sign(nx), 0] : [0, Math.sign(ny)]; };
+      // The cells the path's own curve runs through: a ledge stops short of them, as it does of other
+      // ground, rather than cutting through its own path (1.24.25).
+      const own = new Set(line.map(([x, y]) => Math.floor(y / TILE) * L.width + Math.floor(x / TILE)));
+      const blocked = ([x, y], from) => {
+        const cx = Math.floor(x / TILE), cy = Math.floor(y / TILE);
+        if (base[cy]?.[cx] > SKY) return true;
+        return Math.hypot(x - from[0], y - from[1]) > TILE * 1.5 && own.has(cy * L.width + cx);
+      };
       const toEdge = (p, [ax, ay]) => {
         const out = [], len = ax > 0 ? W - p[0] : ax < 0 ? p[0] : ay > 0 ? H - p[1] : p[1];
-        for (let s = 8; s < len; s += 8) out.push([p[0] + ax * s, p[1] + ay * s]);
+        for (let s = 8; s < len; s += 8) {
+          const q = [p[0] + ax * s, p[1] + ay * s];
+          if (blocked(q, p)) return out;
+          out.push(q);
+        }
         out.push([ax > 0 ? W : ax < 0 ? 0 : p[0], ay > 0 ? H : ay < 0 ? 0 : p[1]]);
         return out;
       };
       let out = line;
       const end = line[line.length - 1], start = line[0];
+      // At the end, the ground turns on towards its side: the ledge runs that way (ax, ay).
       if (!nearEdge(end) && !nearGround(end)) out = [...out, ...toEdge(end, axis(dirAt(back(line.length - 1, -1), end)))];
-      if (!nearEdge(start) && !nearGround(start)) out = [...toEdge(start, axis(dirAt(start, back(0, 1)))).reverse(), ...out];
+      // At the start, the ledge comes in that way, so it runs back the other way to the edge (before
+      // 1.24.25 it ran the same way as at the end: a ceiling, its ground on the wrong side).
+      if (!nearEdge(start) && !nearGround(start)) {
+        const [ax, ay] = axis(dirAt(start, back(0, 1)));
+        out = [...toEdge(start, [-ax, -ay]).reverse(), ...out];
+      }
       return out;
     }
     $('ledges').onchange = () => { for (const g of L.paths) if (!g.closed) layPath(g); save(); };

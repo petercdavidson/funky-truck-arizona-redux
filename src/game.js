@@ -5,7 +5,7 @@
 // identifiers where that helps cross-checking. Everything runs at the original 70 steps/second.
 
 import { validPadMap, assignPad, defaultPadMap } from './pad.js';
-import { Critters } from './critters.js';
+import { Critters, CRITTERS } from './critters.js';
 import { buildGrammar, EndlessCourse, ENDLESS_WIDTH, ENDLESS_SHIFT } from './endless.js';
 import { TrickTracker } from './tricks.js';
 import { Wreck } from './wreck.js';
@@ -829,6 +829,8 @@ export class Game {
 
   /** The level's collision world with a thin offset (for wreck pieces and missiles), made when first needed. */
   get thinWorld() { return (this.thin ||= this.makeWorld(3)); }
+  /** Sandbox's tumbleweeds' collision world: pushed out by their radius (CRITTERS.weedRadius). */
+  get weedWorld() { return (this.weedW ||= this.makeWorld(CRITTERS.weedRadius + 1)); }
 
   /** Practice's stunt tracks (assets/stunts.json), which come after the nine stages. */
   get stunts() { return this.data.stunts || []; }
@@ -1158,7 +1160,7 @@ export class Game {
   }
 
   startStage() { // u8a62
-    this.world = this.makeWorld(); this.thin = null;
+    this.world = this.makeWorld(); this.thin = null; this.weedW = null;
     this.wreck = null; this.selfWrecked = false;
     this.stuck = 0; this.canUpright = false; this.righting = 0; this.airSteps = 0;
     this.landed = false; // the truck is dropped in at the start; until it lands it isn't driving
@@ -1173,8 +1175,14 @@ export class Game {
     this.zoom = 1; this.zoomV = 0; this.ground = 0; this.groundV = 0; this.camSpeed = 0; this.camSpeedV = 0;
     this.back = 0; this.backV = 0;
     this.lastFocus = null; this.paceSpeed = 0; this.reversing = 0; this.shiftTotal = [0, 0];
-    this.camX = Math.min(Math.max(s[0] - this.camAnchorX, 0), this.maxCamX);       // s4833
-    this.camY = s[1] - this.viewH / 2;
+    // Endless (and Sandbox on it) starts near the course's left end, and its first step would add
+    // course to the left, moving everything right: do that now, before the camera's placed. (Before
+    // 1.24.25 a camera placed first was held at the left end, x = 0, in a wide view, then whipped
+    // into place once the course behind the start was there.)
+    if (this.onCourse && this.truck.T[0] < 40 * TILE) this.scrollWorld(-ENDLESS_SHIFT);
+    const sx = s[0] - this.shiftTotal[0], sy = s[1] - this.shiftTotal[1];   // (the start, moved with it)
+    this.camX = Math.min(Math.max(sx - this.camAnchorX, 0), this.maxCamX);       // s4833
+    this.camY = sy - this.viewH / 2;
     this.clampCamY();
     this.updateCamera();
     this.ticker = this.mode === 'custom' || this.sandboxCustom ? this.customLevel.name : this.stageName(this.level); this.tickerTimer = 140;   // m2813
@@ -1286,7 +1294,7 @@ export class Game {
   scrollWorld(n) {
     if (n > 0) this.course.scroll(n); else this.course.scrollBack(-n);
     this.shiftWorld(n * TILE, 0);
-    this.world = this.makeWorld(); this.thin = null;
+    this.world = this.makeWorld(); this.thin = null; this.weedW = null;
     // A wreck tumbling across the scroll goes on in the new world.
     if (this.wreck) { this.wreck.wheelWorld = this.world; this.wreck.thinWorld = this.thinWorld; }
   }
@@ -1306,7 +1314,7 @@ export class Game {
   stepCritters() {
     const z = this.zoom, hw = this.viewW * z / 2, hh = this.viewH * z / 2;
     const view = { cx: this.camX + hw, cy: this.camY + hh, hw, hh };
-    this.critters.step(this.wreck ? null : this.truck, view, this.world, this.thinWorld, this.truck.gravity, this.levelData.height * TILE + 400, (x, y) => this.skyAbove(x, y));
+    this.critters.step(this.wreck ? null : this.truck, view, this.weedWorld, this.thinWorld, this.truck.gravity, this.levelData.height * TILE + 400, (x, y) => this.skyAbove(x, y));
   }
 
   /**

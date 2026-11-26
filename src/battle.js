@@ -266,7 +266,10 @@ export class Battle {
   exhaust(t, s = 1) {
     const T = t.T, [ux, uy] = facing(T);
     const x = T[6] - ux * 12 - uy * 4, y = T[7] - uy * 12 + ux * 4;
-    this.bit('fire', s * x, y, s * (-ux * 3 + (this.random - 0.5)), -uy * 3 + (this.random - 0.5), 14);
+    // (before 1.24.25 it started a step's travel ahead of the truck as drawn: past about 100 km/h,
+    // in front of it)
+    const P = t.P;
+    this.bit('fire', s * x, y, s * (-ux * 3 + (this.random - 0.5)), -uy * 3 + (this.random - 0.5), 14, [s * (T[6] - P[6]), T[7] - P[7]]);
   }
 
   fire(t) {
@@ -647,9 +650,15 @@ export class Battle {
 
   // ---- particles
 
-  bit(kind, x, y, vx, vy, life) {
+  /**
+   * A particle. (px, py) is where it was a step ago, for drawing it between steps as the trucks
+   * are; `moved`: how far what it came out of moved this step, so one out of a fast truck starts
+   * from where the truck's drawn, not a step's travel ahead of it.
+   */
+  bit(kind, x, y, vx, vy, life, moved = null) {
     if (this.bits.length >= 500) this.bits.shift();
-    this.bits.push({ kind, x, y, vx, vy, life, max: life, frame: Math.floor(this.random * 8), size: 0.5 + this.random * 0.6 });
+    this.bits.push({ kind, x, y, vx, vy, life, max: life, frame: Math.floor(this.random * 8), size: 0.5 + this.random * 0.6,
+      px: x - (moved ? moved[0] : 0), py: y - (moved ? moved[1] : 0), fresh: true });
   }
 
   stepEffects() {
@@ -657,6 +666,8 @@ export class Battle {
     this.blasts = this.blasts.filter((b) => b.age < b.life);
     for (const b of this.bits) {
       b.life--;
+      if (!b.fresh) { b.px = b.x; b.py = b.y; }
+      b.fresh = false;
       b.x += b.vx; b.y += b.vy;
       if (b.kind === 'dirt' || b.kind === 'spark') b.vy += 0.15;
       else { b.vx *= 0.96; b.vy *= 0.96; } // smoke and fire drift and slow
@@ -695,6 +706,7 @@ export class Battle {
       e.best -= e.s * dx;
     }
     for (const list of [this.missiles, this.blasts, this.bits]) for (const o of list) { o.x -= dx; o.y -= dy; }
+    for (const o of this.bits) { o.px -= dx; o.py -= dy; }
   }
 
   /** What the renderer interpolates between steps: the enemies' points and the missiles. */

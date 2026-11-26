@@ -15,21 +15,24 @@ import { PAD_ACTIONS, padName } from './pad.js';
 import { cloudsNear, CRITTERS } from './critters.js';
 
 /**
- * Sandbox's layers of clouds, farthest first: each moves past at `depth` of the world's speed,
- * and the farther off, the smaller and fainter.
+ * Sandbox's layers of clouds, farthest first: each moves past at `depth` of the world's speed
+ * (from 1/1000 for the farthest to 1/10 for the nearest, evenly spread in between by ratio),
+ * and the farther off, the smaller, fainter and softer (`blur`, in stage px).
  */
 const CLOUD_LAYERS = [
-  { depth: 0.01, size: 0.4, alpha: 0.3 },
-  { depth: 0.025, size: 0.5, alpha: 0.4 },
-  { depth: 0.05, size: 0.62, alpha: 0.52 },
-  { depth: 0.1, size: 0.76, alpha: 0.66 },
-  { depth: 0.17, size: 0.88, alpha: 0.8 },
-  { depth: 0.25, size: 1, alpha: 0.92 },
+  { depth: 0.001, size: 0.4, alpha: 0.3, blur: 5 },
+  { depth: 0.0025, size: 0.5, alpha: 0.4, blur: 4.5 },
+  { depth: 0.0063, size: 0.62, alpha: 0.52, blur: 4 },
+  { depth: 0.016, size: 0.76, alpha: 0.66, blur: 3.5 },
+  { depth: 0.04, size: 0.88, alpha: 0.8, blur: 3 },
+  { depth: 0.1, size: 1, alpha: 0.92, blur: 2.5 },
 ];
 import { SANDBOX_ROWS, SANDBOX_ROW, sandboxValue } from './sandbox.js';
 import { formatSpeed, formatDistance, formatHeight, speedoShare } from './units.js';
 
 const DEG = Math.PI / 180;
+/** Where the tumbleweed art's round hitbox (50 px across) is centred in assets/tumbleweed.png. */
+const WEED_CENTRE = [30.5, 32.5];
 const FILL_SCREENS = new Set(['playing', 'paused', 'pauseOptions', 'sandboxTweaks', 'gameOver']);
 const MENU_SCREENS = new Set(['title', 'modes', 'stats', 'options', 'padMap', 'help', 'garage', 'classicSelect', 'trialSelect', 'sandbox', 'stageEditor', 'stageLoad']);
 const AHEAD = '#8ff0a4', BEHIND = '#ffb0a0'; // Time Trial gaps: ahead of / behind your best
@@ -110,14 +113,19 @@ function optionButtons(tall, extra = {}) {
   ];
 }
 
-/** The Controller screen: a row per action (tap it, then press the button for it), Reset and Back. */
-const padRow = (i, tall) => (tall ? r(20, 84 + 54 * i, 320, 44) : r(118, 62 + 36 * i, 340, 28));
+/**
+ * The Controller screen: a row per action, laid out as Options is: the action's name as text, and
+ * its buttons in a button (tap it, then press the gamepad button for it); then Reset and Back.
+ */
+const padLine = (i, tall) => (tall ? { x: 22, y: 84 + 54 * i, rect: r(200, 84 + 54 * i - 4, 140, 40) }
+  : { x: 110, y: 62 + 36 * i, rect: r(330, 62 + 36 * i - 2, 140, 26) });
+const padRow = (i, tall) => padLine(i, tall).rect;
 function padMapButtons(tall) {
   const B = tall ? T_BIG : {};
   return [
-    ...PAD_ACTIONS.map(([action, name], i) => ({ rect: padRow(i, tall), action: `padSet:${action}`,
-      label: (g) => (g.padListen === action ? `${name}: press a button…` : `${name}: ${(g.padMap[action] || []).map(padName).join(' or ') || '—'}`),
-      ...(tall ? { size: 14 } : { size: 12 }) })),
+    ...PAD_ACTIONS.map(([action, name], i) => ({ rect: padRow(i, tall), action: `padSet:${action}`, name, line: i,
+      label: (g) => (g.padListen === action ? 'Press a button…' : (g.padMap[action] || []).map(padName).join(' or ') || '—'),
+      ...B })),
     { rect: tall ? r(30, 84 + 54 * PAD_ACTIONS.length + 40, 145, 40) : r(160, 400, 120, 25), label: 'Reset', action: 'padReset', ...B },
     { rect: tall ? r(185, 84 + 54 * PAD_ACTIONS.length + 40, 145, 40) : r(296, 400, 120, 25), label: 'Back', action: 'options', ...B },
   ];
@@ -250,11 +258,12 @@ function pauseButtons(place) {
     ['practice', 'trial', 'sandbox', 'custom'].includes(kind) && { label: 'Restart', action: 'again' },
     // Sandbox's settings, during the run
     kind === 'sandbox' && { label: 'Tweaks', action: 'tweaks' },
-    // Quitting Practice or Time Trial goes back to its list of stages, and Sandbox to its settings
-    { label: (g) => (g.mode === 'sandbox' ? 'Sandbox Menu' : g.quitScreen === 'trialSelect' || g.quitScreen === 'stageLoad' ? 'Quit to Stages' : 'Quit to Menu'), action: 'menu' },
     { label: 'Options', action: 'pauseOptions' },
-    // Sandbox's Quit goes all the way back to the title (Sandbox Menu above is its settings)
-    kind === 'sandbox' && { label: 'Quit to Menu', action: 'quitTitle' },
+    // Quitting is always the bottom one. Practice and Time Trial go back to their list of stages;
+    // Sandbox has its settings (Sandbox Menu) and, at the bottom, Quit to Menu, back to the title.
+    kind === 'sandbox' && { label: 'Sandbox Menu', action: 'menu' },
+    kind === 'sandbox' ? { label: 'Quit to Menu', action: 'quitTitle' }
+      : { label: (g) => (g.quitScreen === 'trialSelect' || g.quitScreen === 'stageLoad' ? 'Quit to Stages' : 'Quit to Menu'), action: 'menu' },
   ].filter(Boolean).map((b, i) => ({ ...b, rect: place(i), show: when })));
 }
 
@@ -980,7 +989,9 @@ export class Renderer {
    */
   clouds(game, v, zoom) {
     const ctx = this.ctx, [sx, sy] = game.shiftTotal;
-    CLOUD_LAYERS.forEach(({ depth: p, size, alpha }, layer) => {
+    // Flat white shapes, softened with a blur where the browser can (canvas filters).
+    const canBlur = 'filter' in ctx;
+    CLOUD_LAYERS.forEach(({ depth: p, size, alpha, blur }, layer) => {
       const cz = zoom ** p, w = this.viewW * cz, h = this.viewH * cz;
       // the view's middle in this layer's cloud space
       const mx = (v.camX + sx + this.viewW * zoom / 2) * p, my = (v.camY + sy + this.viewH * zoom / 2) * p;
@@ -988,18 +999,18 @@ export class Renderer {
       ctx.save();
       ctx.scale(1 / cz, 1 / cz);
       ctx.translate(-x0, -y0);
-      for (const c of cloudsNear(x0 - 300, y0 - 200, x0 + w + 300, y0 + h + 200, 0, layer, 0.45)) {
-        // a soft shadow underneath, then the cloud: its puffs filled as one shape
-        for (const [col, oy, a] of [['rgba(120,140,170,1)', 5 * size, 0.2], ['#fff', 0, 0.85]]) {
-          ctx.globalAlpha = c.alpha * a * alpha;
-          ctx.fillStyle = col;
-          ctx.beginPath();
-          for (const [dx, dy, r] of c.puffs) {
-            const px = c.x + dx * size, py = c.y + dy * size + oy, R = r * size;
-            ctx.moveTo(px + R, py); ctx.arc(px, py, R, 0, Math.PI * 2);
-          }
-          ctx.fill();
+      // (a filter's blur is in canvas pixels, whatever the transform)
+      if (canBlur) ctx.filter = `blur(${(blur * this.scale).toFixed(1)}px)`;
+      ctx.fillStyle = '#fff';
+      for (const c of cloudsNear(x0 - 300, y0 - 200, x0 + w + 300, y0 + h + 200, 0, layer, 0.45, p)) {
+        // its puffs filled as one shape
+        ctx.globalAlpha = c.alpha * 0.85 * alpha;
+        ctx.beginPath();
+        for (const [dx, dy, r] of c.puffs) {
+          const px = c.x + dx * size, py = c.y + dy * size, R = r * size;
+          ctx.moveTo(px + R, py); ctx.arc(px, py, R, 0, Math.PI * 2);
         }
+        ctx.fill();
       }
       ctx.restore();
     });
@@ -1016,21 +1027,9 @@ export class Renderer {
       ctx.save();
       ctx.translate(...at(w));
       ctx.rotate(w.rot);
-      ctx.strokeStyle = 'rgba(122, 86, 44, 0.95)';
-      ctx.lineWidth = 1.6;
-      const R = CRITTERS.weedRadius;
-      ctx.beginPath();
-      for (let i = 0; i < 9; i++) {
-        const a = i * 2.39, r = R * (0.55 + 0.45 * ((i * 37) % 10) / 10);
-        ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
-        ctx.quadraticCurveTo(Math.cos(a + 1.7) * R * 1.1, Math.sin(a + 1.7) * R * 1.1, Math.cos(a + 3) * r * 0.8, Math.sin(a + 3) * r * 0.8);
-      }
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(176, 132, 74, 0.9)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(0, 0, R * 0.9, 0.3, 2.2); ctx.moveTo(R * 0.5, -R * 0.6); ctx.arc(0, 0, R * 0.7, 3.3, 5.4);
-      ctx.stroke();
+      // the art's 50 px circle (its hitbox) is centred at WEED_CENTRE in the picture
+      const img = this.a.images['tumbleweed.png'], k = CRITTERS.weedRadius / 25;
+      if (img) ctx.drawImage(img, -WEED_CENTRE[0] * k, -WEED_CENTRE[1] * k, img.width * k, img.height * k);
       ctx.restore();
     }
     for (const b of C.birds) {
@@ -1442,6 +1441,12 @@ export class Renderer {
     this.text('Controller', cx, tall ? 22 : 14, { size: tall ? 26 : 22, weight: '800' });
     const note = game.padListen ? 'Press the gamepad button for it (Esc to stop)' : 'Tap an action, then press the gamepad button for it. The menus always use A and B.';
     this.fitText(note, cx, tall ? 56 : 42, tall ? 330 : 520, { size: tall ? 12.5 : 11, weight: '600', color: 'rgba(255,255,255,0.85)' });
+    // Each action's name as text beside its button, as on Options.
+    for (const b of buttonsFor('padMap', tall)) {
+      if (b.name === undefined) continue;
+      const L = padLine(b.line, tall);
+      this.text(b.name, L.x, L.y + (tall ? 11 : 6.5), { size: tall ? 16 : 14, weight: '800', align: 'left' });
+    }
     this.buttons('padMap', game);
     if (game.padListen) {
       const i = PAD_ACTIONS.findIndex(([a]) => a === game.padListen), R = padRow(i, tall);

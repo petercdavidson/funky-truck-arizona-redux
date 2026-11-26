@@ -71,11 +71,11 @@ export class SoundWatcher {
     if (playing && game.milestone && game.milestone.n !== this.milestone) events.push({ type: game.milestone.sound || 'milestone' });
     // Battle Mode says what happened each step (missiles, explosions, pickups...).
     if (game.battle) for (const e of game.battle.events) events.push(e);
-    // Sandbox's critters: a bird hit by the truck; tumbleweeds hit by it, or bouncing off the
-    // ground or each other.
+    // Sandbox's critters: a bird hit by the truck or a missile's blast; tumbleweeds hit by the
+    // truck, or bouncing off the ground or each other.
     if (playing && game.critters) {
       for (const e of game.critters.events) {
-        if (e.kind === 'bird' && !e.blast) events.push({ type: 'bird', force: Math.min(1, e.speed / 10) });
+        if (e.kind === 'bird') events.push({ type: 'bird', force: e.blast ? Math.max(0.7, Math.min(1, e.speed / 10)) : Math.min(1, e.speed / 10) });
         if (e.kind === 'weed') events.push({ type: 'weed', force: Math.min(1, e.speed / 10) });
         else if (e.kind === 'weedBounce') events.push({ type: 'weed', force: Math.min(0.6, e.speed / 12), soft: true });
       }

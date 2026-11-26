@@ -631,10 +631,10 @@ test('the pause screen names the run', async () => {
   const g = new Game(data, { random: () => 0.4 });
   g.startCampaign();
   assert.equal(runName(g), 'Classic with Tricks  ·  Stage One');
-  assert.deepEqual(actions(g), ['resume', 'menu', 'pauseOptions']);
+  assert.deepEqual(actions(g), ['resume', 'pauseOptions', 'menu']);
   g.startCampaign({ tricks: false });
   assert.equal(runName(g), 'Classic  ·  Stage One');
-  assert.deepEqual(actions(g), ['resume', 'menu', 'pauseOptions']);
+  assert.deepEqual(actions(g), ['resume', 'pauseOptions', 'menu']);
   g.startCampaign({ tricks: true, retro: true });
   assert.equal(runName(g), 'Classic  ·  2006 Mode  ·  Stage One');
   g.practiceDamage = false;
@@ -645,7 +645,10 @@ test('the pause screen names the run', async () => {
   assert.equal(runName(g), 'Practice  ·  Stage Nine  (2006 Mode)');
   g.startEndless();
   assert.equal(runName(g), 'Endless  ·  0 m');
-  assert.deepEqual(actions(g), ['resume', 'endRun', 'menu', 'pauseOptions']);
+  assert.deepEqual(actions(g), ['resume', 'endRun', 'pauseOptions', 'menu']);
+  // Quitting is always the bottom button (Sandbox: Quit to Menu, under Sandbox Menu).
+  g.startSandbox();
+  assert.deepEqual(actions(g), ['resume', 'again', 'tweaks', 'pauseOptions', 'menu', 'quitTitle']);
 });
 
 test('the tall menu layouts keep every button on the page, apart from the others, and big enough to tap', async () => {
@@ -1062,3 +1065,17 @@ test('every screen\'s buttons can be shown for every kind of run', async () => {
   assert.equal(reachedLine(g), 'Got to stage 3 of 9');
 });
 
+
+test('a wide view starts Endless with the camera in place: no whip once the course behind is added', () => {
+  for (const start of [(g) => g.startEndless(), (g) => g.startSandbox()]) {
+    const g = new Game(data, { random: () => 0.4 });
+    g.viewW = 900; g.viewH = 420;
+    start(g);
+    const onScreen = () => g.truck.T[0] - g.camX;
+    const first = onScreen();
+    assert.ok(Math.abs(first - g.camAnchorX) < 1, `starts at the camera's anchor (${first.toFixed(1)} vs ${g.camAnchorX})`);
+    let worst = 0, last = first;
+    for (let i = 0; i < 40; i++) { g.step(); worst = Math.max(worst, Math.abs(onScreen() - last)); last = onScreen(); }
+    assert.ok(worst < 4, `the truck keeps its place on screen (moved ${worst.toFixed(1)} px in a step)`);
+  }
+});

@@ -198,7 +198,7 @@ const SET = {
     for (let i = 0; i < 3 + Math.round(3 * force); i++) noise(k, { t: Math.random() * 0.12, dur: 0.018, gain: 0.07 * g, type: 'bandpass', f: 2500 + Math.random() * 3000, Q: 4, attack: 0.001 });
     tone(k, { f: 150 + Math.random() * 30, f2: 70, dur: 0.09, gain: 0.07 * g, attack: 0.003 });
   },
-  /** A bird hit by the truck: the recorded clip (assets/audio/bird-hit.wav), a little higher or lower each time. */
+  /** A bird hit by the truck or a missile: the recorded clip (assets/audio/bird-hit.wav), a little higher or lower each time. */
   bird(k, { force = 0.6 } = {}) {
     const buf = k.samples?.birdHit;
     if (!buf) return;

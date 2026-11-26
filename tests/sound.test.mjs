@@ -102,3 +102,16 @@ test('sound is off by default, and the on/off setting is saved and validated', (
   store.set('sound', 'loud');
   assert.equal(new Game(data, { store }).soundOn, false);
 });
+
+test('a bird knocked out by a missile blast makes the bird hit sound, as one hit by the truck does', () => {
+  const g = new Game(data, { random: () => 0.4 }), w = new SoundWatcher();
+  g.sandbox.birds = 0; g.sandbox.weeds = 0;
+  g.startSandbox();
+  listen(g, w, 30);
+  const [x, y] = [g.truck.T[0] + 300, g.truck.T[1] - 200];
+  g.critters.birds.push({ x, y, vx: 1, vy: 0, dir: 1, hit: false, rest: 0, rot: 0, spin: 0, flap: 0 });
+  g.critters.events.length = 0;
+  g.critters.blast(x + 10, y, 80, 6);
+  const heard = w.observe(g).events.map((e) => e.type);
+  assert.ok(heard.includes('bird'), `heard ${heard}`);
+});

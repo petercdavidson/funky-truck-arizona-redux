@@ -16,7 +16,7 @@
 const TILE = 64;
 export const CRITTERS = {
   birdRadius: 9,          // px: how near the truck a bird is hit
-  weedRadius: 21.5,       // px: a tumbleweed's size (the collision world's own push-out, a wheel's)
+  weedRadius: 25,         // px: a tumbleweed's size: its art's 50 px circle (Game.weedWorld pushes out by this)
   truckRadius: 46,        // px round the truck's chassis centre and its wheels that hits things
   gravity: 0.11,          // px/step² for things falling (the truck's own, at Earth gravity)
   gone: 500,              // px out of sight: further than that, it goes (and a new one comes)
@@ -42,12 +42,14 @@ export function hash2(x, y, seed = 0) {
  * the course's scrolling taken out). Each: { x, y, w, h, puffs: [[dx, dy, r], ...], alpha }.
  * One may sit in each cell of a CELL_W x CELL_H grid; above `top` (the level's top) there are
  * more, higher up more still. Each layer of clouds (`seed`) has its own, `density` times as many.
+ * `depth`: the layer's share of the world's speed; heights count in the world (cloud space's over
+ * `depth`), so a far layer, which hardly moves, still has its clouds where the sky is.
  */
 export const CLOUD_CELL = [520, 300];
-export function cloudsNear(x0, y0, x1, y1, top = 0, seed = 0, density = 1) {
+export function cloudsNear(x0, y0, x1, y1, top = 0, seed = 0, density = 1, depth = 1) {
   const [CW, CH] = CLOUD_CELL, out = [];
   for (let cy = Math.floor(y0 / CH) - 1; cy <= Math.floor(y1 / CH) + 1; cy++) {
-    const height = top - cy * CH;   // how far above the level's top (px)
+    const height = (top - cy * CH) / depth;   // how far above the level's top (world px)
     const chance = density * (height < -2 * TILE ? 0 : height < 6 * TILE ? 0.18 : height < 30 * TILE ? 0.45 : 0.6);
     if (!chance) continue;
     for (let cx = Math.floor(x0 / CW) - 1; cx <= Math.floor(x1 / CW) + 1; cx++) {

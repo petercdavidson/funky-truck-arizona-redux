@@ -72,7 +72,9 @@ step. Check changes in a browser; the game's tests (`npm test`) don't cover this
   sharing out its tiles; covering only its dirt doesn't. With **Ledges at loose ends** (`#ledges`, on by default),
   `layLine` lays an open path along its curve plus, at an end in mid-air (not within 1.5 tiles of the
   level's edge or of ground below it), a straight run to the level's edge, turned towards its ground
-  side squared to an axis: so a path's ground never ends in a sharp point (the guide shows the curve only). Saved as `paths` ({ pts, closed, delta,
+  side squared to an axis (at the end it runs that way; at the start it comes in that way, so it runs
+  back the other way to the edge), stopping short of ground or its own curve: so a path's ground
+  never ends in a sharp point (the guide shows the curve only). Saved as `paths` ({ pts, closed, delta,
   chain }); older files' lists of points and single `path` still open.
 - Select: `box` is the selected area. Moving, Alt-drag copying, nudging, pasting and Duplicate
   make a floating area, `flt = { tiles, x, y, paint }`: the painted layer is `paint` with

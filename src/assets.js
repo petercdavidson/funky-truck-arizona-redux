@@ -6,6 +6,7 @@ import { baseOf, formOf, formMatrix } from './tile-forms.js';
 const IMAGE_FILES = [
   'bg.jpg', 'tiles_rgb.jpg', 'tiles_alpha.png',
   'screen_help.png', 'screen_garage.png', 'screen_practice.png', 'screen_plain.png',
+  'tumbleweed.png',
 ];
 
 function loadImage(url) {

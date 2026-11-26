@@ -55,7 +55,7 @@ export function battleBack(r, game, v) {
 export function battleFront(r, game, v) {
   const b = game.battle, ctx = r.ctx;
   for (const m of b.missiles) missile(ctx, m, missilePos(v, m), b.steps);
-  for (const bit of b.bits) particle(r, bit);
+  for (const bit of b.bits) particle(r, bit, v.t ?? 1);
   for (const x of b.blasts) blast(ctx, x);
   for (const e of b.enemies) {
     if (e.wreck || e.showHealth <= 0) continue;
@@ -173,24 +173,26 @@ function blast(ctx, b) {
   ctx.restore();
 }
 
-function particle(r, b) {
+function particle(r, b, t = 1) {
   const ctx = r.ctx, f = b.life / b.max;
+  // (drawn between its last two steps, as the trucks are)
+  const x = b.px == null ? b.x : b.px + (b.x - b.px) * t, y = b.py == null ? b.y : b.py + (b.y - b.py) * t;
   if (b.kind === 'dirt') {
     const s = r.a.sprites.dirt[b.frame];
     ctx.globalAlpha = Math.min(1, b.life / 10);
     const k = b.size * 0.9;
-    ctx.drawImage(s.img, b.x + s.tx * k, b.y + s.ty * k, s.img.width * k, s.img.height * k);
+    ctx.drawImage(s.img, x + s.tx * k, y + s.ty * k, s.img.width * k, s.img.height * k);
     ctx.globalAlpha = 1;
   } else if (b.kind === 'spark') {
     ctx.strokeStyle = `rgba(255, 226, 122, ${f})`;
     ctx.lineWidth = 2; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - b.vx * 2, b.y - b.vy * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - b.vx * 2, y - b.vy * 2); ctx.stroke();
   } else if (b.kind === 'smoke') {
     ctx.fillStyle = `rgba(96, 84, 78, ${0.34 * f})`;
-    ctx.beginPath(); ctx.arc(b.x, b.y, (5 + (1 - f) * 15) * b.size + 2, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, (5 + (1 - f) * 15) * b.size + 2, 0, 7); ctx.fill();
   } else if (b.kind === 'fire') {
     ctx.fillStyle = f > 0.5 ? `rgba(255, 211, 107, ${f})` : `rgba(240, 120, 50, ${f * 1.6})`;
-    ctx.beginPath(); ctx.arc(b.x, b.y, (2 + 5 * f) * b.size + 1, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, (2 + 5 * f) * b.size + 1, 0, 7); ctx.fill();
   }
 }
 
