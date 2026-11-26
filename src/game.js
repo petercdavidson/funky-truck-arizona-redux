@@ -635,6 +635,8 @@ export const RESET_WAIT = 350;
 export const STUCK_STEPS = 140;
 /** ...and how long it stays once the truck no longer looks stuck (3 s). */
 export const UPRIGHT_LINGER = 210;
+/** ...and it's never offered with the truck more than this far above the ground (50 m, in px). */
+export const UPRIGHT_HEIGHT = 50 / METRES_PER_TILE * TILE;
 /** After a flip upright, steps on the ground before tricks are watched for again (1 s). */
 export const TRICK_COOLDOWN = 70;
 /**
@@ -1746,6 +1748,11 @@ export class Game {
   updateStuck(cabTouching) {
     const t = this.truck;
     if (this.righting > 0) { this.stepRighting(); return; }
+    // High in the air, upside down isn't stuck (before 1.24.24 a long tumble or a boosted climb
+    // counted, so Recover came up in the sky): no offer more than 50 m above the ground.
+    const high = Math.min(this.groundBelow(t.T[2], t.T[3], UPRIGHT_HEIGHT + 1),
+      this.groundBelow(t.T[4], t.T[5], UPRIGHT_HEIGHT + 1)) > UPRIGHT_HEIGHT;
+    if (high) { this.stuck = 0; this.canUpright = false; this.uprightLinger = 0; return; }
     const bad = cabTouching || Math.abs(t.bodyRot) > 100;
     this.stuck = bad ? this.stuck + 1 : Math.max(0, this.stuck - 3);
     if (this.stuck >= STUCK_STEPS) { this.canUpright = true; this.uprightLinger = UPRIGHT_LINGER; }

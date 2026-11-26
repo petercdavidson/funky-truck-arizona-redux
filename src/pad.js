@@ -7,7 +7,7 @@
 export const PAD_ACTIONS = [
   ['gas', 'Drive', [0, 7]],
   ['brake', 'Reverse', [1, 6]],
-  ['top', 'Jump, or flip upright', [3]],
+  ['top', 'Jump, or recover', [3]],
   ['jump', 'Jump', [4]],
   ['fire', 'Fire a missile', [2]],
   ['boost', 'Boost (hold)', [5]],

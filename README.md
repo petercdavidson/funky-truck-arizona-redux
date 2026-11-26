@@ -75,10 +75,11 @@ Classic, Classic with tricks and Endless each keep their own best (score, score,
 best time and ghost per track (a ghost is about 30 KB a minute of driving), and a best trick score
 per stunt track.
 
-In damage-free runs outside 2006 Mode (Endless, Sandbox, and Stages with damage off), a **Flip** button
-appears at the top of the screen when the truck has been stuck on its roof or side for two seconds.
+In damage-free runs outside 2006 Mode (Endless, Sandbox, and Stages with damage off), a **Recover** button
+appears at the top of the screen when the truck has been stuck on its roof or side for two seconds
+(never with the truck more than 50 m above the ground).
 It hops the truck up and turns it back onto its wheels, and stays for three seconds after the
-truck stops looking stuck. A flip upright isn't a trick: tricks count again a second after it lands.
+truck stops looking stuck. A recovery isn't a trick: tricks count again a second after it lands.
 
 Except on the nine stages in Classic and Stages (which keep the original scrape), the body
 touching ground underneath it (the chassis bottoming out on a hard landing or a ramp) isn't a
@@ -117,7 +118,7 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Tilt back / forwards | ← / → (or A / D) | left-hand buttons (slide between them) | stick or d-pad |
 | One Button | Space or ↑ | hold anywhere | A |
 | Pause | P (and Esc in Classic and a timed run in Stages) | ⏸ button | Start |
-| Flip upright (when offered) | R | Flip button | Y |
+| Recover (when offered) | R | Recover button | Y |
 | Play again (game over) | Space, Enter or Ctrl | Play Again button | A |
 | Menus: move / choose / back | arrow keys / Enter or Space / Esc, or the mouse | tap | stick or d-pad / A / B (each new menu starts with its first button picked) |
 | Back to menu | Esc | Menu button | |

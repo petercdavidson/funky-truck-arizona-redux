@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Game, TILE, BALANCE_ANGLE, STUCK_STEPS, CAMERA, UPRIGHT_LINGER, TRICK_COOLDOWN, KMH_PER_PX_STEP, unpackLevel } from '../src/game.js';
+import { Game, TILE, BALANCE_ANGLE, STUCK_STEPS, CAMERA, UPRIGHT_LINGER, UPRIGHT_HEIGHT, TRICK_COOLDOWN, KMH_PER_PX_STEP, unpackLevel } from '../src/game.js';
 import { turnOver, memoryStore } from './helpers.mjs';
 import { WRECK, Wreck } from '../src/wreck.js';
 import { BODY_SHAPES } from '../src/wreck-shapes.js';
@@ -740,7 +740,26 @@ test('the scrape still sounds after the finish line, without adding damage', () 
   assert.equal(g.damage, 0);
 });
 
-test('the Flip button stays a few seconds after the truck stops looking stuck', () => {
+test('Recover is never offered with the truck more than 50 m above the ground', () => {
+  const g = new Game(data, { random: () => 0.3 });
+  g.startEndless();
+  settle(g);
+  turnOver(g.truck);
+  const t = g.truck, T = [...t.T], P = [...t.P];
+  const hold = (lift) => { for (let i = 0; i < 10; i++) { t.T[i] = T[i]; t.P[i] = P[i]; } for (let i = 1; i < 10; i += 2) { t.T[i] -= lift; t.P[i] -= lift; } };
+  // Upside down, cab touching, held 60 m up: never offered, however long.
+  for (let i = 0; i < STUCK_STEPS * 3; i++) { hold(UPRIGHT_HEIGHT * 1.2); g.updateStuck(true); }
+  assert.equal(g.canUpright, false, 'not offered high up');
+  // Held just off the ground: offered as before.
+  let n = 0;
+  while (!g.canUpright && n++ < STUCK_STEPS * 3) { hold(0); g.updateStuck(true); }
+  assert.ok(g.canUpright, 'offered on the ground');
+  // ...and taken away the moment it's lifted high again.
+  hold(UPRIGHT_HEIGHT * 1.2); g.updateStuck(true);
+  assert.equal(g.canUpright, false, 'gone once high up');
+});
+
+test('the Recover button stays a few seconds after the truck stops looking stuck', () => {
   const g = new Game(data, { random: () => 0.3 });
   g.startEndless();
   settle(g);
@@ -757,7 +776,7 @@ test('the Flip button stays a few seconds after the truck stops looking stuck', 
   assert.ok(shown >= UPRIGHT_LINGER - 1 && shown <= UPRIGHT_LINGER + 1, `stayed ${shown} steps`);
 });
 
-test('a flip upright is not a trick, and tricks count again a moment after it lands', () => {
+test('a recovery is not a trick, and tricks count again a moment after it lands', () => {
   const g = new Game(data, { random: () => 0.3 });
   g.startEndless();
   settle(g);
