@@ -215,20 +215,32 @@ export function stepTraffic(game) {
  * press yourself wins: the gas or brake, or a tilt either way, takes over that much of it.
  * `updateAutopilot` runs once a step (it keeps what it needs: game.auto); `autopilotKeys` only reads.
  */
-export const AUTO = { level: 8, lookAhead: 10, stuckFor: 280, backFor: 70, flipAfter: 70 };
+/**
+ * Backing up: by distance, not time. `backUp` is how far (tiles) for each try at the same spot, in
+ * turn: first the run-up Endless puts before every steep face (FACE.runUp in endless.js: from a
+ * standstill there, holding the gas gets over), then shorter and longer ones (backing too far
+ * down a hill behind can bring it in too fast, so it bounces off). `backFor` is the most steps
+ * a back-up may take.
+ */
+export const AUTO = { level: 8, lookAhead: 10, stuckFor: 280, backUp: [6.5, 4.5, 8, 3.5, 5.5, 7], backFor: 280, flipAfter: 70 };
 
 export function updateAutopilot(game) {
   const mode = game.mode === 'sandbox' ? sandboxValue(game.sandbox, 'autopilot') : 'off';
-  const t = game.truck, a = (game.auto ||= { best: -Infinity, since: 0, backFor: 0, roof: 0, rot: t.bodyRot, spin: 0 });
+  const t = game.truck, a = (game.auto ||= { best: -Infinity, since: 0, backFor: 0, backTo: 0, tries: 0, roof: 0, rot: t.bodyRot, spin: 0 });
   // how fast it's turning (degrees a step, smoothed; across ±180 the short way)
   const d = ((t.bodyRot - a.rot + 540) % 360) - 180;
   a.spin += (d - a.spin) * 0.5; a.rot = t.bodyRot;
   // (how far along it is: the world's scrolling, on Endless, taken out)
   const x = t.T[0] + (game.shiftTotal?.[0] || 0);
   if (mode !== 'drive' || game.wreck || !game.landed) { a.since = 0; a.backFor = 0; a.roof = 0; a.best = x; return; }
-  if (a.backFor > 0) a.backFor--;
-  else if (x > a.best + 1) { a.best = x; a.since = 0; }
-  else if (++a.since > AUTO.stuckFor) { a.backFor = AUTO.backFor + Math.floor(game.random() * 40); a.since = 0; a.best = x; }
+  if (a.backFor > 0) { if (--a.backFor > 0 && x <= a.backTo) a.backFor = 0; }   // (far enough back: go)
+  else if (x > a.best + 1) { if (x > a.best + 2 * 64) a.tries = 0; a.best = x; a.since = 0; }
+  else if (++a.since > AUTO.stuckFor) {
+    // stuck: back up for a run-up (a different length each try here, from the furthest it got,
+    // as it may have rolled back since), then go again
+    a.backTo = Math.max(x, a.best) - AUTO.backUp[a.tries++ % AUTO.backUp.length] * 64;
+    a.backFor = AUTO.backFor; a.since = 0; a.best = x;
+  }
   a.roof = Math.abs(t.bodyRot) > 100 ? a.roof + 1 : 0;
   if (a.roof > AUTO.flipAfter && game.canUpright) { a.roof = 0; game.upright(); }
 }
