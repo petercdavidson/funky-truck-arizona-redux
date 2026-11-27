@@ -19,8 +19,8 @@ import { cloudsNear, CLOUDS_FROM, CRITTERS, skyAt, SKY, hash2, moonPhase, moonSh
  * (from 1/1000 for the farthest to 1/10 for the nearest, evenly spread in between by ratio),
  * and the farther off, the smaller, fainter and softer (`blur`, in stage px).
  */
-/** px of the view over which a cloud coming in at CLOUDS_FROM goes from nothing to all there. */
-const CLOUD_BASE_EDGE = 24;
+/** View px, more than the tallest cloud: how far below the view the clouds' field ends once it's all in (see `clouds`). */
+const CLOUD_FIELD_MARGIN = 600;
 const CLOUD_LAYERS = [
   { depth: 0.001, size: 0.4, alpha: 0.3, blur: 5 },
   { depth: 0.0025, size: 0.5, alpha: 0.4, blur: 4.5 },
@@ -1019,12 +1019,12 @@ export class Renderer {
     this.backdrop(game, v);
     const zoom = game.rules.retro ? 1 : v.zoom || 1;
     const sky = game.rules.retro ? null : this.space(game, v);
-    // (Sandbox's clouds: only above CLOUDS_FROM, shown from where that height is in the view up;
-    // they fade out at the top of the weather)
+    // (Sandbox's clouds: none until the truck is CLOUDS_FROM up; then they slide in from the top
+    // of the view as it climbs; they fade out at the top of the weather)
     if (game.mode === 'sandbox' && !game.rules.retro) {
       const top = skyAt((game.height || 0) / 1000).clouds;
-      // where CLOUDS_FROM is in the view (view px from its top)
-      const base = (game.levelData.start[1] - game.shiftTotal[1] - CLOUDS_FROM * 1000 / METRES_PER_TILE * TILE - v.camY) / zoom;
+      // how far the truck is past CLOUDS_FROM, in view px: how far down the view the clouds have come
+      const base = ((game.height || 0) - CLOUDS_FROM * 1000) / METRES_PER_TILE * TILE / zoom;
       if (top > 0 && base > 0) this.clouds(game, v, zoom, top, base);
     }
     this.tiles(game.levelData, v.camX, v.camY, zoom, game.mode === 'custom' || !!game.sandboxCustom);
@@ -1204,31 +1204,39 @@ export class Renderer {
    * Sandbox's clouds: layers of them far off behind the world (`CLOUD_LAYERS`), each moving past
    * slower than it does (its `depth` of the world's speed) and zooming out less, and fixed in its
    * own far sky (in cloud space: the world with the course's scrolling taken out, times the
-   * depth), so you can see which way you're going with no ground in sight. Only clouds wholly
-   * above `base` (view px from the top: where CLOUDS_FROM is) show, so they come in from the top
-   * as you climb past it.
+   * depth), so you can see which way you're going with no ground in sight. They come in from
+   * the top of the view (`base`: how far down it they've come) once you're CLOUDS_FROM up.
    */
   clouds(game, v, zoom, fade = 1, base = Infinity) {
     const ctx = this.ctx, [sx, sy] = game.shiftTotal;
     // Flat white shapes, softened with a blur where the browser can (canvas filters).
     const canBlur = 'filter' in ctx;
+    // The clouds are a field whose bottom edge comes down from the top of the view, `base` px
+    // down, at the world's speed. Until it's CLOUD_FIELD_MARGIN below the view (all in), the
+    // field slides down whole (`shift`), its clouds held where they'd be at that point (`camT`,
+    // the camera then), so none moves across its bottom edge on screen: they only come in from
+    // the top. After that the layers move past at their own speeds, and the field's bottom (fixed
+    // in each layer's cloud space) stays below the view as you climb.
+    const end = this.viewH + CLOUD_FIELD_MARGIN, shift = Math.min(0, base - end);
+    const camT = v.camY + (base - end) * zoom;
     CLOUD_LAYERS.forEach(({ depth: p, size, alpha, blur }, layer) => {
       const cz = zoom ** p, w = this.viewW * cz, h = this.viewH * cz;
-      // the view's middle in this layer's cloud space
-      const mx = (v.camX + sx + this.viewW * zoom / 2) * p, my = (v.camY + sy + this.viewH * zoom / 2) * p;
-      const x0 = mx - w / 2, y0 = my - h / 2;
+      // the view's middle in this layer's cloud space (held at camT while the field slides in)
+      const yAt = (camY) => (camY + sy + this.viewH * zoom / 2) * p - h / 2;
+      const x0 = (v.camX + sx + this.viewW * zoom / 2) * p - w / 2, y0 = yAt(shift < 0 ? camT : v.camY);
+      const bottom = yAt(camT) + end * cz;   // the field's bottom edge, in cloud space
       ctx.save();
+      ctx.translate(0, shift);
       ctx.scale(1 / cz, 1 / cz);
       ctx.translate(-x0, -y0);
       // (a filter's blur is in canvas pixels, whatever the transform)
       if (canBlur) ctx.filter = `blur(${(blur * this.scale).toFixed(1)}px)`;
       ctx.fillStyle = '#fff';
-      for (const c of cloudsNear(x0 - 300, y0 - 200, x0 + w + 300, y0 + h + 200, 0, layer, 0.45, p)) {
-        // (it shows once its bottom is above `base`, in the view; it comes in quickly over BASE_EDGE px)
-        const above = (base - (c.y + c.bottom * size - y0) / cz) / CLOUD_BASE_EDGE;
-        if (above <= 0) continue;
+      const top = y0 - shift * cz;   // (the view's top, in cloud space)
+      for (const c of cloudsNear(x0 - 300, top - 200, x0 + w + 300, Math.min(bottom, top + h) + 200, 0, layer, 0.45, p)) {
+        if (c.y + c.bottom * size > bottom) continue;   // (only clouds wholly in the field)
         // its puffs filled as one shape
-        ctx.globalAlpha = c.alpha * 0.85 * alpha * fade * Math.min(1, above);
+        ctx.globalAlpha = c.alpha * 0.85 * alpha * fade;
         ctx.beginPath();
         for (const [dx, dy, r] of c.puffs) {
           const px = c.x + dx * size, py = c.y + dy * size, R = r * size;

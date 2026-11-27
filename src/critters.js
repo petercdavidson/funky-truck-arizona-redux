@@ -165,8 +165,8 @@ export const SKY = [
   [100, [0, 0, 4], 1],
 ];
 /**
- * Clouds are only in the sky above this height (km above the start): none from the ground. Climb
- * past it and they show from the top of the view down, as that height comes into it (no fade).
+ * Clouds come in once the truck is this high (km above the start): none from the ground. Climb
+ * past it and they slide into the view from its top (no fade, and none pops in).
  */
 export const CLOUDS_FROM = 0.3;
 export function skyAt(km) {
