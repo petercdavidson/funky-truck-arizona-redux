@@ -219,3 +219,103 @@ test('no sharp V: a slope down never meets a slope up at less than V_ANGLE (eith
   }
   assert.ok(joins > 1000 && before > 0, `${joins} joins checked; ${before} V's without the check`);
 });
+
+// ---- 1.26: the same variety 30 minutes in as 30 seconds in, and nowhere to get stuck
+
+/** The ground's height (px, down) at x px into a column of tiles: its topmost up-facing collision line. */
+function surfaceOf(col, x) {
+  for (let r = 0; r < col.length; r++) {
+    const d = data.collision[col[r]] || [];
+    let best = Infinity;
+    for (let i = 0; i < d.length; i += 5) {
+      const [ax, ay, bx, by] = d.slice(i, i + 4);
+      if (bx < ax && x >= bx && x <= ax) best = Math.min(best, ay + (by - ay) * (x - ax) / (bx - ax) + r * TILE);
+    }
+    if (best < Infinity) return best;
+  }
+  return Infinity;
+}
+
+test('every one of the nine stages gives the course columns, and no column has sky inside it', () => {
+  const stages = new Set();
+  for (const opts of grammar.joins[0].values()) for (const j of opts) j.stages.forEach((s) => stages.add(s));
+  assert.equal(stages.size, data.levels.length, `columns from stages ${[...stages].map((s) => s + 1).sort().join(', ')}`);
+  // (Stages Two, Four, Six and Nine float in the sky: only slabs deep enough to fill a shape count)
+  const holes = grammar.shapes.filter((s) => s.includes(0));
+  assert.equal(holes.length, 0, `${holes.length} column shapes with sky in them`);
+  // the stunt tracks' builder still gets the column set they were designed with
+  const old = buildGrammar(data.levels, { slabs: false });
+  const oldStages = new Set();
+  for (const opts of old.joins[0].values()) for (const j of opts) j.stages.forEach((s) => oldStages.add(s));
+  assert.deepEqual([...oldStages].sort(), [0, 2, 4, 6, 7]);
+});
+
+test('variety holds: 12 km in, the course is as varied as 2 km in, from all the stages', () => {
+  const W = 160, cols = 5000;   // 400 m windows; 12.5 km
+  const early = { rep: 0, n: 0 }, late = { rep: 0, n: 0 }, lateStages = new Array(9).fill(0);
+  for (let seed = 1; seed <= 4; seed++) {
+    const c = new EndlessCourse(grammar, data.levels, seeded(seed));
+    const seq = [], picks = [];
+    const pick = c.pick.bind(c), add = c.addColumn.bind(c);
+    c.pick = (w) => { const j = pick(w); if (w === c.right) picks.push(j); return j; };
+    c.addColumn = (w = c.right) => { add(w); if (w === c.right) seq.push({ ...w.state }); };
+    while (c.generated < cols) c.scroll(ENDLESS_SHIFT);
+    const seen = new Map();
+    for (let i = 6; i < seq.length; i++) {
+      let k = '';
+      for (let q = i - 5; q <= i; q++) k += `${seq[q].s}:${seq[q].top - seq[q - 1].top}|`;
+      const rep = seen.has(k) && i - seen.get(k) < 5 * W;
+      seen.set(k, i);
+      const bucket = i >= 5 * W && i < 7 * W ? early   // (the first with a full 2 km before it)
+         : i >= cols - 2 * W - 200 ? late : null;
+      if (bucket) { bucket.n++; if (rep) bucket.rep++; }
+    }
+    for (const j of picks.slice(-2 * W)) for (const s of j.stages) lateStages[s] += 1 / j.stages.length;
+  }
+  const e = early.rep / early.n, l = late.rep / late.n;
+  assert.ok(l < 0.4 && l < e + 0.08, `stretches repeating one from the last 2 km: ${(100 * e).toFixed(0)}% 2 km in, ${(100 * l).toFixed(0)}% 12 km in`);
+  const total = lateStages.reduce((a, b) => a + b, 0);
+  const shares = lateStages.map((x) => x / total);
+  assert.ok(Math.max(...shares) < 0.4, `no one stage takes over: ${shares.map((s) => (100 * s).toFixed(0)).join(' ')}%`);
+  assert.ok(shares.filter((s) => s > 0.03).length >= 7, `most stages in the mix 12 km in: ${shares.map((s) => (100 * s).toFixed(0)).join(' ')}%`);
+});
+
+test('nowhere climbs steeper than MAX_CLIMB, either way along the course (only drops are steeper)', async () => {
+  const { MAX_CLIMB } = await import('../src/endless.js');
+  let steepest = 0, steepestBack = 0, steepestDrop = 0;
+  for (let seed = 1; seed <= 6; seed++) {
+    const c = new EndlessCourse(grammar, data.levels, seeded(seed));
+    const ahead = [], behind = [];
+    const heights = (cols) => cols.flatMap((col) => Array.from({ length: 32 }, (_, i) => surfaceOf(col, i * 2)));
+    for (let k = 0; k < 20; k++) { c.scroll(ENDLESS_SHIFT); for (let x = ENDLESS_WIDTH - ENDLESS_SHIFT; x < ENDLESS_WIDTH; x++) ahead.push(c.tiles.map((r) => r[x])); }
+    const c2 = new EndlessCourse(grammar, data.levels, seeded(seed + 100));
+    for (let k = 0; k < 20; k++) { c2.scrollBack(ENDLESS_SHIFT); const part = []; for (let x = 0; x < ENDLESS_SHIFT; x++) part.push(c2.tiles.map((r) => r[x])); behind.unshift(...part); }
+    const a = heights(ahead), b = heights(behind);
+    const deg = (dy) => Math.atan2(dy, 8) * 180 / Math.PI;
+    for (let i = 0; i + 4 < a.length; i++) { steepest = Math.max(steepest, deg(a[i] - a[i + 4])); steepestDrop = Math.max(steepestDrop, deg(a[i + 4] - a[i])); }
+    for (let i = 0; i + 4 < b.length; i++) steepestBack = Math.max(steepestBack, deg(b[i + 4] - b[i]));   // (rising to the left)
+  }
+  assert.ok(steepest <= MAX_CLIMB, `steepest climb ahead ${steepest.toFixed(1)}°`);
+  assert.ok(steepestBack <= MAX_CLIMB, `steepest climb going left behind the start ${steepestBack.toFixed(1)}°`);
+  assert.ok(steepestDrop > MAX_CLIMB, `steep drops are still there (${steepestDrop.toFixed(0)}°)`);
+});
+
+test('a relaxed driver (gas held, leaning to stay upright, never backing up) never gets stuck', () => {
+  // Before 1.26 a face of 60° or more could stop it dead; this drives 12 courses for 4 minutes each.
+  for (let seed = 1; seed <= 12; seed++) {
+    const g = new Game(data, { random: seeded(seed * 31 + 7), store: memoryStore() });
+    g.startEndless();
+    let best = 0, since = 0, airborne = 0;
+    for (let i = 0; i < 70 * 60 * 4; i++) {
+      const t = g.truck;
+      g.keys.up = true; g.keys.right = t.bodyRot < -20; g.keys.left = t.bodyRot > 30;
+      g.step();
+      if (g.canUpright) g.upright();
+      if (g.airSteps > 70) airborne++;
+      if (g.metres > best) { best = g.metres; since = 0; } else since++;
+      assert.ok(since < 70 * 15, `seed ${seed}: no progress for 15 s at ${g.metres} m`);
+    }
+    assert.ok(best > 1500, `seed ${seed}: ${best} m in 4 minutes`);
+    assert.ok(airborne > 0, `seed ${seed}: some jumps`);
+  }
+});

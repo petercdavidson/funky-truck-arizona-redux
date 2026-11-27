@@ -16,7 +16,8 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `src/game.js`: all game logic and state (`Game`, `Truck`, `CollisionWorld`). Must stay free of
   DOM/browser APIs so it runs under Node. Storage and randomness are injected (`opts.store`,
   `opts.random`).
-- `src/endless.js`: Endless Mode's course generator (learns tile joins from `levels.json`). Also
+- `src/endless.js`: Endless Mode's course generator (learns tile joins from all nine stages in
+  `levels.json`; the stunt tracks' builder uses the old five-stage set, `slabs: false`). Also
   free of DOM APIs. The game scrolls the world left as the course moves (`Game.scrollWorld`), or
   right when you drive back past the start: the course goes on for ever both ways (`back` joins,
   the left `Walker`), and columns scrolled off either side are kept.
@@ -107,7 +108,10 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
 - `tools/map.html`: draws whole tracks as maps (serve the repo, open `/tools/map.html?stages=9,10,11`).
 - `tests/bot.mjs`: a simulated driver (backs up for run-ups when it stalls) for checking that
   generated courses can be driven. Endless never climbs more than `MAX_RISE` tiles within
-  `RISE_SPAN` columns (`src/endless.js`); keep it that way so there are no unclimbable walls.
+  `RISE_SPAN` columns, and no column climbs steeper than `MAX_CLIMB` (58°: every climb can be driven
+  from a standstill) (`src/endless.js`); keep it that way: Endless is free play, and nobody should
+  get stuck (`tests/endless.test.mjs` drives it with a relaxed driver that never backs up). It has no
+  difficulty ramp: a theme stage wanders at random, so it's as varied 30 minutes in as at the start.
 
 ## Modes and rules
 

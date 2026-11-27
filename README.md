@@ -206,15 +206,18 @@ tiles in the stages is reduced to its shape, and the generator records every pla
 follows another (with how far the ground steps up or down). It then strings columns together using
 only those joins. Usually it matches the last two or three columns, so whole hills and ramps come
 out as they were designed; now and then it matches only the last one, which is where the course
-turns into something new. The ground is kept inside a fixed height band, and the joins are weighted
-by the stage they came from, so a course starts like Stage One and drifts towards the later stages
-the further you get. The course lives in a window of 128 columns that scrolls as you drive
+turns into something new. All nine stages give it pieces. The ground is kept inside a fixed height
+band, and the joins are weighted towards a "theme" stage that wanders to another stage at random
+every minute or so of driving, and away from stretches it made lately. There's no difficulty ramp:
+the course is as varied (and as easy going) half an hour in as it is at the start. The course lives in a window of 128 columns that scrolls as you drive
 (`src/endless.js`). It goes on for ever to the left too, behind the start: that way is built from
 the same joins read right to left. Ground that scrolls off either side is remembered (up to about
 50 km of it), so turning back finds the course as you left it.
 
-The course never climbs more than 5 tiles within 4 columns, and the generator looks ahead so it
-never wanders into a valley that can only be left by a steeper wall: every hill can be driven up.
+Nowhere to get stuck: no slope on the course climbs steeper than 58° (the stages' steeper faces and
+walls are left out; drops can be as steep as they like), so every climb can be driven up from a
+standstill. It never climbs more than 5 tiles within 4 columns either, and the generator looks
+ahead so it never wanders into a valley it can't climb out of.
 
 Score: 10 points for every new tile of ground, either way, plus tricks as usual. The HUD shows the
 distance covered in metres (ahead of the start and behind it, added up). **Milestones** are celebrated as you pass them, in gold with a burst of

@@ -7,13 +7,16 @@
 // over those recorded joins. So every seam in the course is one the original designer drew, but
 // the hills, jumps and valleys come in new orders, forever.
 //
-// The walk is steered so it stays fun:
+// The walk is steered so it stays fun, and the same fun 30 minutes in as 30 seconds in:
 //   - it stays inside a vertical band, so it never climbs or falls without end;
-//   - joins are weighted by the stage they came from, and the "difficulty" stage drifts from the
-//     early stages towards the later ones as the player gets further;
+//   - joins are weighted by the stage they came from, towards a "theme" stage that wanders from
+//     stage to stage at random every minute or so of driving (no difficulty ramp: Endless is free
+//     play, and a ramp used to leave it on Stage Eight's pieces alone for ever);
+//   - stretches it made lately are less likely to come again (RECENT);
 //   - it avoids shapes that only lead to dead ends (the last column of each stage);
-//   - it never climbs more than MAX_RISE tiles over RISE_SPAN columns, so there's no wall too
-//     tall and steep to drive up;
+//   - it never climbs more than MAX_RISE tiles over RISE_SPAN columns, and (given the tiles'
+//     collision lines) no column climbs steeper than MAX_CLIMB, so every climb can be driven up
+//     from a standstill: nobody gets stuck (drops can be as steep as they like);
 //   - (given the tiles' collision lines) it never joins a slope down straight onto a slope up
 //     where they meet at less than V_ANGLE: a sharp V a wheel (or a tumbleweed) gets caught in.
 //
@@ -36,6 +39,18 @@ export const RISE_SPAN = 4;
 export const V_ANGLE = 120;
 /** How many columns ahead the walk checks it can go on without a climb steeper than that. */
 const LOOKAHEAD = 10;
+/**
+ * The steepest the ground may climb anywhere in a column, in the way the walk goes (degrees). The
+ * stages' slopes climb at up to 45° or 54°, or at 60° and more (kickers' faces and walls, 2 to 12
+ * tiles tall). The truck drives up the first from a standstill, but the second only with speed,
+ * which it doesn't always have (after a landing, a bump, or a slope up into one): faces like that
+ * stopped a relaxed driver dead in more than half of 10-minute runs. So the walk never takes them.
+ */
+export const MAX_CLIMB = 58;
+/** A stretch (4 columns) made within the last RECENT columns is RECENT_WEIGHT as likely again. */
+const RECENT = 600, RECENT_WEIGHT = 0.2;
+/** The theme stage moves on every THEME_LEN[0] to THEME_LEN[1] columns, gliding over THEME_GLIDE. */
+const THEME_LEN = [150, 300], THEME_GLIDE = 40;
 const FILL = 1, SKY = 0;
 
 /** Longest run of columns used as context when choosing the next one (see pick()). */
@@ -46,8 +61,11 @@ const ORDER = 3;
  * joins[n - 1] maps a context (the last n columns: their shapes and steps between them) to the
  * columns that followed it somewhere in the stages. `back` is the same read right to left (the
  * columns that came before each context), for the course's leftward end: { joins, alive, safe }.
+ * `slabs: false` leaves out the stages that are floating slabs, as before 1.26 (the stunt tracks'
+ * builder, so its tracks come out as they were designed). With `collision` (the game's tiles'
+ * collision lines), joins onto a column that climbs steeper than MAX_CLIMB are left out.
  */
-export function buildGrammar(levels, { keepDeep = false, collision = null } = {}) {
+export function buildGrammar(levels, { keepDeep = false, collision = null, slabs = true } = {}) {
   const shapes = [];            // index -> array of DEPTH tile ids
   const index = new Map();      // shape key -> index
   const id = (shape) => {
@@ -64,12 +82,19 @@ export function buildGrammar(levels, { keepDeep = false, collision = null } = {}
     for (let x = 1; x < l.width - 9; x++) {
       let top = 0;
       while (top < l.height && l.tiles[top][x] === SKY) top++;
-      // Skip columns with more than solid ground below their shape (caves, the floating bottom
-      // edge of some stages): the course fills below every shape with solid ground. With
-      // `keepDeep` (the stunt tracks' builder) keep them, filling below the shape all the same:
-      // Stage Six's smooth 63° drop and climb are among them.
+      // Skip columns with more than solid ground below their shape (caves): the course fills
+      // below every shape with solid ground. Stages Two, Four, Six and Nine are slabs of ground
+      // floating in the sky, so below the solid ground there is only sky: the course's fill is
+      // as good, so they're kept (with `slabs`). With `keepDeep`, keep every column, filling below
+      // the shape all the same: Stage Six's smooth 63° drop and climb are among them.
       let deep = false;
-      for (let r = top + DEPTH; r < l.height && !deep && !keepDeep; r++) deep = l.tiles[r][x] !== FILL;
+      if (!keepDeep) {
+        // (a slab's underside: the row below its lowest ground, with only sky under that)
+        let under = l.height;
+        while (under > top && l.tiles[under - 1][x] === SKY) under--;
+        if (under < l.height && (!slabs || under - top < DEPTH)) deep = true;   // (too thin a slab)
+        for (let r = top + DEPTH; r < under && !deep; r++) deep = l.tiles[r][x] !== FILL;
+      }
       if (top >= l.height - 1 || deep) { if (run.length) runs.push(run); run = []; continue; }
       const shape = [];
       for (let r = top; r < top + DEPTH; r++) shape.push(r < l.height ? l.tiles[r][x] : FILL);
@@ -77,11 +102,14 @@ export function buildGrammar(levels, { keepDeep = false, collision = null } = {}
     }
     if (run.length) runs.push(run);
   });
-  const learn = (seqs) => {
+  // Each shape's steepest climb (degrees), driving right and driving left (for the back walk).
+  const climbs = collision ? shapes.map((sh) => shapeClimb(sh, collision)) : null;
+  const learn = (seqs, climb) => {
     const joins = Array.from({ length: ORDER }, () => new Map());
     for (const seq of seqs) {
       for (let i = 1; i < seq.length; i++) {
         const c = seq[i], prev = seq.slice(0, i);
+        if (climb && climb[c.s] > MAX_CLIMB) continue;   // (too steep to drive up from a standstill)
         for (let n = 1; n <= ORDER && n <= prev.length; n++) {
           const key = contextKey(prev.slice(-n));
           const m = joins[n - 1];
@@ -112,12 +140,39 @@ export function buildGrammar(levels, { keepDeep = false, collision = null } = {}
     }
     return { joins: out, alive, safe };
   };
-  const ahead = learn(runs), back = learn(runs.map((r) => r.slice().reverse()));
+  const climbR = climbs?.map((c) => c.right) ?? null, climbL = climbs?.map((c) => c.left) ?? null;
+  const ahead = learn(runs, climbR), back = learn(runs.map((r) => r.slice().reverse()), climbL);
   // Each shape's ground at its two edges: how steeply it goes down to the right edge (`down`) and
   // up from the left edge (`up`), in degrees. A join of a down onto an up makes a V.
   const edges = collision ? shapes.map((sh) => shapeEdges(sh, collision)) : null;
   const vee = edges ? (a, b) => edges[a].down > 0 && edges[b].up > 0 && 180 - edges[a].down - edges[b].up < V_ANGLE : () => false;
-  return { shapes, index, ...ahead, back: { ...back, vee: (a, b) => vee(b, a) }, vee };
+  return { shapes, index, ...ahead, vee, climb: climbR, back: { ...back, vee: (a, b) => vee(b, a), climb: climbL } };
+}
+
+/** The topmost up-facing collision line's height (px down from the shape's top) at x, or Infinity. */
+function groundAt(shape, collision, x) {
+  let best = Infinity;
+  shape.forEach((id, r) => {
+    const d = collision[id] || [];
+    for (let i = 0; i < d.length; i += 5) {
+      const ax = d[i], ay = d[i + 1], bx = d[i + 2], by = d[i + 3];
+      if (bx >= ax || x < bx || x > ax) continue;   // (up-facing lines run right to left)
+      best = Math.min(best, ay + (by - ay) * (x - ax) / (bx - ax) + r * 64);
+    }
+  });
+  return best;
+}
+
+/** A column shape's steepest climb driving right and driving left (degrees; 0 if it never climbs). */
+function shapeClimb(shape, collision) {
+  let right = 0, left = 0;
+  for (let x = 0; x + 8 <= 64; x += 4) {
+    const a = groundAt(shape, collision, x), b = groundAt(shape, collision, x + 8);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+    right = Math.max(right, Math.atan2(a - b, 8) * 180 / Math.PI);
+    left = Math.max(left, Math.atan2(b - a, 8) * 180 / Math.PI);
+  }
+  return { right, left };
 }
 
 /**
@@ -126,19 +181,7 @@ export function buildGrammar(levels, { keepDeep = false, collision = null } = {}
  * up-facing collision line over each point.
  */
 function shapeEdges(shape, collision) {
-  const y = (x) => {
-    let best = Infinity;
-    shape.forEach((id, r) => {
-      const d = collision[id] || [];
-      for (let i = 0; i < d.length; i += 5) {
-        const ax = d[i], ay = d[i + 1], bx = d[i + 2], by = d[i + 3];
-        if (bx >= ax) continue;   // (up-facing lines run right to left)
-        if (x < bx || x > ax) continue;
-        best = Math.min(best, ay + (by - ay) * (x - ax) / (bx - ax) + r * 64);
-      }
-    });
-    return best;
-  };
+  const y = (x) => groundAt(shape, collision, x);
   const deg = (dy) => (Number.isFinite(dy) ? Math.atan2(dy, 8) * 180 / Math.PI : 0);
   return { down: deg(y(63) - y(55)), up: deg(y(1) - y(9)) };
 }
@@ -148,11 +191,6 @@ function contextKey(run) {
   let k = String(run[0].s);
   for (let i = 1; i < run.length; i++) k += `:${run[i].top - run[i - 1].top}:${run[i].s}`;
   return k;
-}
-
-/** The difficulty stage (0 = like Stage One, 8 = like Stage Nine) after `columns` of course. */
-export function difficultyAt(columns) {
-  return Math.min(8, columns / 160);
 }
 
 /** The most columns kept off each side of the window (about 50 km): beyond that the furthest are forgotten. */
@@ -169,6 +207,10 @@ class Walker {
     this.history = [state];      // the last few states, for context
     this.tops = tops;            // the ground's top row in the last RISE_SPAN columns (newest last)
     this.generated = 0;          // columns made by this walk
+    this.recent = new Map();     // stretch (contextKey of 4 columns) -> when it was last made
+    // The theme stage: gliding from `from` to `to` since column `at`, for `len` columns. It
+    // opens on Stage One, for a familiar start.
+    this.theme = { from: 0, to: 0, at: 0, len: THEME_LEN[0] };
   }
 }
 
@@ -255,7 +297,7 @@ export class EndlessCourse {
   choose(w, options, strict, steepOk = false) {
     if (!options) return null;
     const memo = new Map();
-    const level = difficultyAt(w.generated);
+    const level = this.themeAt(w);
     const mid = (BAND[0] + BAND[1]) / 2;
     const weights = options.map((j) => {
       const top = w.state.top + j.step;
@@ -267,7 +309,9 @@ export class EndlessCourse {
         if (!this.canGoOn(w, j.to, [...w.tops.slice(1 - RISE_SPAN), top], LOOKAHEAD, memo)) return 0;
       }
       let wt = Math.sqrt(j.count);
-      // closest source stage to the current difficulty
+      const made = w.recent.get(contextKey([...w.history.slice(-ORDER), { s: j.to, top }]));
+      if (made !== undefined && w.generated - made < RECENT) wt *= RECENT_WEIGHT;
+      // closest source stage to the theme
       const near = Math.min(...j.stages.map((st) => Math.abs(st - level)));
       wt *= Math.exp(-(near * near) / 2.5);
       // drift back towards the middle of the band when far from it
@@ -311,14 +355,32 @@ export class EndlessCourse {
     return ok;
   }
 
+  /** Walker w's theme stage now (0 = Stage One ... 8 = Stage Nine; in between while it glides). */
+  themeAt(w) {
+    const t = w.theme;
+    return t.from + (t.to - t.from) * Math.min(1, (w.generated - t.at) / THEME_GLIDE);
+  }
+
+  /** Every THEME_LEN columns, walker w's theme sets off for another stage, picked at random. */
+  moveTheme(w) {
+    const t = w.theme;
+    if (w.generated - t.at < t.len) return;
+    // (one of the other eight, from one random number)
+    let next = Math.min(7, Math.floor(this.random() * 8));
+    if (next >= t.to) next++;
+    w.theme = { from: t.to, to: next, at: w.generated, len: THEME_LEN[0] + Math.floor(this.random() * (THEME_LEN[1] - THEME_LEN[0])) };
+  }
+
   /** Make a new column with walker w: on the right for the right-hand walk, on the left for the left. */
   addColumn(w = this.right) {
+    this.moveTheme(w);
     const j = this.pick(w);
     const top = w.state.top + j.step;
     const shape = this.g.shapes[j.to];
     const col = [];
     for (let r = 0; r < this.height; r++) col.push(r >= top ? (r - top < DEPTH ? shape[r - top] : FILL) : SKY);
     this.putColumn(col, w === this.left);
+    w.recent.set(contextKey([...w.history.slice(-ORDER), { s: j.to, top }]), w.generated);
     w.state = { s: j.to, top };
     w.tops.push(top);
     if (w.tops.length > RISE_SPAN) w.tops.shift();

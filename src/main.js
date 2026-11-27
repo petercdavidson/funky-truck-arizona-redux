@@ -45,6 +45,7 @@ const touchKeys = emptyKeys();
 const padKeys = emptyKeys();
 
 function combineKeys() {
+  if (!game) return;   // (the page can come back into view, letting go of touches, while still loading)
   const k = emptyKeys();
   for (const src of [keyboard, touchKeys, padKeys]) for (const n in k) k[n] = k[n] || src[n];
   game.keys = k;

@@ -21,7 +21,7 @@ import { buildGrammar } from '../src/endless.js';
 
 const root = new URL('../', import.meta.url);
 export const data = JSON.parse(readFileSync(new URL('assets/levels.json', root)));
-const g = buildGrammar(data.levels);
+const g = buildGrammar(data.levels, { slabs: false });   // (the column set the tracks were designed with)
 const DEPTH = 8, FILL = 1, SKY = 0;
 
 /** A target profile from a start height and [columns, height to reach] pieces, straight between. */
