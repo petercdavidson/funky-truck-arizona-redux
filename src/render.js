@@ -21,6 +21,8 @@ import { cloudsNear, CLOUDS_FROM, CRITTERS, skyAt, SKY, hash2, moonPhase, moonSh
  */
 /** View px, more than the tallest cloud: how far below the view the clouds' field ends once it's all in (see `clouds`). */
 const CLOUD_FIELD_MARGIN = 600;
+/** Cloud sprites kept (see `cloudSprite`), and how many new ones a frame may make ahead of time. */
+const CLOUD_CACHE = 160, CLOUD_WARM = 4;
 const CLOUD_LAYERS = [
   { depth: 0.001, size: 0.4, alpha: 0.3, blur: 5 },
   { depth: 0.0025, size: 0.5, alpha: 0.4, blur: 4.5 },
@@ -1025,7 +1027,8 @@ export class Renderer {
       const top = skyAt((game.height || 0) / 1000).clouds;
       // how far the truck is past CLOUDS_FROM, in view px: how far down the view the clouds have come
       const base = ((game.height || 0) - CLOUDS_FROM * 1000) / METRES_PER_TILE * TILE / zoom;
-      if (top > 0 && base > 0) this.clouds(game, v, zoom, top, base);
+      // (from a screen below that, the field is still all above the view, but its sprites get made)
+      if (top > 0 && base > -this.viewH) this.clouds(game, v, zoom, top, base);
     }
     this.tiles(game.levelData, v.camX, v.camY, zoom, game.mode === 'custom' || !!game.sandboxCustom);
     ctx.save();
@@ -1209,8 +1212,6 @@ export class Renderer {
    */
   clouds(game, v, zoom, fade = 1, base = Infinity) {
     const ctx = this.ctx, [sx, sy] = game.shiftTotal;
-    // Flat white shapes, softened with a blur where the browser can (canvas filters).
-    const canBlur = 'filter' in ctx;
     // The clouds are a field whose bottom edge comes down from the top of the view, `base` px
     // down, at the world's speed. Until it's CLOUD_FIELD_MARGIN below the view (all in), the
     // field slides down whole (`shift`), its clouds held where they'd be at that point (`camT`,
@@ -1219,6 +1220,11 @@ export class Renderer {
     // in each layer's cloud space) stays below the view as you climb.
     const end = this.viewH + CLOUD_FIELD_MARGIN, shift = Math.min(0, base - end);
     const camT = v.camY + (base - end) * zoom;
+    // Each cloud is drawn from a sprite, its puffs filled and blurred once (`cloudSprite`), not
+    // filled and blurred again every frame: canvas blur filters are slow. New sprites are made
+    // for clouds on screen at once, and up to CLOUD_WARM a frame for ones a screen or so off
+    // in any direction, so climbing fast doesn't hitch as they come in.
+    let warm = CLOUD_WARM;
     CLOUD_LAYERS.forEach(({ depth: p, size, alpha, blur }, layer) => {
       const cz = zoom ** p, w = this.viewW * cz, h = this.viewH * cz;
       // the view's middle in this layer's cloud space (held at camT while the field slides in)
@@ -1229,23 +1235,60 @@ export class Renderer {
       ctx.translate(0, shift);
       ctx.scale(1 / cz, 1 / cz);
       ctx.translate(-x0, -y0);
-      // (a filter's blur is in canvas pixels, whatever the transform)
-      if (canBlur) ctx.filter = `blur(${(blur * this.scale).toFixed(1)}px)`;
-      ctx.fillStyle = '#fff';
       const top = y0 - shift * cz;   // (the view's top, in cloud space)
-      for (const c of cloudsNear(x0 - 300, top - 200, x0 + w + 300, Math.min(bottom, top + h) + 200, 0, layer, 0.45, p)) {
+      const vx0 = x0 - 300, vx1 = x0 + w + 300, vy0 = top - 200, vy1 = Math.min(bottom, top + h) + 200;
+      for (const c of cloudsNear(vx0, vy0, vx1, vy1, 0, layer, 0.45, p)) {
         if (c.y + c.bottom * size > bottom) continue;   // (only clouds wholly in the field)
-        // its puffs filled as one shape
+        const s = this.cloudSprite(c, layer, size, blur);
         ctx.globalAlpha = c.alpha * 0.85 * alpha * fade;
-        ctx.beginPath();
-        for (const [dx, dy, r] of c.puffs) {
-          const px = c.x + dx * size, py = c.y + dy * size, R = r * size;
-          ctx.moveTo(px + R, py); ctx.arc(px, py, R, 0, Math.PI * 2);
+        ctx.drawImage(s.canvas, c.x + s.ox, c.y + s.oy, s.w, s.h);
+      }
+      if (warm > 0) {
+        for (const c of cloudsNear(vx0 - w, vy0 - h * 1.5, vx1 + w, vy1 + h * 1.5, 0, layer, 0.45, p)) {
+          if (warm <= 0) break;
+          if (!this.cloudCache?.has(layer + ':' + c.id)) { this.cloudSprite(c, layer, size, blur); warm--; }
         }
-        ctx.fill();
       }
       ctx.restore();
     });
+  }
+
+  /**
+   * A cloud's sprite: its puffs filled white as one shape and softened (a canvas blur where the
+   * browser has one; otherwise drawn coarse enough that scaling it up softens it as much), at a
+   * resolution its blur doesn't need more than. `ox`, `oy`, `w`, `h`: where it goes about the
+   * cloud's x, y, in cloud space. Kept (the most recently used CLOUD_CACHE) per layer and cell.
+   */
+  cloudSprite(c, layer, size, blur) {
+    const cache = (this.cloudCache ||= new Map()), key = layer + ':' + c.id;
+    let s = cache.get(key);
+    if (s) { cache.delete(key); cache.set(key, s); return s; }
+    const canBlur = this.cloudBlur ??= 'filter' in (document.createElement('canvas').getContext('2d') || {});
+    // sprite px per cloud-space unit: a blur of about 2 px (or 1, scaled up, without one)
+    const res = Math.min(this.scale, (canBlur ? 2 : 1) / blur), pad = blur * 3;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [dx, dy, r] of c.puffs) {
+      x0 = Math.min(x0, (dx - r) * size); x1 = Math.max(x1, (dx + r) * size);
+      y0 = Math.min(y0, (dy - r) * size); y1 = Math.max(y1, (dy + r) * size);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.ceil((x1 - x0 + 2 * pad) * res));
+    canvas.height = Math.max(1, Math.ceil((y1 - y0 + 2 * pad) * res));
+    const g = canvas.getContext('2d');
+    g.scale(res, res);
+    g.translate(pad - x0, pad - y0);
+    if (canBlur) g.filter = `blur(${(blur * res).toFixed(2)}px)`;
+    g.fillStyle = '#fff';
+    g.beginPath();
+    for (const [dx, dy, r] of c.puffs) {
+      const px = dx * size, py = dy * size, R = r * size;
+      g.moveTo(px + R, py); g.arc(px, py, R, 0, Math.PI * 2);
+    }
+    g.fill();
+    s = { canvas, ox: x0 - pad, oy: y0 - pad, w: canvas.width / res, h: canvas.height / res };
+    cache.set(key, s);
+    while (cache.size > CLOUD_CACHE) cache.delete(cache.keys().next().value);
+    return s;
   }
 
   /**

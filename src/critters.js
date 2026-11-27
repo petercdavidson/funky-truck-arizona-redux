@@ -109,7 +109,7 @@ export function cloudsNear(x0, y0, x1, y1, top = 0, seed = 0, density = 1, depth
           for (let i = 0; i < 3; i++) puffs.push([bx + (i - 1) * br * 0.8, by - (i === 1 ? br * 0.3 : 0), br * (i === 1 ? 1 : 0.7)]);
         }
       }
-      out.push({ x, y, w, h, kind, puffs, bottom: Math.max(...puffs.map(([, dy, r]) => dy + r)), alpha: 0.55 + 0.35 * H(8) });
+      out.push({ id: cx + ',' + cy, x, y, w, h, kind, puffs, bottom: Math.max(...puffs.map(([, dy, r]) => dy + r)), alpha: 0.55 + 0.35 * H(8) });
     }
   }
   return out;
