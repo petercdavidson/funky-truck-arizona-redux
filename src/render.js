@@ -12,15 +12,13 @@ import { TRIAL_ALL, TRIAL_STUNTS, formatTime, formatGap } from './trial.js';
 import { battleBack, battleFront, battleHud } from './render-battle.js';
 import { circles } from './battle.js';
 import { PAD_ACTIONS, padName } from './pad.js';
-import { cloudsNear, CLOUDS_FROM, CRITTERS, skyAt, SKY, hash2, moonPhase, moonShadow } from './critters.js';
+import { cloudsNear, CRITTERS, skyAt, SKY, hash2, moonPhase, moonShadow } from './critters.js';
 
 /**
  * Sandbox's layers of clouds, farthest first: each moves past at `depth` of the world's speed
  * (from 1/1000 for the farthest to 1/10 for the nearest, evenly spread in between by ratio),
  * and the farther off, the smaller, fainter and softer (`blur`, in stage px).
  */
-/** View px, more than the tallest cloud: how far below the view the clouds' field ends once it's all in (see `clouds`). */
-const CLOUD_FIELD_MARGIN = 600;
 /** Cloud sprites kept (see `cloudSprite`), and how many new ones a frame may make ahead of time. */
 const CLOUD_CACHE = 160, CLOUD_WARM = 4;
 const CLOUD_LAYERS = [
@@ -1021,15 +1019,9 @@ export class Renderer {
     this.backdrop(game, v);
     const zoom = game.rules.retro ? 1 : v.zoom || 1;
     const sky = game.rules.retro ? null : this.space(game, v);
-    // (Sandbox's clouds: none until the truck is CLOUDS_FROM up; then they slide in from the top
-    // of the view as it climbs; they fade out at the top of the weather)
-    if (game.mode === 'sandbox' && !game.rules.retro) {
-      const top = skyAt((game.height || 0) / 1000).clouds;
-      // how far the truck is past CLOUDS_FROM, in view px: how far down the view the clouds have come
-      const base = ((game.height || 0) - CLOUDS_FROM * 1000) / METRES_PER_TILE * TILE / zoom;
-      // (from a screen below that, the field is still all above the view, but its sprites get made)
-      if (top > 0 && base > -this.viewH) this.clouds(game, v, zoom, top, base);
-    }
+    // (Sandbox's clouds: none from the ground; they come in as you climb, and stop at the top of the weather)
+    const cloudFade = game.mode === 'sandbox' && !game.rules.retro ? skyAt((game.height || 0) / 1000).clouds : 0;
+    if (cloudFade > 0) this.clouds(game, v, zoom, cloudFade);
     this.tiles(game.levelData, v.camX, v.camY, zoom, game.mode === 'custom' || !!game.sandboxCustom);
     ctx.save();
     ctx.beginPath();
@@ -1207,19 +1199,10 @@ export class Renderer {
    * Sandbox's clouds: layers of them far off behind the world (`CLOUD_LAYERS`), each moving past
    * slower than it does (its `depth` of the world's speed) and zooming out less, and fixed in its
    * own far sky (in cloud space: the world with the course's scrolling taken out, times the
-   * depth), so you can see which way you're going with no ground in sight. They come in from
-   * the top of the view (`base`: how far down it they've come) once you're CLOUDS_FROM up.
+   * depth), so you can see which way you're going with no ground in sight.
    */
-  clouds(game, v, zoom, fade = 1, base = Infinity) {
+  clouds(game, v, zoom, fade = 1) {
     const ctx = this.ctx, [sx, sy] = game.shiftTotal;
-    // The clouds are a field whose bottom edge comes down from the top of the view, `base` px
-    // down, at the world's speed. Until it's CLOUD_FIELD_MARGIN below the view (all in), the
-    // field slides down whole (`shift`), its clouds held where they'd be at that point (`camT`,
-    // the camera then), so none moves across its bottom edge on screen: they only come in from
-    // the top. After that the layers move past at their own speeds, and the field's bottom (fixed
-    // in each layer's cloud space) stays below the view as you climb.
-    const end = this.viewH + CLOUD_FIELD_MARGIN, shift = Math.min(0, base - end);
-    const camT = v.camY + (base - end) * zoom;
     // Each cloud is drawn from a sprite, its puffs filled and blurred once (`cloudSprite`), not
     // filled and blurred again every frame: canvas blur filters are slow. New sprites are made
     // for clouds on screen at once, and up to CLOUD_WARM a frame for ones a screen or so off
@@ -1227,24 +1210,19 @@ export class Renderer {
     let warm = CLOUD_WARM;
     CLOUD_LAYERS.forEach(({ depth: p, size, alpha, blur }, layer) => {
       const cz = zoom ** p, w = this.viewW * cz, h = this.viewH * cz;
-      // the view's middle in this layer's cloud space (held at camT while the field slides in)
-      const yAt = (camY) => (camY + sy + this.viewH * zoom / 2) * p - h / 2;
-      const x0 = (v.camX + sx + this.viewW * zoom / 2) * p - w / 2, y0 = yAt(shift < 0 ? camT : v.camY);
-      const bottom = yAt(camT) + end * cz;   // the field's bottom edge, in cloud space
+      // the view's middle in this layer's cloud space
+      const mx = (v.camX + sx + this.viewW * zoom / 2) * p, my = (v.camY + sy + this.viewH * zoom / 2) * p;
+      const x0 = mx - w / 2, y0 = my - h / 2;
       ctx.save();
-      ctx.translate(0, shift);
       ctx.scale(1 / cz, 1 / cz);
       ctx.translate(-x0, -y0);
-      const top = y0 - shift * cz;   // (the view's top, in cloud space)
-      const vx0 = x0 - 300, vx1 = x0 + w + 300, vy0 = top - 200, vy1 = Math.min(bottom, top + h) + 200;
-      for (const c of cloudsNear(vx0, vy0, vx1, vy1, 0, layer, 0.45, p)) {
-        if (c.y + c.bottom * size > bottom) continue;   // (only clouds wholly in the field)
+      for (const c of cloudsNear(x0 - 300, y0 - 200, x0 + w + 300, y0 + h + 200, 0, layer, 0.45, p)) {
         const s = this.cloudSprite(c, layer, size, blur);
         ctx.globalAlpha = c.alpha * 0.85 * alpha * fade;
         ctx.drawImage(s.canvas, c.x + s.ox, c.y + s.oy, s.w, s.h);
       }
       if (warm > 0) {
-        for (const c of cloudsNear(vx0 - w, vy0 - h * 1.5, vx1 + w, vy1 + h * 1.5, 0, layer, 0.45, p)) {
+        for (const c of cloudsNear(x0 - 300 - w, y0 - 200 - h * 1.5, x0 + 2 * w + 300, y0 + 2.5 * h + 200, 0, layer, 0.45, p)) {
           if (warm <= 0) break;
           if (!this.cloudCache?.has(layer + ':' + c.id)) { this.cloudSprite(c, layer, size, blur); warm--; }
         }
@@ -1254,9 +1232,9 @@ export class Renderer {
   }
 
   /**
-   * A cloud's sprite: its puffs filled white as one shape and softened (a canvas blur where the
-   * browser has one; otherwise drawn coarse enough that scaling it up softens it as much), at a
-   * resolution its blur doesn't need more than. `ox`, `oy`, `w`, `h`: where it goes about the
+   * A cloud's sprite: its puffs filled white as one shape and softened with a canvas blur where
+   * the browser has one (as they were drawn before sprites), at a resolution its blur doesn't need
+   * more than. `ox`, `oy`, `w`, `h`: where it goes about the
    * cloud's x, y, in cloud space. Kept (the most recently used CLOUD_CACHE) per layer and cell.
    */
   cloudSprite(c, layer, size, blur) {
@@ -1264,8 +1242,9 @@ export class Renderer {
     let s = cache.get(key);
     if (s) { cache.delete(key); cache.set(key, s); return s; }
     const canBlur = this.cloudBlur ??= 'filter' in (document.createElement('canvas').getContext('2d') || {});
-    // sprite px per cloud-space unit: a blur of about 2 px (or 1, scaled up, without one)
-    const res = Math.min(this.scale, (canBlur ? 2 : 1) / blur), pad = blur * 3;
+    // sprite px per cloud-space unit: blurred, a blur of about 2 px is plenty; without a blur
+    // (hard edges, as before sprites), near the screen's own, up to 2
+    const res = Math.min(this.scale, canBlur ? 2 / blur : 2), pad = canBlur ? blur * 3 : 1;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const [dx, dy, r] of c.puffs) {
       x0 = Math.min(x0, (dx - r) * size); x1 = Math.max(x1, (dx + r) * size);

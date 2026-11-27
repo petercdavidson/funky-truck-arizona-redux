@@ -49,15 +49,13 @@ export function hash2(x, y, seed = 0) {
 
 /**
  * The clouds whose middles are in the box (x0, y0)-(x1, y1), in cloud space (the world with
- * the course's scrolling taken out). Each: { x, y, w, h, kind, puffs: [[dx, dy, r], ...],
- * bottom (its lowest point below y), alpha }.
+ * the course's scrolling taken out). Each: { id (its cell), x, y, w, h, puffs: [[dx, dy, r], ...], alpha }.
  * One may sit in each cell of a CELL_W x CELL_H grid; above `top` (the level's top) there are
  * more, higher up more still. Each layer of clouds (`seed`) has its own, `density` times as many.
  * `depth`: the layer's share of the world's speed; heights count in the world (cloud space's over
  * `depth`), so a far layer, which hardly moves, still has its clouds where the sky is.
  */
 export const CLOUD_CELL = [520, 300];
-export const CLOUD_KINDS = ['heap', 'heap', 'sheet', 'puff', 'tower', 'ragged'];
 export function cloudsNear(x0, y0, x1, y1, top = 0, seed = 0, density = 1, depth = 1) {
   const [CW, CH] = CLOUD_CELL, out = [];
   for (let cy = Math.floor(y0 / CH) - 1; cy <= Math.floor(y1 / CH) + 1; cy++) {
@@ -67,49 +65,15 @@ export function cloudsNear(x0, y0, x1, y1, top = 0, seed = 0, density = 1, depth
     for (let cx = Math.floor(x0 / CW) - 1; cx <= Math.floor(x1 / CW) + 1; cx++) {
       if (hash2(cx, cy, 1 + 16 * seed) >= chance) continue;
       const H = (k) => hash2(cx, cy, k + 16 * seed);
+      const w = 110 + 190 * H(2), h = w * (0.32 + 0.12 * H(3));
       const x = (cx + 0.15 + 0.7 * H(4)) * CW, y = (cy + 0.15 + 0.7 * H(5)) * CH;
-      const R = (i, k = 0) => hash2(cx * 7 + i, cy * 3 + k, 7 + 16 * seed);
-      const puffs = [];
-      // A row of puffs along a flat base, biggest in the middle (`bulge`), `lift` px up.
-      const row = (w, h, n, lift = 0, bulge = 0.35, k = 0) => {
-        for (let i = 0; i < n; i++) {
-          const t = n > 1 ? i / (n - 1) : 0.5;
-          const r = h * (0.45 + bulge * Math.sin(Math.PI * t)) * (0.8 + 0.4 * R(i, k));
-          puffs.push([(t - 0.5) * (w - h * 0.6) + (R(i, k + 9) - 0.5) * h * 0.3, h * 0.12 - r * 0.35 - lift, r]);
-        }
-      };
-      // Its shape (CLOUD_KINDS): a fair-weather heap, a long flat sheet, a little puff, a tall
-      // tower, or a ragged line of bits.
-      const kind = CLOUD_KINDS[Math.floor(H(9) * CLOUD_KINDS.length)];
-      let w, h;
-      if (kind === 'heap') {
-        w = 120 + 170 * H(2); h = w * (0.32 + 0.12 * H(3));
-        row(w, h, 4 + Math.floor(4 * H(6)));
-        row(w * (0.45 + 0.2 * H(10)), h * 0.8, 2 + Math.floor(3 * H(11)), h * 0.45, 0.3, 1);
-      } else if (kind === 'sheet') {
-        w = 260 + 260 * H(2); h = w * (0.1 + 0.05 * H(3));
-        row(w, h, 8 + Math.floor(6 * H(6)), 0, 0.15);
-      } else if (kind === 'puff') {
-        w = 45 + 60 * H(2); h = w * (0.45 + 0.15 * H(3));
-        row(w, h, 2 + Math.floor(2 * H(6)), 0, 0.3);
-      } else if (kind === 'tower') {
-        w = 120 + 110 * H(2); h = w * (0.35 + 0.1 * H(3));
-        const tiers = 3 + Math.floor(2 * H(6));
-        for (let j = 0; j < tiers; j++) {
-          const f = 1 - j / (tiers + 0.5);
-          row(w * f, h * (0.75 + 0.25 * f), Math.max(2, Math.round(5 * f)), j * h * 0.6, 0.3, j);
-        }
-        h *= 1 + 0.6 * (tiers - 1);
-      } else {
-        // ragged: a few small heaps strung out in a line, a little up and down
-        w = 220 + 200 * H(2); h = w * (0.13 + 0.05 * H(3));
-        const bits = 3 + Math.floor(3 * H(6));
-        for (let j = 0; j < bits; j++) {
-          const bx = (j / (bits - 1) - 0.5) * w * 0.85, by = (R(j, 5) - 0.5) * h * 0.8, br = h * (0.6 + 0.7 * R(j, 6));
-          for (let i = 0; i < 3; i++) puffs.push([bx + (i - 1) * br * 0.8, by - (i === 1 ? br * 0.3 : 0), br * (i === 1 ? 1 : 0.7)]);
-        }
+      const n = 4 + Math.floor(4 * H(6)), puffs = [];
+      for (let i = 0; i < n; i++) {
+        const t = n > 1 ? i / (n - 1) : 0.5;
+        const r = h * (0.45 + 0.35 * Math.sin(Math.PI * t)) * (0.85 + 0.3 * hash2(cx * 7 + i, cy, 7 + 16 * seed));
+        puffs.push([(t - 0.5) * (w - h * 0.6), h * 0.12 - r * 0.35, r]);
       }
-      out.push({ id: cx + ',' + cy, x, y, w, h, kind, puffs, bottom: Math.max(...puffs.map(([, dy, r]) => dy + r)), alpha: 0.55 + 0.35 * H(8) });
+      out.push({ id: cx + ',' + cy, x, y, w, h, puffs, alpha: 0.55 + 0.35 * H(8) });
     }
   }
   return out;
@@ -152,7 +116,7 @@ export function moonShadow(phase, n = 48) {
  * up at those heights: an airliner's deeper blue at 10 km, the U-2's dark blue at 20 km, a
  * balloon's navy at 30 km, near black past the stratopause (50 km) and black space by the
  * Kármán line (100 km). Stars come out as it goes dark. Clouds stop at the top of the weather
- * (thunderstorm tops, 12 to 18 km), and are only above CLOUDS_FROM. Returns { color: [r, g, b], alpha, stars, clouds } (0 to 1).
+ * (thunderstorm tops, 12 to 18 km), and come in only once you're up off the ground (CLOUDS_FROM). Returns { color: [r, g, b], alpha, stars, clouds } (0 to 1).
  */
 export const SKY = [
   // km, colour, how much it covers the backdrop
@@ -164,11 +128,8 @@ export const SKY = [
   [80, [1, 3, 12], 1],
   [100, [0, 0, 4], 1],
 ];
-/**
- * Clouds come in once the truck is this high (km above the start): none from the ground. Climb
- * past it and they slide into the view from its top (no fade, and none pops in).
- */
-export const CLOUDS_FROM = 0.3;
+/** Clouds fade in between these heights (km above the start): none from the ground. */
+export const CLOUDS_FROM = [0.15, 0.6];
 export function skyAt(km) {
   const ease = (a, b) => Math.max(0, Math.min(1, (km - a) / (b - a)));
   const t = (x) => x * x * (3 - 2 * x);
@@ -182,9 +143,9 @@ export function skyAt(km) {
     color = c0.map((c, j) => Math.round(c + (c1[j] - c) * f)); alpha = a0 + (a1 - a0) * f;
     break;
   }
-  // (`clouds`: only the top of the weather; they're only above CLOUDS_FROM, which the renderer
-  // shows from where that height is in the view up)
-  return { color, alpha, stars: t(ease(30, 90)), clouds: 1 - t(ease(12, 18)) };
+  // (clouds only come in once you're well up off the ground, CLOUDS_FROM km, where there's
+  // nothing else to show which way you're going)
+  return { color, alpha, stars: t(ease(30, 90)), clouds: t(ease(...CLOUDS_FROM)) * (1 - t(ease(12, 18))) };
 }
 
 export class Critters {
