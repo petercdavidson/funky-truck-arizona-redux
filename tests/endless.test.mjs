@@ -280,42 +280,95 @@ test('variety holds: 12 km in, the course is as varied as 2 km in, from all the 
   assert.ok(shares.filter((s) => s > 0.03).length >= 7, `most stages in the mix 12 km in: ${shares.map((s) => (100 * s).toFixed(0)).join(' ')}%`);
 });
 
-test('nowhere climbs steeper than MAX_CLIMB, either way along the course (only drops are steeper)', async () => {
-  const { MAX_CLIMB } = await import('../src/endless.js');
-  let steepest = 0, steepestBack = 0, steepestDrop = 0;
-  for (let seed = 1; seed <= 6; seed++) {
-    const c = new EndlessCourse(grammar, data.levels, seeded(seed));
-    const ahead = [], behind = [];
-    const heights = (cols) => cols.flatMap((col) => Array.from({ length: 32 }, (_, i) => surfaceOf(col, i * 2)));
-    for (let k = 0; k < 20; k++) { c.scroll(ENDLESS_SHIFT); for (let x = ENDLESS_WIDTH - ENDLESS_SHIFT; x < ENDLESS_WIDTH; x++) ahead.push(c.tiles.map((r) => r[x])); }
-    const c2 = new EndlessCourse(grammar, data.levels, seeded(seed + 100));
-    for (let k = 0; k < 20; k++) { c2.scrollBack(ENDLESS_SHIFT); const part = []; for (let x = 0; x < ENDLESS_SHIFT; x++) part.push(c2.tiles.map((r) => r[x])); behind.unshift(...part); }
-    const a = heights(ahead), b = heights(behind);
-    const deg = (dy) => Math.atan2(dy, 8) * 180 / Math.PI;
-    for (let i = 0; i + 4 < a.length; i++) { steepest = Math.max(steepest, deg(a[i] - a[i + 4])); steepestDrop = Math.max(steepestDrop, deg(a[i + 4] - a[i])); }
-    for (let i = 0; i + 4 < b.length; i++) steepestBack = Math.max(steepestBack, deg(b[i + 4] - b[i]));   // (rising to the left)
+/** Columns made to the right (`ahead`) or left (`behind`, in the order you'd drive them: leftwards) of the start. */
+function courseColumns(seed, way, scrolls = 20) {
+  const c = new EndlessCourse(grammar, data.levels, seeded(seed));
+  const cols = [];
+  for (let k = 0; k < scrolls; k++) {
+    if (way === 'ahead') { c.scroll(ENDLESS_SHIFT); for (let x = ENDLESS_WIDTH - ENDLESS_SHIFT; x < ENDLESS_WIDTH; x++) cols.push(c.tiles.map((r) => r[x])); }
+    else { c.scrollBack(ENDLESS_SHIFT); for (let x = ENDLESS_SHIFT - 1; x >= 0; x--) cols.push(c.tiles.map((r) => r[x])); }
   }
-  assert.ok(steepest <= MAX_CLIMB, `steepest climb ahead ${steepest.toFixed(1)}°`);
-  assert.ok(steepestBack <= MAX_CLIMB, `steepest climb going left behind the start ${steepestBack.toFixed(1)}°`);
-  assert.ok(steepestDrop > MAX_CLIMB, `steep drops are still there (${steepestDrop.toFixed(0)}°)`);
+  return { c, cols };
+}
+const topOf = (col) => { let t = 0; while (col[t] === 0) t++; return t; };
+const climbOf = (col, climb) => climb[grammar.index.get(col.slice(topOf(col), topOf(col) + 8).join('.'))];
+
+/** The steep faces in `cols` (columns in driving order): where each starts, its run-up and its end. */
+function facesIn(cols, climb, { MAX_CLIMB, FACE }) {
+  const cl = cols.map((col) => climbOf(col, climb));
+  const faces = [];
+  for (let i = 1; i < cols.length - 8; i++) {
+    if (!(cl[i] > MAX_CLIMB) || cl[i - 1] > MAX_CLIMB) continue;
+    let lead = 0;
+    while (i - 1 - lead >= 0 && cl[i - 1 - lead] > FACE.flat) lead++;
+    let end = i;
+    while (cl[end + 1] > FACE.flat) end++;
+    faces.push({ at: i, lead, runUp: i - lead - FACE.runUp, end, cl });
+  }
+  return faces;
+}
+
+test('steep faces (kickers, walls) come only after a run-up, and only on the course ahead', async () => {
+  const { MAX_CLIMB, FACE } = await import('../src/endless.js');
+  let faces = 0, steepestBehind = 0;
+  for (let seed = 1; seed <= 8; seed++) {
+    const { c, cols } = courseColumns(seed, 'ahead');
+    for (const f of facesIn(cols, grammar.climb, { MAX_CLIMB, FACE })) {
+      if (f.runUp < 0) continue;   // (its run-up was before the columns looked at)
+      faces++;
+      assert.ok(f.lead <= FACE.leadIn, `seed ${seed}: a ramp of ${f.lead} columns into a face`);
+      for (let k = f.runUp; k < f.runUp + FACE.runUp; k++) assert.ok(f.cl[k] <= FACE.flat, `seed ${seed}: the run-up climbs ${f.cl[k].toFixed(0)}°`);
+      assert.ok(topOf(cols[f.runUp + FACE.runUp - 1]) >= topOf(cols[f.runUp]), `seed ${seed}: the run-up climbs overall`);
+    }
+    assert.equal(c.faceForced, 0, `seed ${seed}: a face with no run-up was forced`);
+    const behind = courseColumns(seed, 'behind').cols;
+    for (const col of behind) steepestBehind = Math.max(steepestBehind, climbOf(col, grammar.back.climb));
+  }
+  assert.ok(faces > 20, `steep faces are still there (${faces})`);
+  assert.ok(steepestBehind <= MAX_CLIMB, `behind the start (driven in reverse) nothing climbs steeper than ${MAX_CLIMB}°: ${steepestBehind.toFixed(0)}°`);
 });
 
-test('a relaxed driver (gas held, leaning to stay upright, never backing up) never gets stuck', () => {
-  // Before 1.26 a face of 60° or more could stop it dead; this drives 12 courses for 4 minutes each.
-  for (let seed = 1; seed <= 12; seed++) {
-    const g = new Game(data, { random: seeded(seed * 31 + 7), store: memoryStore() });
-    g.startEndless();
-    let best = 0, since = 0, airborne = 0;
-    for (let i = 0; i < 70 * 60 * 4; i++) {
+test('every steep face is driven over from a standstill at the start of its run-up, holding the gas', async () => {
+  const { MAX_CLIMB, FACE } = await import('../src/endless.js');
+  let driven = 0, needSpeed = 0;
+  // Drive the course's own columns (from 2 before the run-up to past the face) as a stage.
+  const over = (cols, f, from) => {
+    const g = new Game(data, { random: seeded(1), store: memoryStore() });
+    g.customDamage = false;
+    const seg = cols.slice(f.runUp - 2, f.end + 8);
+    const tiles = Array.from({ length: ENDLESS_HEIGHT }, (_, r) => seg.map((col) => col[r]));
+    const x = from - (f.runUp - 2);
+    g.startCustom(-1, { name: 'face', width: seg.length, height: ENDLESS_HEIGHT, tiles, start: [x * TILE + 32, (topOf(seg[x]) - 1.3) * TILE] });
+    for (let i = 0; i < 70 * 25; i++) {
       const t = g.truck;
       g.keys.up = true; g.keys.right = t.bodyRot < -20; g.keys.left = t.bodyRot > 30;
       g.step();
       if (g.canUpright) g.upright();
-      if (g.airSteps > 70) airborne++;
-      if (g.metres > best) { best = g.metres; since = 0; } else since++;
-      assert.ok(since < 70 * 15, `seed ${seed}: no progress for 15 s at ${g.metres} m`);
+      if (t.T[0] > (f.end + 2 - (f.runUp - 2)) * TILE) return true;
     }
-    assert.ok(best > 1500, `seed ${seed}: ${best} m in 4 minutes`);
-    assert.ok(airborne > 0, `seed ${seed}: some jumps`);
+    return false;
+  };
+  for (let seed = 1; seed <= 12; seed++) {
+    const { cols } = courseColumns(seed, 'ahead', 40);
+    for (const f of facesIn(cols, grammar.climb, { MAX_CLIMB, FACE })) {
+      if (f.runUp < 2) continue;
+      driven++;
+      assert.ok(over(cols, f, f.runUp), `seed ${seed}: the face at column ${f.at} isn't driven over from the start of its run-up`);
+      if (!over(cols, f, f.at - f.lead - 1)) needSpeed++;
+    }
+  }
+  assert.ok(driven > 40, `${driven} faces driven`);
+  assert.ok(needSpeed > 0, `some faces need the run-up (${needSpeed} of ${driven}): they're still steep`);
+});
+
+test('a driver who backs up for a run-up when stopped never gets stuck', async () => {
+  const { drive } = await import('./bot.mjs');
+  for (let seed = 1; seed <= 12; seed++) {
+    const g = new Game(data, { random: seeded(seed * 31 + 7), store: memoryStore() });
+    g.startEndless();
+    // (progress: how far right the truck is, so ground covered again after backing up counts)
+    const r = drive(g, { steps: 70 * 60 * 4, progress: (g) => g.truck.T[0] + g.course.dropped * TILE, tries: 12 });
+    assert.ok(!r.stuck, `seed ${seed}: gave up at ${g.metres} m`);
+    assert.ok(g.metres > 1500, `seed ${seed}: ${g.metres} m in 4 minutes`);
   }
 });

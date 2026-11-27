@@ -214,10 +214,13 @@ the course is as varied (and as easy going) half an hour in as it is at the star
 the same joins read right to left. Ground that scrolls off either side is remembered (up to about
 50 km of it), so turning back finds the course as you left it.
 
-Nowhere to get stuck: no slope on the course climbs steeper than 58° (the stages' steeper faces and
-walls are left out; drops can be as steep as they like), so every climb can be driven up from a
-standstill. It never climbs more than 5 tiles within 4 columns either, and the generator looks
-ahead so it never wanders into a valley it can't climb out of.
+Nowhere to get stuck. Every slope up to 58° can be driven up from a standstill. Steeper ones (the
+stages' kickers and walls, up to 72°) need speed, so one only comes after a run-up: at least six
+columns of level or downhill ground, then at most one column of ramp. If a steep face stops you,
+back up along its run-up and go again: from a standstill at the start of the run-up, holding the
+gas always gets you over. Behind the start, where you're reversing, nothing climbs steeper than
+58°. The course never climbs more than 5 tiles within 4 columns, and the generator looks ahead so
+it never wanders into a valley it can't climb out of.
 
 Score: 10 points for every new tile of ground, either way, plus tricks as usual. The HUD shows the
 distance covered in metres (ahead of the start and behind it, added up). **Milestones** are celebrated as you pass them, in gold with a burst of

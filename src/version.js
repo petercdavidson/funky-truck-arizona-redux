@@ -2,5 +2,5 @@
 // you have. Bump VERSION (and "version" in package.json; a test checks they match) whenever a
 // change is pushed. The GitHub Pages deploy replaces BUILD with the commit it was built from.
 
-export const VERSION = '1.26.0';
+export const VERSION = '1.26.1';
 export const BUILD = 'dev';

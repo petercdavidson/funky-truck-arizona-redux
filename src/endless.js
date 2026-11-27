@@ -15,8 +15,9 @@
 //   - stretches it made lately are less likely to come again (RECENT);
 //   - it avoids shapes that only lead to dead ends (the last column of each stage);
 //   - it never climbs more than MAX_RISE tiles over RISE_SPAN columns, and (given the tiles'
-//     collision lines) no column climbs steeper than MAX_CLIMB, so every climb can be driven up
-//     from a standstill: nobody gets stuck (drops can be as steep as they like);
+//     collision lines) any slope steeper than MAX_CLIMB (a steep face: a kicker, a wall) comes
+//     only after a run-up (FACE), so there's always room to back up and take it at speed:
+//     nobody gets stuck (drops can be as steep as they like);
 //   - (given the tiles' collision lines) it never joins a slope down straight onto a slope up
 //     where they meet at less than V_ANGLE: a sharp V a wheel (or a tumbleweed) gets caught in.
 //
@@ -40,13 +41,24 @@ export const V_ANGLE = 120;
 /** How many columns ahead the walk checks it can go on without a climb steeper than that. */
 const LOOKAHEAD = 10;
 /**
- * The steepest the ground may climb anywhere in a column, in the way the walk goes (degrees). The
- * stages' slopes climb at up to 45° or 54°, or at 60° and more (kickers' faces and walls, 2 to 12
- * tiles tall). The truck drives up the first from a standstill, but the second only with speed,
- * which it doesn't always have (after a landing, a bump, or a slope up into one): faces like that
- * stopped a relaxed driver dead in more than half of 10-minute runs. So the walk never takes them.
+ * The steepest the ground may climb in a column, in the way the walk goes (degrees), and still be
+ * driven up from a standstill. The stages' slopes climb at up to 45° or 54°, or at 60° and more
+ * (kickers' faces and walls, 2 to 12 tiles tall): those need speed, so they're steep faces (FACE).
  */
 export const MAX_CLIMB = 58;
+/**
+ * A steep face (columns climbing steeper than MAX_CLIMB) starts only after a run-up: `runUp`
+ * columns that climb no more than `flat` degrees anywhere and end no higher than they start,
+ * then at most `leadIn` columns climbing more than that (the ramp into the face), then the face.
+ * From a standstill at the start of the run-up, holding the gas gets the truck over every face
+ * the walk makes (tests/endless.test.mjs drives them): so if one stops you, back up and go again.
+ * Without a run-up, faces like these stopped a relaxed driver dead in more than half of 10-minute
+ * runs; with a 2-column ramp into a 4-tile 72° face the truck hits it too fast and flips; with a
+ * run-up of only 4 columns, backing up too far (down a hill behind it) can leave you slower.
+ * Only on the course ahead: behind the start you drive in reverse, and nothing there climbs
+ * steeper than MAX_CLIMB.
+ */
+export const FACE = { runUp: 6, flat: 20, leadIn: 1 };
 /** A stretch (4 columns) made within the last RECENT columns is RECENT_WEIGHT as likely again. */
 const RECENT = 600, RECENT_WEIGHT = 0.2;
 /** The theme stage moves on every THEME_LEN[0] to THEME_LEN[1] columns, gliding over THEME_GLIDE. */
@@ -63,7 +75,7 @@ const ORDER = 3;
  * columns that came before each context), for the course's leftward end: { joins, alive, safe }.
  * `slabs: false` leaves out the stages that are floating slabs, as before 1.26 (the stunt tracks'
  * builder, so its tracks come out as they were designed). With `collision` (the game's tiles'
- * collision lines), joins onto a column that climbs steeper than MAX_CLIMB are left out.
+ * collision lines), `climb` is each shape's steepest climb (degrees) in the walk's direction.
  */
 export function buildGrammar(levels, { keepDeep = false, collision = null, slabs = true } = {}) {
   const shapes = [];            // index -> array of DEPTH tile ids
@@ -109,7 +121,6 @@ export function buildGrammar(levels, { keepDeep = false, collision = null, slabs
     for (const seq of seqs) {
       for (let i = 1; i < seq.length; i++) {
         const c = seq[i], prev = seq.slice(0, i);
-        if (climb && climb[c.s] > MAX_CLIMB) continue;   // (too steep to drive up from a standstill)
         for (let n = 1; n <= ORDER && n <= prev.length; n++) {
           const key = contextKey(prev.slice(-n));
           const m = joins[n - 1];
@@ -126,7 +137,8 @@ export function buildGrammar(levels, { keepDeep = false, collision = null, slabs
     const alive = shapes.map((_, i) => out[0].has(contextKey([{ s: i, top: 0 }])));
     // safe[s][top - BAND[0]]: from shape s at that height, the walk can keep going for a long way
     // without leaving the band. Some stretches (a long drop into a valley) only go one way, so
-    // the walk must not start down one unless there is room for all of it.
+    // the walk must not start down one unless there is room for all of it. (Not counting steep
+    // faces, which need a run-up first: there must always be a way on without one.)
     const rows = BAND[1] - BAND[0] + 1;
     let safe = shapes.map(() => new Array(rows).fill(true));
     for (let k = 0; k < 40; k++) {
@@ -134,6 +146,7 @@ export function buildGrammar(levels, { keepDeep = false, collision = null, slabs
         const opts = out[0].get(contextKey([{ s: i, top: 0 }])) || [];
         return Array.from({ length: rows }, (_, r) => opts.some((j) => {
           const t = r + j.step;
+          if (climb && climb[j.to] > MAX_CLIMB) return false;
           return t >= 0 && t < rows && safe[j.to][t];
         }));
       });
@@ -146,7 +159,9 @@ export function buildGrammar(levels, { keepDeep = false, collision = null, slabs
   // up from the left edge (`up`), in degrees. A join of a down onto an up makes a V.
   const edges = collision ? shapes.map((sh) => shapeEdges(sh, collision)) : null;
   const vee = edges ? (a, b) => edges[a].down > 0 && edges[b].up > 0 && 180 - edges[a].down - edges[b].up < V_ANGLE : () => false;
-  return { shapes, index, ...ahead, vee, climb: climbR, back: { ...back, vee: (a, b) => vee(b, a), climb: climbL } };
+  // (steep faces only on the course ahead: behind the start you drive in reverse, and reversing up
+  // one hardly ever works)
+  return { shapes, index, ...ahead, vee, climb: climbR, faces: true, back: { ...back, vee: (a, b) => vee(b, a), climb: climbL, faces: false } };
 }
 
 /** The topmost up-facing collision line's height (px down from the shape's top) at x, or Infinity. */
@@ -208,6 +223,7 @@ class Walker {
     this.tops = tops;            // the ground's top row in the last RISE_SPAN columns (newest last)
     this.generated = 0;          // columns made by this walk
     this.recent = new Map();     // stretch (contextKey of 4 columns) -> when it was last made
+    this.ground = [];            // the last few columns made: { top, climb } (newest last), for FACE
     // The theme stage: gliding from `from` to `to` since column `at`, for `len` columns. It
     // opens on Stage One, for a familiar start.
     this.theme = { from: 0, to: 0, at: 0, len: THEME_LEN[0] };
@@ -231,6 +247,7 @@ export class EndlessCourse {
     this.tiles = Array.from({ length: this.height }, () => []);
     this.dropped = 0;            // columns scrolled off the left (less those scrolled back on)
     this.steepAllowed = 0;       // times the limit on climbs had to give way
+    this.faceForced = 0;         // times a steep face had to come with no run-up (tests check it never does)
     this.leftStore = [];         // columns scrolled off the left, the nearest last
     this.rightStore = [];        // ...and off the right
     // Open with the first columns of Stage One, lifted into the band: a familiar start.
@@ -303,6 +320,7 @@ export class EndlessCourse {
       const top = w.state.top + j.step;
       if (top < BAND[0] || top > BAND[1] || !w.g.safe[j.to][top - BAND[0]]) return 0;
       if (w.g.vee?.(w.state.s, j.to)) return 0;   // a sharp V
+      if (!this.faceOk(w, j.to)) return 0;        // a steep face with no run-up
       if (!steepOk) {
         if (w.tops.length && Math.max(...w.tops) - top > MAX_RISE) return 0; // too steep a climb
         // ...or a way into somewhere (a valley) that can only be left by one
@@ -327,7 +345,8 @@ export class EndlessCourse {
     }
     if (total === 0) {
       // Nothing keeps us in the band: take whatever moves towards its middle.
-      options.forEach((j, i) => { weights[i] = Math.abs(w.state.top + j.step - mid) < Math.abs(w.state.top - mid) ? 1 : 1e-6; });
+      options.forEach((j, i) => { weights[i] = !this.faceOk(w, j.to) ? 0 : Math.abs(w.state.top + j.step - mid) < Math.abs(w.state.top - mid) ? 1 : 1e-6; });
+      if (!weights.some((x) => x > 0)) { this.faceForced++; weights.fill(1); }   // (never seen: tests check)
       total = weights.reduce((a, b) => a + b, 0);
     }
     let r = this.random() * total;
@@ -340,6 +359,9 @@ export class EndlessCourse {
    * on for `depth` more columns inside the band without a climb steeper than MAX_RISE.
    */
   canGoOn(w, s, tops, depth, memo) {
+    // (looking ahead, the walk may finish a steep face it's on, but not start one: there's always
+    // a way on without one)
+    const climb = w.g.climb, onFace = w.g.faces && climb && climb[s] > MAX_CLIMB;
     if (depth === 0) return true;
     const key = `${s}|${tops.join(',')}|${depth}`;
     if (memo.has(key)) return memo.get(key);
@@ -349,6 +371,7 @@ export class EndlessCourse {
     for (const j of opts) {
       const t = top + j.step;
       if (t < BAND[0] || t > BAND[1] || !w.g.safe[j.to][t - BAND[0]] || highest - t > MAX_RISE || w.g.vee?.(s, j.to)) continue;
+      if (climb && climb[j.to] > MAX_CLIMB && !onFace) continue;
       if (this.canGoOn(w, j.to, [...tops.slice(1 - RISE_SPAN), t], depth - 1, memo)) { ok = true; break; }
     }
     memo.set(key, ok);
@@ -371,6 +394,22 @@ export class EndlessCourse {
     w.theme = { from: t.to, to: next, at: w.generated, len: THEME_LEN[0] + Math.floor(this.random() * (THEME_LEN[1] - THEME_LEN[0])) };
   }
 
+  /** Whether shape s may come next for walker w: a steep face only after a run-up (FACE). */
+  faceOk(w, s) {
+    const climb = w.g.climb;
+    if (!climb || climb[s] <= MAX_CLIMB) return true;
+    if (!w.g.faces) return false;
+    const gr = w.ground, n = gr.length;
+    if (n && gr[n - 1].climb > MAX_CLIMB) return true;                   // carrying on a face
+    let lead = 0;                                                         // the ramp into it
+    while (lead < n && gr[n - 1 - lead].climb > FACE.flat) lead++;
+    if (lead > FACE.leadIn) return false;
+    const end = n - 1 - lead, start = end - FACE.runUp + 1;               // the run-up
+    if (start < 0) return false;                                          // (not enough known yet)
+    for (let i = start; i <= end; i++) if (gr[i].climb > FACE.flat) return false;
+    return gr[end].top >= gr[start].top;                                  // (rows: bigger is lower)
+  }
+
   /** Make a new column with walker w: on the right for the right-hand walk, on the left for the left. */
   addColumn(w = this.right) {
     this.moveTheme(w);
@@ -382,6 +421,8 @@ export class EndlessCourse {
     this.putColumn(col, w === this.left);
     w.recent.set(contextKey([...w.history.slice(-ORDER), { s: j.to, top }]), w.generated);
     w.state = { s: j.to, top };
+    w.ground.push({ top, climb: w.g.climb ? w.g.climb[j.to] : 0 });
+    if (w.ground.length > FACE.runUp + FACE.leadIn + 2) w.ground.shift();
     w.tops.push(top);
     if (w.tops.length > RISE_SPAN) w.tops.shift();
     w.history.push(w.state);
@@ -429,5 +470,6 @@ export class EndlessCourse {
     w.state = { s: s >= 0 && w.g.alive[s] ? s : w.g.alive.findIndex((a) => a), top };
     w.history = [w.state];
     w.tops = [top];
+    w.ground = [];
   }
 }
