@@ -6,7 +6,7 @@
 
 import { validPadMap, assignPad, defaultPadMap } from './pad.js';
 import { Critters, CRITTERS } from './critters.js';
-import { buildGrammar, EndlessCourse, ENDLESS_WIDTH, ENDLESS_SHIFT } from './endless.js';
+import { buildGrammar, EndlessCourse, ENDLESS_WIDTH, ENDLESS_SHIFT, flatGrammar, battlefieldGrammar } from './endless.js';
 import { TrickTracker } from './tricks.js';
 import { Wreck } from './wreck.js';
 import { TRIAL_ALL, TRIAL_TRACKS, TRIAL_STUNTS, GHOST_EVERY, validBests, validStuntBests, loadGhost, saveGhost, ghostPose } from './trial.js';
@@ -27,6 +27,9 @@ const smoothstep = (x) => { const t = Math.max(0, Math.min(1, x)); return t * t 
 
 /** Endless Mode: metres shown per tile column travelled, and points per column. */
 export const METRES_PER_TILE = 2.5;
+/** Sandbox's made-up courses after the stunt tracks (Endless, track 0, is the other), and their names. */
+export const SANDBOX_GEN = ['flat', 'battlefield'];
+export const SANDBOX_GEN_NAMES = { endless: 'Endless', flat: 'Flat', battlefield: 'Battlefield' };
 /** The speedometer: km/h for a speed of one pixel per step (70 steps a second, 2.5 m a tile). */
 export const KMH_PER_PX_STEP = STEP_HZ * METRES_PER_TILE / TILE * 3.6;
 const POINTS_PER_TILE = 10;
@@ -594,7 +597,7 @@ export function emptyKeys() {
  *              runs (after the finish line too), and the side walls count as ground. No tricks.
  *   tricks     false: no tricks are watched for
  *   retro      2006 Mode: the original's look (576x448, 30 fps, letterboxed), its camera, no
- *              speedometer or altimeter, no ragdoll wreck (the truck keeps driving, whole), no Esc wreck
+ *              speedometer or altimeter, no ragdoll wreck (the truck keeps driving, whole), no wreck on purpose
  */
 export const RULES = {
   endless: { damage: false },
@@ -677,7 +680,7 @@ const ONE_BUTTON_AIR = 4;        // steps off the ground before the one-button c
  * tilting back, front for tilting forwards), so there it would do nothing.
  */
 export const BALANCE_ANGLE = 45;
-/** The cab of a truck wrecked on purpose (Esc) takes this much damage a step while it touches the ground (as scraping does). */
+/** The cab of a truck wrecked on purpose (Delete / Backspace) takes this much damage a step while it touches the ground (as scraping does). */
 const SELF_WRECK_DAMAGE = 6;
 
 /** Metres up where the truck starts to hold its heading in the air, and where it fully does. */
@@ -762,8 +765,14 @@ export class Game {
     // The Stage Editor's stages (stages.js), and the one picked on the Load Stage screen. (Before
     // Sandbox's settings: its tracks include them.)
     this.stages = validStages(this.store.get('stages'), data.collision.length);
-    this.sandbox = validSandbox(this.store.get('sandbox'), this.sandboxCourses);
+    const savedSandbox = this.store.get('sandbox');
+    // (saved before 1.26.3, the stages saved into the game came straight after the stunt tracks,
+    // where Flat and Battlefield are now: two further along)
+    if (savedSandbox && typeof savedSandbox === 'object' && !savedSandbox.flat1 && Number.isInteger(savedSandbox.course)
+      && savedSandbox.course >= this.sandboxBase - SANDBOX_GEN.length) savedSandbox.course += SANDBOX_GEN.length;
+    this.sandbox = validSandbox(savedSandbox, this.sandboxCourses);
     this.sandboxPick = null;          // the setting whose list of choices is open on the Sandbox screen
+    this.sandboxInfo = null;          // ...or whose (i) note is open
     this.stagePick = -1;
     this.stagePage = 0;
     this.customLevel = null;          // the custom stage being played
@@ -799,7 +808,7 @@ export class Game {
     this.trialResult = null;          // { time, best, record } at the end of a finished run
     this.wreck = null;                // the pieces of a wrecked truck (outside 2006 Mode)
     this.resetConfirm = null;         // High Scores: the reset being confirmed, { steps } since asked
-    this.selfWrecked = false;         // the wreck was done on purpose (Esc), not by damage
+    this.selfWrecked = false;         // the wreck was done on purpose (Delete / Backspace), not by damage
     this.crashSteps = 0;              // steps the crash cam has been on
     this.milestone = null;            // Endless: the celebration on screen { text, timer, n }
     this.milestones = [];             // ...and ones waiting their turn
@@ -868,6 +877,10 @@ export class Game {
 
   /** Endless, and Sandbox's Endless track, are played on a generated course (endless.js). */
   get onCourse() { return this.mode === 'endless' || (this.mode === 'sandbox' && this.sandboxEndless); }
+  /** Which made-up course this is: 'endless', or Sandbox's 'flat' or 'battlefield' (null on a stage). */
+  get courseKind() { return this.mode === 'endless' ? 'endless' : this.mode === 'sandbox' && this.sandboxEndless ? this.sandboxGen : null; }
+  /** The name of the made-up course (Endless, Flat, Battlefield). */
+  get courseName() { return SANDBOX_GEN_NAMES[this.courseKind] || 'Endless'; }
 
   /** The level's collision world with a thin offset (for wreck pieces and missiles), made when first needed. */
   get thinWorld() { return (this.thin ||= this.makeWorld(3)); }
@@ -973,9 +986,12 @@ export class Game {
     this.beginRun(0);
   }
 
-  newCourse() {
-    if (!this.grammar) this.grammar = buildGrammar(this.data.levels, { collision: this.data.collision });
-    this.course = new EndlessCourse(this.grammar, this.data.levels, this.random);
+  /** A new course: Endless's, or (`kind`) Sandbox's Flat or Battlefield, made the same way from their own grammars. */
+  newCourse(kind = 'endless') {
+    this.grammars ||= {};
+    const g = kind === 'endless' ? (this.grammar ||= buildGrammar(this.data.levels, { collision: this.data.collision }))
+      : (this.grammars[kind] ||= kind === 'flat' ? flatGrammar() : battlefieldGrammar(this.data.levels, this.data.collision));
+    this.course = new EndlessCourse(g, this.data.levels, this.random);
     this.distance = 0; this.distanceBack = 0;
     this.nextMetres = 0; this.nextScore = 0;
     this.milestone = null; this.milestones = [];
@@ -1039,13 +1055,16 @@ export class Game {
     this.beginRun(0);
   }
 
-  /** Sandbox: where its custom stages start in its list of tracks (after Endless, the nine stages and the stunt tracks). */
-  get sandboxBase() { return 1 + this.data.levels.length + (this.data.stunts?.length || 0); }
-  /** Sandbox: how many tracks it offers (Endless, the nine stages, the stunt tracks, then the stages saved into the game). */
+  /** Sandbox: where its custom stages start in its list of tracks (after Endless, the nine stages, the stunt tracks, Flat and Battlefield). */
+  get sandboxBase() { return 1 + this.data.levels.length + (this.data.stunts?.length || 0) + SANDBOX_GEN.length; }
+  /** Sandbox: which made-up course track `i` is ('endless', 'flat', 'battlefield'), or null. */
+  sandboxGenAt(i) { return i === 0 ? 'endless' : SANDBOX_GEN[i - (this.sandboxBase - SANDBOX_GEN.length)] ?? null; }
+  /** Sandbox: how many tracks it offers (Endless, the nine stages, the stunt tracks, Flat, Battlefield, then the stages saved into the game). */
   get sandboxCourses() { return this.sandboxBase + this.stages.length; }
   /** The name of Sandbox track `i` (the stages by number, to keep its list short). */
   sandboxCourseName(i) {
     if (i >= this.sandboxBase) return this.stages[i - this.sandboxBase]?.name ?? '';
+    if (i > 0 && this.sandboxGenAt(i)) return SANDBOX_GEN_NAMES[this.sandboxGenAt(i)];
     return i === 0 ? 'Endless' : i <= this.data.levels.length ? `Stage ${i}` : this.stageName(i - 1);
   }
   /** Whether this Sandbox run is on a custom stage (played from `customLevel`, like Custom mode's). */
@@ -1058,14 +1077,15 @@ export class Game {
   startSandbox() {
     this.mode = 'sandbox';
     this.rules = RULES.sandbox;
-    this.sandboxPick = null;
+    this.sandboxPick = null; this.sandboxInfo = null;
     if (this.sandbox.course >= this.sandboxCourses) this.sandbox.course = 0;   // a stage since forgotten
-    this.sandboxEndless = this.sandbox.course === 0;
+    this.sandboxGen = this.sandboxGenAt(this.sandbox.course);
+    this.sandboxEndless = !!this.sandboxGen;
     const custom = this.stages[this.sandbox.course - this.sandboxBase] || null;
     this.sandboxOnStage = !!custom;
     if (custom) { this.customLevel = custom; this.customIndex = this.sandbox.course - this.sandboxBase; }
     this.clock = 0;
-    if (this.sandboxEndless) { this.newCourse(); this.bestToBeat = 0; }
+    if (this.sandboxEndless) { this.newCourse(this.sandboxGen); this.bestToBeat = 0; }
     this.beginRun(this.sandboxEndless || custom ? 0 : this.sandbox.course - 1);
   }
 
@@ -1080,7 +1100,7 @@ export class Game {
     const n = key === 'course' ? this.sandboxCourses : SANDBOX_ROW[key]?.choices.length;
     if (!n || !Number.isInteger(i) || i < 0 || i >= n) return;
     this.sandbox[key] = i;
-    this.sandboxPick = null;
+    this.sandboxPick = null; this.sandboxInfo = null;
     this.store.set('sandbox', this.sandbox);
     if (this.mode === 'sandbox' && this.battle) applySandbox(this);
   }
@@ -1089,7 +1109,13 @@ export class Game {
   pickSandbox(key) {
     if (key !== null && !SANDBOX_ROW[key]) return;
     if (key === 'course' && this.screen !== 'sandbox') return;
-    this.sandboxPick = key;
+    this.sandboxPick = key; this.sandboxInfo = null;
+  }
+
+  /** Sandbox: open (or close, with null) the note on what setting `key` does (its (i) button). */
+  infoSandbox(key) {
+    if (key !== null && !SANDBOX_ROW[key]?.info) return;
+    this.sandboxInfo = key; this.sandboxPick = null;
   }
 
   /** Sandbox: every setting back to its default. */
@@ -1106,7 +1132,7 @@ export class Game {
 
   /** Sandbox: the pause menu's Tweaks (the settings, during a run). */
   openTweaks() { if (this.screen === 'paused' && this.mode === 'sandbox') this.screen = 'sandboxTweaks'; }
-  closeTweaks() { if (this.screen === 'sandboxTweaks') { this.screen = 'paused'; this.pauseStage = 99; this.sandboxPick = null; } }
+  closeTweaks() { if (this.screen === 'sandboxTweaks') { this.screen = 'paused'; this.pauseStage = 99; this.sandboxPick = null; this.sandboxInfo = null; } }
 
   /**
    * Time Trial (with Practice in it): a stage (0-8), all nine in a row (TRIAL_ALL), against the
@@ -1249,7 +1275,7 @@ export class Game {
       let seed = Math.floor(this.random() * 2147483646) + 1;
       this.critters = new Critters(() => (seed = (seed * 16807) % 2147483647) / 2147483647);
       this.sbSeen = {};
-      this.ticker = `Sandbox  ·  ${this.onCourse ? 'Endless' : this.stageName(this.level)}`;
+      this.ticker = `Sandbox  ·  ${this.onCourse ? this.courseName : this.stageName(this.level)}`;
       applySandbox(this);
     }
     this.flipBonusTimer = 0;
@@ -1416,7 +1442,7 @@ export class Game {
       this.saveStats();
     }
     this.stats = this.realStats; // (back from a Sandbox run's throwaway stats)
-    this.sandboxPick = null;
+    this.sandboxPick = null; this.sandboxInfo = null;
     this.padListen = null;
     // The title's truck carries on as it was under the mode picker, and back from it.
     const overTitle = (a, b) => (a === 'title' && b === 'modes') || (a === 'modes' && b === 'title');
@@ -1495,13 +1521,10 @@ export class Game {
     return true;
   }
 
-  // ---- the Esc easter egg: wreck the truck on purpose
+  // ---- the wreck easter egg (Delete / Backspace): wreck the truck on purpose
 
   /** Wrecking on purpose works outside 2006 Mode (which has no ragdoll wreck). */
   get selfWreckAllowed() { return !this.rules.retro; }
-
-  /** Esc pauses instead of wrecking in Classic and in a Time Trial run that could set a time. */
-  get escPauses() { return this.mode === 'campaign' || this.timeCounts; }
 
   /**
    * Whether a truck wrecked on purpose can still finish the stage, its body rolling over the line:
@@ -2112,7 +2135,7 @@ export class Game {
    */
   updateSpeedometer() {
     const t = this.truck;
-    // (An Esc wreck reads its body's speed: you meant it, so you'll want to see how fast it goes.)
+    // (A wreck on purpose reads its body's speed: you meant it, so you'll want to see how fast it goes.)
     const raw = this.wreck ? (this.selfWrecked ? this.wreck.bodySpeed * KMH_PER_PX_STEP : 0)
       : !this.landed ? 0 : t.speed * KMH_PER_PX_STEP;
     this.speedKmh += (raw - this.speedKmh) * 0.15;
@@ -2168,7 +2191,7 @@ export class Game {
     this.altitude = null;
     this.updateHeight();
     if (this.rules.retro || (this.wreck && !this.selfWrecked) || !this.landed) return;
-    // (After an Esc wreck, from its body.)
+    // (After a wreck on purpose, from its body.)
     const t = this.truck, [x, y] = this.wreck ? this.wreck.centre : [(t.T[2] + t.T[4]) / 2, Math.min(t.T[3], t.T[5])];
     const bottom = this.camY + this.viewH * this.zoom;
     if (y > bottom) return;

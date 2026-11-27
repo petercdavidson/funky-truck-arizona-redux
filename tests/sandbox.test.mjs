@@ -38,8 +38,8 @@ test('sandbox settings: defaults, saving, checking what is read back', () => {
   assert.ok(!SANDBOX_ROW.boostPower.choices.some(([v]) => v < 1), 'no ×½ boost');
   const store = memoryStore();
   const g = new Game(data, { store });
-  assert.equal(g.sandboxCourses, 13);
-  assert.deepEqual([0, 1, 9, 10, 12].map((i) => g.sandboxCourseName(i)), ['Endless', 'Stage 1', 'Stage 9', 'Mega Ramp', 'Halfpipe']);
+  assert.equal(g.sandboxCourses, 15);
+  assert.deepEqual([0, 1, 9, 10, 12, 13, 14].map((i) => g.sandboxCourseName(i)), ['Endless', 'Stage 1', 'Stage 9', 'Mega Ramp', 'Halfpipe', 'Flat', 'Battlefield']);
   g.stepSandbox('gravity', -1);
   assert.equal(store.get('sandbox').gravity, d.gravity - 1);
   g.stepSandbox('power', -5); // wraps round

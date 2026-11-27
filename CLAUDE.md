@@ -51,13 +51,15 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   random numbers; they read the truck and never change it; they collide with the ground as wheels do,
   `Critters.move` with `world.collide`; they go out of sight behind and come in out of sight ahead;
   your missiles home in on birds, `flying`, and blasts knock both; a wreck's loose pieces hit them too) and its clouds (`cloudsNear`: a hash of
-  the sky, fixed in cloud space, the world less `game.shiftTotal`). Counts are Sandbox settings. Also `skyAt`: the sky darkening into space with height
+  the sky, fixed in cloud space, the world less `game.shiftTotal`; shapes `CLOUD_KINDS`; only above `CLOUDS_FROM`, shown from where that height is in the view up, no fade). Counts are Sandbox settings. Also `skyAt`: the sky darkening into space with height
   above the stage's start, real colours at real heights (`Renderer.space` draws it, with stars, in
   every mode but 2006 Mode, with the moon, in its real phase: `moonPhase`, `moonShadow`). The same `game.height` (metres above the start) drives
   the plane steering (`HOLD_HEADING`, `Truck.holdTurn`) and the engine's fade (`engineVolume`). Sandbox's own records (`sb*` in stats.js) go
   straight into the saved stats (`Game.sandboxStats`), shown on the Sandbox menu's Stats screen (`sandboxStats`).
 - `src/sandbox.js` (no DOM): Sandbox Mode's settings (`funkytruck.sandbox`, choice indices; track 0
-  is Endless, then the stages, then the stunt tracks), `applySandbox` (sets the truck's `power`,
+  is Endless, then the stages, then the stunt tracks, then Flat and Battlefield (`SANDBOX_GEN`: Endless's
+  generator with `flatGrammar` / `battlefieldGrammar` in endless.js), then custom stages; settings with an
+  `info` note get an (i) button), `applySandbox` (sets the truck's `power`,
   `gravity`, `tiltPower` and `springK`: Truck properties whose defaults are the original's;
   `startStage` puts them back for every other mode), and its cars (`setTraffic`, and `stepTraffic`,
   which loops them on Endless and the stunt tracks). A Sandbox run counts into throwaway stats
@@ -126,7 +128,7 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   `flipBonus` (the original scoring, and side walls count as ground: Classic with tricks off, and
   2006 Mode), `tricks` (false: none watched for), `retro` (2006 Mode: 576x448 drawn at 30 fps and
   scaled up with hard pixels, `Renderer.drawRetro`; the original camera; no speedometer, altimeter,
-  dynamic or crash cam, ragdoll or Esc wreck).
+  dynamic or crash cam, ragdoll or Delete-key wreck).
 - **Classic with tricks off must play exactly as the original**: identical inputs, identical truck
   and score. `tests/classic-parity.test.mjs` replays runs recorded before the merge
   (`tests/fixtures/classic-runs.json`); it must keep passing. Classic's ragdoll wreck keeps the
@@ -135,8 +137,8 @@ npm dependencies. Keep it that way unless there's a strong reason to change.
   (display, camera and options are fine; physics and scoring aren't).
 - `src/stats.js` (no DOM): the High Scores screen's records and totals, counted through
   `TrickTracker`'s `onTrick` / `onBank` hooks and saved as `funkytruck.stats`.
-- Esc easter egg (`Game.selfWreck`): outside 2006 Mode, Esc wrecks the truck with no game over;
-  Esc again leaves. In Classic and Time Trial a truck wrecked that way can't finish the stage
+- Wreck easter egg (`Game.selfWreck`): outside 2006 Mode, Delete or Backspace wrecks the truck with
+  no game over (Esc always pauses while driving). In Classic and Time Trial a truck wrecked that way can't finish the stage
   (`selfWreckFinishes`). Not in the README on purpose.
 - New features go in every mode (in Classic as display and options only, see above, and not in
   2006 Mode) unless the user says otherwise. General options go

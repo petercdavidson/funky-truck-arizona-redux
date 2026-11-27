@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Game, TILE, unpackLevel, VIEW_WIDTHS, CRASH_CAM } from '../src/game.js';
 import { SANDBOX_ROW, SANDBOX_ROWS } from '../src/sandbox.js';
-import { skyAt } from '../src/critters.js';
+import { skyAt, cloudsNear, CLOUD_KINDS } from '../src/critters.js';
 import { soundSpeedKmh, formatMach } from '../src/units.js';
 import { memoryStore } from './helpers.mjs';
 
@@ -115,10 +115,18 @@ test('Autopilot: Land Level brings a truck dropped nose-down round to land on it
   }
 });
 
-test('clouds: none from the ground, in as you climb', () => {
-  assert.equal(skyAt(0).clouds, 0);
-  assert.ok(skyAt(1).clouds === 1 && skyAt(8).clouds === 1);
+test('clouds: no fade in (they show from CLOUDS_FROM up), out at the top of the weather', () => {
+  assert.ok(skyAt(0).clouds === 1 && skyAt(1).clouds === 1 && skyAt(8).clouds === 1);
   assert.equal(skyAt(30).clouds, 0);
+});
+
+test('clouds come in several shapes, each with its bottom below its puffs', () => {
+  const kinds = new Set();
+  for (const c of cloudsNear(0, -60000, 200000, -1000)) {
+    kinds.add(c.kind);
+    assert.ok(c.puffs.length >= 2 && c.puffs.every(([, dy, r]) => dy + r <= c.bottom + 1e-9));
+  }
+  for (const k of CLOUD_KINDS) assert.ok(kinds.has(k), k);
 });
 
 test('Mach: by the speed of sound where you are (9,999 km/h is Mach 8.1 at the ground, faster through cold thin air)', () => {

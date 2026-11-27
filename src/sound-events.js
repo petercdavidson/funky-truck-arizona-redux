@@ -115,7 +115,7 @@ export class SoundWatcher {
     return {
       events,
       scrape: { on: this.scrapeHold > 0 && this.scrapeRun < SCRAPE_LIMIT + SCRAPE_FADE, speed: Math.min(1, slide / 7), volume: Math.max(0, Math.min(1, 1 - (this.scrapeRun - SCRAPE_LIMIT) / SCRAPE_FADE)) },
-      // A truck wrecked on purpose (Esc) has no wheels to drive, but its engine still revs.
+      // A truck wrecked on purpose (Delete / Backspace) has no wheels to drive, but its engine still revs.
       engine: game.height >= ENGINE_FADE[1] ? { on: false } : game.wreck ? {
         on: playing && game.selfWrecked,
         throttle: game.keys.up || game.keys.one || game.keys.down ? 1 : 0,

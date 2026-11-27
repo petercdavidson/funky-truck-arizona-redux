@@ -18,8 +18,8 @@ const TILE = 64;
 const COUNTS = [0, 1, 2, 3, 4, 6, 8].map((n) => [n, n ? String(n) : 'None']);
 
 /**
- * The settings: key, name, the choices [value, label], the default choice, and `live` false for
- * those only set before a run (the track).
+ * The settings: key, name, the choices [value, label], the default choice, `live` false for
+ * those only set before a run (the track), and `info`: what it does, for its (i) button.
  */
 export const SANDBOX_ROWS = [
   { key: 'course', name: 'Track', choices: [], dflt: 0, live: false }, // filled in by the game: Endless, the stages, the stunt tracks
@@ -30,18 +30,24 @@ export const SANDBOX_ROWS = [
   { key: 'boostPower', name: 'Boost Power', choices: [[1, '×1'], [2, '×2'], [4, '×4'], [8, '×8']], dflt: 0 },
   { key: 'jump', name: 'Jump Power', choices: [[0.5, '×½'], [1, '×1'], [2, '×2'], [3, '×3'], [5, '×5']], dflt: 1 },
   { key: 'airJumps', name: 'Air Jumps', choices: [[false, 'Off'], [true, 'On']], dflt: 0 },
-  { key: 'rivals', name: 'Rival Cars', choices: COUNTS, dflt: 0 },
-  { key: 'enemies', name: 'Enemy Cars', choices: COUNTS, dflt: 0 },
+  { key: 'rivals', name: 'Rival Cars', choices: COUNTS, dflt: 0,
+    info: 'Trucks going your way, to race. They drive the track as you do, come back over a bump, and back up for a run-up when they\'re stuck. They can\'t be wrecked, but you can bump them about and blow them around with missiles. On Endless, Flat, Battlefield and the stunt tracks, one left behind comes back just out of view ahead.' },
+  { key: 'enemies', name: 'Enemy Cars', choices: COUNTS, dflt: 0,
+    info: 'Trucks coming at you, firing missiles of their own. Take them out with your missiles, by ramming them, or by landing on them (a stomp). Their missiles can\'t wreck you (Sandbox has no damage) and you can shoot them down. Your missiles go for enemy cars first, then rival cars, then birds.' },
   { key: 'birds', name: 'Birds', choices: [[0, 'None'], [8, 'A Few'], [18, 'Lots'], [40, 'Flocks']], dflt: 1 },
   { key: 'weeds', name: 'Tumbleweeds', choices: [[0, 'None'], [3, 'A Few'], [8, 'Lots'], [20, 'Loads']], dflt: 1 },
-  { key: 'autopilot', name: 'Autopilot', choices: [['off', 'Off'], ['level', 'Land Level'], ['cruise', 'Cruise'], ['drive', 'Drive Itself']], dflt: 0 },
+  { key: 'autopilot', name: 'Autopilot', choices: [['off', 'Off'], ['level', 'Land Level'], ['cruise', 'Cruise'], ['drive', 'Drive Itself']], dflt: 0,
+    info: 'Land Level tilts the truck in the air so it lands on its wheels. Cruise does that and holds the gas down for you. Drive Itself drives as the rival cars do: it leans to keep its nose down on climbs, backs up for a run-up when it\'s stuck, and turns itself back over. Whatever you press takes over that much of it.' },
   { key: 'slow', name: 'Slow Motion', choices: [[1, 'Off'], [0.5, 'Half'], [0.25, 'Quarter']], dflt: 0 },
   { key: 'hitboxes', name: 'Hitboxes', choices: [[false, 'Hidden'], [true, 'Shown']], dflt: 0 },
 ];
 export const SANDBOX_ROW = Object.fromEntries(SANDBOX_ROWS.map((r) => [r.key, r]));
 
-/** The default settings: { key: choice index } (and `boost1`: Boost Power's choices start at ×1). */
-export function defaultSandbox() { return { ...Object.fromEntries(SANDBOX_ROWS.map((r) => [r.key, r.dflt])), boost1: true }; }
+/**
+ * The default settings: { key: choice index } (and `boost1`: Boost Power's choices start at ×1;
+ * `flat1`: the tracks include Flat and Battlefield, before the stages saved into the game).
+ */
+export function defaultSandbox() { return { ...Object.fromEntries(SANDBOX_ROWS.map((r) => [r.key, r.dflt])), boost1: true, flat1: true }; }
 
 /** Saved settings, checked: anything missing or out of range goes back to its default. `courses` is how many tracks there are. */
 export function validSandbox(v, courses = 13) {

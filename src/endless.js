@@ -77,7 +77,7 @@ const ORDER = 3;
  * builder, so its tracks come out as they were designed). With `collision` (the game's tiles'
  * collision lines), `climb` is each shape's steepest climb (degrees) in the walk's direction.
  */
-export function buildGrammar(levels, { keepDeep = false, collision = null, slabs = true } = {}) {
+export function buildGrammar(levels, { keepDeep = false, collision = null, slabs = true, maxSlope = null, band = BAND, opening = null } = {}) {
   const shapes = [];            // index -> array of DEPTH tile ids
   const index = new Map();      // shape key -> index
   const id = (shape) => {
@@ -116,6 +116,18 @@ export function buildGrammar(levels, { keepDeep = false, collision = null, slabs
   });
   // Each shape's steepest climb (degrees), driving right and driving left (for the back walk).
   const climbs = collision ? shapes.map((sh) => shapeClimb(sh, collision)) : null;
+  // With `maxSlope` (Sandbox's Battlefield), only shapes no steeper than that either way are
+  // used: the runs are cut where any other is.
+  if (maxSlope != null && climbs) {
+    const ok = (c) => Math.max(climbs[c.s].right, climbs[c.s].left) <= maxSlope;
+    const cut = [];
+    for (const run of runs) {
+      let part = [];
+      for (const c of run) { if (ok(c)) part.push(c); else { if (part.length > 1) cut.push(part); part = []; } }
+      if (part.length > 1) cut.push(part);
+    }
+    runs.length = 0; runs.push(...cut);
+  }
   const learn = (seqs, climb) => {
     const joins = Array.from({ length: ORDER }, () => new Map());
     for (const seq of seqs) {
@@ -135,11 +147,11 @@ export function buildGrammar(levels, { keepDeep = false, collision = null, slabs
     }
     const out = joins.map((m) => new Map([...m].map(([k, opts]) => [k, [...opts.values()].map((j) => ({ ...j, stages: [...j.stages] }))])));
     const alive = shapes.map((_, i) => out[0].has(contextKey([{ s: i, top: 0 }])));
-    // safe[s][top - BAND[0]]: from shape s at that height, the walk can keep going for a long way
+    // safe[s][top - band[0]]: from shape s at that height, the walk can keep going for a long way
     // without leaving the band. Some stretches (a long drop into a valley) only go one way, so
     // the walk must not start down one unless there is room for all of it. (Not counting steep
     // faces, which need a run-up first: there must always be a way on without one.)
-    const rows = BAND[1] - BAND[0] + 1;
+    const rows = band[1] - band[0] + 1;
     let safe = shapes.map(() => new Array(rows).fill(true));
     for (let k = 0; k < 40; k++) {
       safe = shapes.map((_, i) => {
@@ -161,7 +173,37 @@ export function buildGrammar(levels, { keepDeep = false, collision = null, slabs
   const vee = edges ? (a, b) => edges[a].down > 0 && edges[b].up > 0 && 180 - edges[a].down - edges[b].up < V_ANGLE : () => false;
   // (steep faces only on the course ahead: behind the start you drive in reverse, and reversing up
   // one hardly ever works)
-  return { shapes, index, ...ahead, vee, climb: climbR, faces: true, back: { ...back, vee: (a, b) => vee(b, a), climb: climbL, faces: false } };
+  const faces = maxSlope == null || maxSlope > MAX_CLIMB;
+  return { shapes, index, ...ahead, vee, climb: climbR, faces, band, opening, back: { ...back, vee: (a, b) => vee(b, a), climb: climbL, faces: false, band } };
+}
+
+/** Sandbox's Flat: the stages' flat ground (tile 2, ground at half a tile down, over solid fill). */
+export const FLAT_SHAPE = [2, 1, 1, 1, 1, 1, 1, 1];
+/**
+ * A grammar of nothing but flat ground, for Sandbox's Flat: the course is FLAT_SHAPE, at the
+ * same height, for ever both ways.
+ */
+export function flatGrammar() {
+  const one = { joins: [new Map([[contextKey([{ s: 0, top: 0 }]), [{ to: 0, step: 0, count: 1, stages: [0] }]]])], alive: [true], safe: [[true]] };
+  // (contexts of 2 and 3 columns find nothing: pick() falls back to the last column alone)
+  one.joins.push(new Map(), new Map());
+  const band = [27, 27];
+  return { shapes: [FLAT_SHAPE], index: new Map([[FLAT_SHAPE.join('.'), 0]]), ...one, vee: () => false, climb: [0], faces: false, band, opening: FLAT_SHAPE,
+    back: { ...one, vee: () => false, climb: [0], faces: false, band } };
+}
+
+/**
+ * Sandbox's Battlefield: the stages' gentlest ground (no slope steeper than BATTLEFIELD.slope
+ * degrees either way), kept within BATTLEFIELD.band rows: rolling, never far up or down.
+ */
+// (`flat`: how likely, against sloping ground, flat ground is to come next)
+export const BATTLEFIELD = { slope: 27, band: [24, 30], flat: 0.3 };
+export function battlefieldGrammar(levels, collision) {
+  const g = buildGrammar(levels, { collision, maxSlope: BATTLEFIELD.slope, band: BATTLEFIELD.band, opening: FLAT_SHAPE });
+  // (`fall`: each shape's steepest drop, so a shape that only goes down counts as sloping too)
+  g.roll = BATTLEFIELD.flat; g.fall = g.back.climb;
+  g.back.roll = BATTLEFIELD.flat; g.back.fall = g.climb;
+  return g;
 }
 
 /** The topmost up-facing collision line's height (px down from the shape's top) at x, or Infinity. */
@@ -250,14 +292,19 @@ export class EndlessCourse {
     this.faceForced = 0;         // times a steep face had to come with no run-up (tests check it never does)
     this.leftStore = [];         // columns scrolled off the left, the nearest last
     this.rightStore = [];        // ...and off the right
-    // Open with the first columns of Stage One, lifted into the band: a familiar start.
+    // Open with the first columns of Stage One, lifted into the band: a familiar start. (Or,
+    // with the grammar's `opening`, that shape flat across the middle of its band, the truck
+    // as high over it as Stage One's start is over its ground.)
     const l = levels[0];
     const open = 12;
+    const band = grammar.band || BAND;
     let firstTop = 0;
     while (l.tiles[firstTop][0] === SKY) firstTop++;
-    const lift = BAND[0] + 12 - firstTop;
+    const lift = band[0] + 12 - firstTop;
+    const flatTop = Math.round((band[0] + band[1]) / 2);
     for (let x = 0; x < open; x++) {
       for (let r = 0; r < this.height; r++) {
+        if (grammar.opening) { this.tiles[r].push(r < flatTop ? SKY : r - flatTop < DEPTH ? grammar.opening[r - flatTop] : FILL); continue; }
         const src = r - lift;
         let v = src >= 0 && src < l.height ? l.tiles[src][x] : FILL;
         if (src >= l.height || (v === SKY && src > firstTop + DEPTH)) v = FILL;
@@ -278,7 +325,8 @@ export class EndlessCourse {
     this.right = new Walker(grammar, stateOf(open - 1, grammar), topsOf(Array.from({ length: Math.min(open, RISE_SPAN) }, (_, i) => open - Math.min(open, RISE_SPAN) + i)));
     this.right.generated = open;
     this.left = grammar.back ? new Walker(grammar.back, stateOf(0, grammar.back), topsOf(Array.from({ length: Math.min(open, RISE_SPAN) }, (_, i) => Math.min(open, RISE_SPAN) - 1 - i))) : null;
-    this.start = [l.start[0], (l.start[1] / 64 + lift) * 64];
+    // (Stage One's start is 3.5 tiles over its flat ground, half a tile into its top tile)
+    this.start = grammar.opening ? [l.start[0], flatTop * 64 + 32 - 224] : [l.start[0], (l.start[1] / 64 + lift) * 64];
     while (this.tiles[0].length < this.width) this.addColumn(this.right);
     // Shaped like an entry of levels.json, so the game and renderer can use it as a stage.
     // `tiles` is the same array the course keeps changing.
@@ -315,10 +363,10 @@ export class EndlessCourse {
     if (!options) return null;
     const memo = new Map();
     const level = this.themeAt(w);
-    const mid = (BAND[0] + BAND[1]) / 2;
+    const band = w.g.band || BAND, mid = (band[0] + band[1]) / 2;
     const weights = options.map((j) => {
       const top = w.state.top + j.step;
-      if (top < BAND[0] || top > BAND[1] || !w.g.safe[j.to][top - BAND[0]]) return 0;
+      if (top < band[0] || top > band[1] || !w.g.safe[j.to][top - band[0]]) return 0;
       if (w.g.vee?.(w.state.s, j.to)) return 0;   // a sharp V
       if (!this.faceOk(w, j.to)) return 0;        // a steep face with no run-up
       if (!steepOk) {
@@ -335,6 +383,12 @@ export class EndlessCourse {
       // drift back towards the middle of the band when far from it
       const pull = (top - w.state.top) * (mid - w.state.top);
       if (Math.abs(w.state.top - mid) > 6 && pull < 0) wt *= 0.35;
+      // (`roll`, Battlefield's narrow band: always drawn back to its middle, and sloping ground
+      // preferred to flat, so it rolls gently up and down rather than lying flat at one edge)
+      if (w.g.roll) {
+        if (pull < 0) wt *= 0.25; else if (pull > 0) wt *= 3;
+        if (!w.g.climb?.[j.to] && !w.g.fall?.[j.to]) wt *= w.g.roll;
+      }
       return wt;
     });
     let total = weights.reduce((a, b) => a + b, 0);
@@ -365,12 +419,12 @@ export class EndlessCourse {
     if (depth === 0) return true;
     const key = `${s}|${tops.join(',')}|${depth}`;
     if (memo.has(key)) return memo.get(key);
-    const top = tops[tops.length - 1], highest = Math.max(...tops);
+    const top = tops[tops.length - 1], highest = Math.max(...tops), band = w.g.band || BAND;
     const opts = w.g.joins[0].get(contextKey([{ s, top: 0 }])) || [];
     let ok = false;
     for (const j of opts) {
       const t = top + j.step;
-      if (t < BAND[0] || t > BAND[1] || !w.g.safe[j.to][t - BAND[0]] || highest - t > MAX_RISE || w.g.vee?.(s, j.to)) continue;
+      if (t < band[0] || t > band[1] || !w.g.safe[j.to][t - band[0]] || highest - t > MAX_RISE || w.g.vee?.(s, j.to)) continue;
       if (climb && climb[j.to] > MAX_CLIMB && !onFace) continue;
       if (this.canGoOn(w, j.to, [...tops.slice(1 - RISE_SPAN), t], depth - 1, memo)) { ok = true; break; }
     }

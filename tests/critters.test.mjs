@@ -236,5 +236,4 @@ test('the sky darkens into space with height (real colours at real heights)', ()
   assert.ok(skyAt(100).color.every((c) => c < 10), 'black at the Kármán line');
   assert.equal(skyAt(10).stars, 0); assert.equal(skyAt(100).stars, 1);
   assert.equal(skyAt(5).clouds, 1); assert.equal(skyAt(25).clouds, 0);
-  assert.equal(skyAt(0).clouds, 0, 'no clouds seen from the ground'); assert.equal(skyAt(0.1).clouds, 0);
 });

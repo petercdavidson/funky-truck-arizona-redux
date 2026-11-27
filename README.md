@@ -64,7 +64,7 @@ until it first lands (in Sandbox, or first boosts). Nothing goes faster than 999
 When the truck is so high that the ground below it is out of sight, an **altitude** reading
 (▼ metres or feet to the ground) comes up under the speedometer (and stays while paused). Past the speed of sound the speedometer shows the Mach number, by the speed of sound where you are: 1,225 km/h at the ground, about 1,060 km/h in the cold air at 11 to 20 km and 980 km/h at the top (so 9,999 km/h is Mach 8.1 at the ground but Mach 10 at 100 km). Outside 2006 Mode,
 higher still (measured from where the stage starts) the sky darkens into space at real heights (deep blue by 20 km, black with stars by 100 km;
-Sandbox's clouds, layers of them fixed in the sky, come in from 150 m up, so there are none from the ground, and stop at 18 km), the truck darkens with it, and way up, once the sky is black (80 km), the moon comes down into view, in its real phase for the date and time; from 5 km
+Sandbox's clouds, layers of them fixed in the sky in all sorts of shapes (heaps, long flat sheets, little puffs, towers, ragged lines), are only above 300 m, so there are none from the ground: climb past that and they come into view from the top of the screen down, with no fade; they stop at 18 km), the truck darkens with it, and way up, once the sky is black (80 km), the moon comes down into view, in its real phase for the date and time; from 5 km
 it steers more and more like a plane in the air, fully by 10 km (tilting turns it just as down low, but let go
 and it slows to a stop as fast as it got going and holds its heading; never in Classic, under its ceiling);
 and the engine fades out from 1 km to nothing at 20 km, leaving only the rocket. Past the speed of sound the **Mach** number shows under the speed (the speed
@@ -130,11 +130,11 @@ Then open <http://localhost:8765/>. The game loads its data with `fetch`, so ope
 | Forwards / reverse | ↑ / ↓ (or W / S) | right-hand pedals | A or RT / B or LT |
 | Tilt back / forwards | ← / → (or A / D) | left-hand buttons | stick or d-pad |
 | One Button | Space or ↑ | hold anywhere | A |
-| Pause | P (and Esc in Classic and a timed run in Stages) | ⏸ button | Start |
+| Pause | P or Esc | ⏸ button | Start |
 | Recover (when offered) | R | Recover button | Y |
 | Play again (game over) | Space, Enter or Ctrl | Play Again button | A |
 | Menus: move / choose / back | arrow keys / Enter or Space / Esc, or the mouse | tap | stick or d-pad / A / B (each new menu starts with its first button picked) |
-| Back to menu | Esc | Menu button | |
+| Back to menu | Esc (from a menu; while driving it pauses) | Menu button | |
 | Sound on / off | | Sound switch (Options screen or pause menu) | |
 | Full screen | F | | |
 | Sandbox: fire a missile | X | fire button (right) | X |
@@ -170,11 +170,11 @@ Battle Mode and Rally Mode are out of the game for now; they are kept, playable,
 Sandbox is in the **Play** menu's list of modes. Its screen sets things up, and **Tweaks** in the pause menu
 changes them during a run (they take effect at once); the pause menu's **Sandbox Menu** goes back to this screen and **Quit to Menu** to the title. They're saved. Each has − and + buttons, and
 tapping the value in between lists every choice to pick from. Anything changed from normal shows in
-gold:
+gold. Rival Cars, Enemy Cars and Autopilot have a little (i) button beside them that says what they do:
 
 | Setting | Choices |
 | --- | --- |
-| Track | **Endless** (the default), the nine stages, the three stunt tracks and any stages saved into the game from the Stage Editor (before a run only) |
+| Track | **Endless** (the default), the nine stages, the three stunt tracks, **Flat** (dead flat ground, for ever both ways), **Battlefield** (gently rolling ground, for ever both ways, never far up or down: room for a fight) and any stages saved into the game from the Stage Editor (before a run only) |
 | Drive Power | ×½, ×1, ×1.5, ×2, ×3, ×5 |
 | Gravity | None, Moon, Low, Earth, High, Jupiter |
 | Air Spin | how hard the tilt keys turn the truck: ×½, ×1, ×2, ×4 |
@@ -183,7 +183,7 @@ gold:
 | Jump Power | ×½ to ×5 |
 | Air Jumps | jump again in mid-air |
 | Rival Cars | 0 to 8 trucks going your way, to race (they can't be wrecked) |
-| Enemy Cars | 0 to 8 trucks coming at you, to dodge or take out with missiles, rams and stomps |
+| Enemy Cars | 0 to 8 trucks coming at you, to dodge or take out with missiles, rams and stomps (your missiles go for an enemy car first, then a rival car, and a bird only with neither ahead in range) |
 | Birds | None, A Few, Lots, Flocks: they fly across the sky, over the hills; knock them out of it, or shoot them down (missiles home in on them; a hit one squawks, once for a missile however many it gets; a wrecked truck's loose wheels and body knock them down too). They never slow you down |
 | Tumbleweeds | None, A Few, Lots, Loads: a little smaller than a tyre, sitting on the ground, rolling down slopes and coming to rest in piles; light and airy: hit one and it's pushed along (with a rustle), land on one and it squirts out and up, and a blast throws it a long way; in the air they float down and soon stop spinning; a missile that meets one blows up on it (missiles never aim for them) |
 | Autopilot | Off; Land Level (tilts the truck in the air to land on its wheels); Cruise (that, and holds the gas); Drive Itself (drives as the rival cars do: leans to keep its nose down on climbs, backs up for a run-up when it's stuck, turns itself back over). Whatever you press takes over that much of it |
@@ -192,7 +192,7 @@ gold:
 
 Boost, jumps and missiles never run out, and there's no damage. On a stage, the enemy cars are
 spread out along it, and the finish line still ends the run, with your time (the clock runs from
-the first landing, or the first boost if that comes sooner). On Endless's course and the stunt tracks there's no finish,
+the first landing, or the first boost if that comes sooner). On Endless's course, Flat, Battlefield and the stunt tracks there's no finish,
 and the cars loop: one that's been out of sight for two seconds comes back just out of view.
 Cars never appear or vanish in view: new rival cars come in just out of view to your right, and
 cars taken away in Tweaks go once they're out of sight. Holding the boost roars like a rocket.

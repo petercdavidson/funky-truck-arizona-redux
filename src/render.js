@@ -12,13 +12,15 @@ import { TRIAL_ALL, TRIAL_STUNTS, formatTime, formatGap } from './trial.js';
 import { battleBack, battleFront, battleHud } from './render-battle.js';
 import { circles } from './battle.js';
 import { PAD_ACTIONS, padName } from './pad.js';
-import { cloudsNear, CRITTERS, skyAt, SKY, hash2, moonPhase, moonShadow } from './critters.js';
+import { cloudsNear, CLOUDS_FROM, CRITTERS, skyAt, SKY, hash2, moonPhase, moonShadow } from './critters.js';
 
 /**
  * Sandbox's layers of clouds, farthest first: each moves past at `depth` of the world's speed
  * (from 1/1000 for the farthest to 1/10 for the nearest, evenly spread in between by ratio),
  * and the farther off, the smaller, fainter and softer (`blur`, in stage px).
  */
+/** px of the view over which a cloud coming in at CLOUDS_FROM goes from nothing to all there. */
+const CLOUD_BASE_EDGE = 24;
 const CLOUD_LAYERS = [
   { depth: 0.001, size: 0.4, alpha: 0.3, blur: 5 },
   { depth: 0.0025, size: 0.5, alpha: 0.4, blur: 4.5 },
@@ -331,6 +333,12 @@ const sandboxRows = (tweaks) => SANDBOX_ROWS.filter((row) => !tweaks || row.live
 const SB_PER_COL = 8;
 const sbRow = (i, tall) => (tall ? { x: 20, y: 70 + 40 * i, w: 320, h: 34, lw: 136, bw: 38 }
   : { x: i < SB_PER_COL ? 28 : 302, y: 66 + 32 * (i % SB_PER_COL), w: 246, h: 27, lw: 104, bw: 26 });
+/** A setting row's (i) button, at the right of its label (the settings with an `info` note). */
+// (a tall screen's is drawn smaller than it is to tap: big enough for a finger)
+const sbInfo = (R, tall) => { const d = tall ? 30 : 18; return r(R.x + R.lw - d - (tall ? 4 : 5), R.y + (R.h - d) / 2, d, d); };
+/** The box of an open (i) note, and its OK button. */
+const sbInfoBox = (tall) => (tall ? r(20, 180, 320, 320) : r(88, 110, 400, 196));
+const sbInfoOk = (tall) => { const B = sbInfoBox(tall); return tall ? r(110, B.y + B.h - 54, 140, 40) : r(228, B.y + B.h - 36, 120, 26); };
 /** A setting row's value box, between its - and + buttons. */
 const sbValue = (R) => r(R.x + R.lw + R.bw + 3, R.y, R.w - R.lw - 2 * R.bw - 6, R.h);
 function sandboxButtons(tall, tweaks, extra = {}) {
@@ -341,6 +349,7 @@ function sandboxButtons(tall, tweaks, extra = {}) {
       { rect: r(R.x + R.lw, R.y, R.bw, R.h), label: '−', action: `sb:${row.key}:-1`, ...extra },
       { rect: sbValue(R), action: `sbPick:${row.key}` }, // the value: opens the list of choices
       { rect: r(R.x + R.w - R.bw, R.y, R.bw, R.h), label: '+', action: `sb:${row.key}:1`, ...extra },
+      ...(row.info ? [{ rect: sbInfo(R, tall), action: `sbInfo:${row.key}`, info: true }] : []),
     ];
   });
   const screen = tweaks ? 'sandboxTweaks' : 'sandbox';
@@ -349,6 +358,8 @@ function sandboxButtons(tall, tweaks, extra = {}) {
     rect: (g) => pickRect(g, i, tall, screen), label: (g) => choiceLabel(g, g.sandboxPick, i), action: `sbSet:${i}`,
     show: (g) => i < choiceCount(g, g.sandboxPick), picker: true, ...(tall ? { size: 14 } : {}),
   }));
+  // An open (i) note's OK
+  picks.push({ rect: sbInfoOk(tall), label: 'OK', action: 'sbPickClose', picker: true, show: (g) => !!g.sandboxInfo, ...(tall ? T_BIG : {}) });
   picks.push({ rect: r(0, 0, tall ? TALL_W : STAGE_W, 1000), action: 'sbPickClose', picker: true, noHover: true });
   const y = tall ? 70 + 40 * rows.length + 14 : 334;
   const big = tall ? T_BIG : {};
@@ -458,7 +469,7 @@ export function buttonsFor(screen, tall = false) {
 /** Which run this is, for the pause screen: "Play  ·  Stage Three", "Endless  ·  420 m", ... */
 export function runName(game) {
   if (game.mode === 'endless') return `Endless  ·  ${game.metres} m`;
-  if (game.mode === 'sandbox') return `Sandbox  ·  ${game.onCourse ? `Endless  ·  ${game.metres} m` : game.sandboxCustom ? game.customLevel.name : game.stageName(game.level)}`;
+  if (game.mode === 'sandbox') return `Sandbox  ·  ${game.onCourse ? `${game.courseName}  ·  ${game.metres} m` : game.sandboxCustom ? game.customLevel.name : game.stageName(game.level)}`;
   const R = game.rules, retro = R.retro && '2006 Mode', noDamage = !R.damage && 'no damage';
   const with_ = (name, rules) => (rules.filter(Boolean).length ? `${name}  (${rules.filter(Boolean).join(', ')})` : name);
   if (game.mode === 'trial') return with_(`Stages  ·  ${trialName(game, game.track)}`, [retro, noDamage, R.tricks === false && !R.retro && 'no tricks']);
@@ -493,7 +504,8 @@ export function trialName(game, track) { return track === TRIAL_ALL ? 'All Nine'
 /** A button's rect (some, like Sandbox's list of choices, depend on the game). */
 export const rectOf = (b, game) => (typeof b.rect === 'function' ? b.rect(game) : b.rect);
 /** Whether button b is showing: while Sandbox's list of choices is open, only its buttons are. */
-const showing = (b, game, picker = !!game?.sandboxPick) => (!b.show || b.show(game)) && !!b.picker === picker;
+const overlay = (game) => !!(game?.sandboxPick || game?.sandboxInfo);
+const showing = (b, game, picker = overlay(game)) => (!b.show || b.show(game)) && !!b.picker === picker;
 
 /** The button at (x, y) in menu coordinates (see Renderer.toMenu), or null. */
 /** The buttons a controller can move between on a screen: showing, not greyed out, not the picker's backdrop. */
@@ -579,7 +591,7 @@ export function statsColumns(game) {
     ['Clean landings', n(T.Clean)],
     ['Bails', n(S.bails)],
     ['Wrecks', n(S.wrecks)],
-    // the Esc easter egg: only listed once it's been found
+    // the wreck easter egg (Delete / Backspace): only listed once it's been found
     ...(S.selfWrecks > 0 ? [['Wrecked on purpose', n(S.selfWrecks)]] : []),
   ]];
 }
@@ -808,7 +820,7 @@ export class Renderer {
     this.centredLabel(label.toUpperCase(), (left + x + w - 6) / 2, y + h / 2, x + w - 6 - left, { size, weight: '800' });
   }
 
-  buttons(screen, game, picker = !!game?.sandboxPick) {
+  buttons(screen, game, picker = overlay(game)) {
     for (const b of buttonsFor(screen, this.tall)) {
       if (!showing(b, game, picker)) continue;
       const { x, y, w, h } = rectOf(b, game);
@@ -1007,9 +1019,14 @@ export class Renderer {
     this.backdrop(game, v);
     const zoom = game.rules.retro ? 1 : v.zoom || 1;
     const sky = game.rules.retro ? null : this.space(game, v);
-    // (Sandbox's clouds: none from the ground; they come in as you climb, and stop at the top of the weather)
-    const cloudFade = game.mode === 'sandbox' && !game.rules.retro ? skyAt((game.height || 0) / 1000).clouds : 0;
-    if (cloudFade > 0) this.clouds(game, v, zoom, cloudFade);
+    // (Sandbox's clouds: only above CLOUDS_FROM, shown from where that height is in the view up;
+    // they fade out at the top of the weather)
+    if (game.mode === 'sandbox' && !game.rules.retro) {
+      const top = skyAt((game.height || 0) / 1000).clouds;
+      // where CLOUDS_FROM is in the view (view px from its top)
+      const base = (game.levelData.start[1] - game.shiftTotal[1] - CLOUDS_FROM * 1000 / METRES_PER_TILE * TILE - v.camY) / zoom;
+      if (top > 0 && base > 0) this.clouds(game, v, zoom, top, base);
+    }
     this.tiles(game.levelData, v.camX, v.camY, zoom, game.mode === 'custom' || !!game.sandboxCustom);
     ctx.save();
     ctx.beginPath();
@@ -1187,9 +1204,11 @@ export class Renderer {
    * Sandbox's clouds: layers of them far off behind the world (`CLOUD_LAYERS`), each moving past
    * slower than it does (its `depth` of the world's speed) and zooming out less, and fixed in its
    * own far sky (in cloud space: the world with the course's scrolling taken out, times the
-   * depth), so you can see which way you're going with no ground in sight.
+   * depth), so you can see which way you're going with no ground in sight. Only clouds wholly
+   * above `base` (view px from the top: where CLOUDS_FROM is) show, so they come in from the top
+   * as you climb past it.
    */
-  clouds(game, v, zoom, fade = 1) {
+  clouds(game, v, zoom, fade = 1, base = Infinity) {
     const ctx = this.ctx, [sx, sy] = game.shiftTotal;
     // Flat white shapes, softened with a blur where the browser can (canvas filters).
     const canBlur = 'filter' in ctx;
@@ -1205,8 +1224,11 @@ export class Renderer {
       if (canBlur) ctx.filter = `blur(${(blur * this.scale).toFixed(1)}px)`;
       ctx.fillStyle = '#fff';
       for (const c of cloudsNear(x0 - 300, y0 - 200, x0 + w + 300, y0 + h + 200, 0, layer, 0.45, p)) {
+        // (it shows once its bottom is above `base`, in the view; it comes in quickly over BASE_EDGE px)
+        const above = (base - (c.y + c.bottom * size - y0) / cz) / CLOUD_BASE_EDGE;
+        if (above <= 0) continue;
         // its puffs filled as one shape
-        ctx.globalAlpha = c.alpha * 0.85 * alpha * fade;
+        ctx.globalAlpha = c.alpha * 0.85 * alpha * fade * Math.min(1, above);
         ctx.beginPath();
         for (const [dx, dy, r] of c.puffs) {
           const px = c.x + dx * size, py = c.y + dy * size, R = r * size;
@@ -1773,13 +1795,34 @@ export class Renderer {
     sandboxRows(tweaks).forEach((row, i) => {
       const R = sbRow(i, tall), V = sbValue(R);
       const label = { size: tall ? 15 : 12, weight: '700', align: 'left', baseline: 'middle', shadow };
-      this.fitText(row.name, R.x, R.y + R.h / 2 + 1, R.lw - 8, label);
+      this.fitText(row.name, R.x, R.y + R.h / 2 + 1, R.lw - (row.info ? (tall ? 36 : 26) : 8), label);
+      if (row.info) {
+        // its (i): a lowercase i in a circle
+        const I = sbInfo(R, tall), ctx = this.ctx, cxI = I.x + I.w / 2, cyI = I.y + I.h / 2;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = tall ? 2 : 1.5;
+        ctx.beginPath(); ctx.arc(cxI, cyI, tall ? 11.5 : 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.restore();
+        this.text('i', cxI, cyI + 1, { size: tall ? 16 : 12, weight: '800', font: 'Georgia, "Times New Roman", serif', baseline: 'middle' });
+      }
       this.roundRect(V.x, V.y, V.w, V.h, 4, 'rgba(0,0,0,0.22)');
       const v = choiceLabel(game, row.key, game.sandbox[row.key]);
       const changed = row.key !== 'course' && game.sandbox[row.key] !== row.dflt;
       this.centredLabel(v, V.x + V.w / 2, V.y + V.h / 2, V.w - 6, { size: tall ? 15 : 12, weight: '800', color: changed ? MILESTONE_GOLD : '#fff' });
     });
     this.buttons(screen, game, false);
+    if (game.sandboxInfo) {
+      // An open (i) note: what the setting does, over the settings.
+      const row = SANDBOX_ROW[game.sandboxInfo];
+      this.ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      this.ctx.fillRect(-1000, -1000, 4000, 4000);
+      const B = sbInfoBox(tall);
+      this.roundRect(B.x, B.y, B.w, B.h, 10, BOX_FILL, BOX_EDGE);
+      this.text(row.name, cx, B.y + (tall ? 12 : 9), { size: tall ? 19 : 15, weight: '900' });
+      this.wrapText(row.info, cx, B.y + (tall ? 48 : 36), B.w - (tall ? 30 : 36), { size: tall ? 15 : 12, weight: '600' }, tall ? 21 : 16.5);
+      this.buttons(screen, game, true);
+      return;
+    }
     const key = game.sandboxPick;
     if (!key) return;
     // The list of choices, over the settings: the one chosen now is ringed in gold.
@@ -2002,7 +2045,7 @@ export class Renderer {
     this.overlayDim(0.3);
     const name = { weight: '700', color: 'rgba(255,255,255,0.9)' };
     const big = { weight: '900' };
-    const hint = this.touchMode ? '' : 'Press P to resume play';
+    const hint = this.touchMode ? '' : 'Press P or Esc to resume play';
     if (this.tall) {
       const cx = TALL_W / 2;
       this.fitText(runName(game), cx, 24, 340, { ...name, size: 18 });

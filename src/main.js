@@ -116,17 +116,14 @@ function chooseMode() {
 }
 
 /**
- * Esc: in Classic and a Time Trial run that could set a time, pause; otherwise the easter egg
- * first (outside 2006 Mode, a truck being driven is wrecked on the spot, and its pieces tumble; in
- * Time Trial it can't finish the stage after), then back a level as usual.
+ * Esc: while driving, pause (and resume); otherwise back a level as usual. (The easter egg, a
+ * truck wrecked on the spot, is Delete or Backspace: `wreckKey`.)
  */
 function escape() {
-  // Classic and a Time Trial run that could set a time: Esc pauses (and resumes) instead.
-  if (game.escPauses && (game.screen === 'playing' || game.screen === 'paused')) { game.togglePause(); return; }
-  if (game.screen === 'playing' && game.selfWreck()) { sound.play('wreck'); return; }
+  if (game.screen === 'playing' || game.screen === 'paused') { game.togglePause(); return; }
   if (game.screen === 'classicSelect') { doAction('play'); return; }
   if (game.screen === 'padMap') { if (game.padListen) game.padListen = null; else doAction('options'); return; }
-  if (game.sandboxPick) { doAction('sbPickClose'); return; }
+  if (game.sandboxPick || game.sandboxInfo) { doAction('sbPickClose'); return; }
   if (game.screen === 'pauseOptions') { doAction('pauseBack'); return; }
   if (game.screen === 'cameraOptions' || game.screen === 'pauseCamera') { game.closeCamera(); return; }
   if (game.screen === 'sandboxTweaks') { doAction('tweaksBack'); return; }
@@ -152,10 +149,14 @@ function onKey(e, down) {
     return;
   }
   const name = KEY_MAP[e.code];
-  if (name || e.code === 'Escape' || PRESS_KEYS[e.code]) e.preventDefault();
+  const wreckKey = (e.code === 'Delete' || e.code === 'Backspace') && game?.screen === 'playing';
+  if (name || e.code === 'Escape' || PRESS_KEYS[e.code] || wreckKey) e.preventDefault();
   if (down) setTouchMode(false);
   if (down && !e.repeat) {
     if (e.code === 'Escape') { escape(); return; }
+    // the easter egg: outside 2006 Mode, the truck being driven is wrecked on the spot (in Classic
+    // and Time Trial it can't finish the stage after)
+    if (wreckKey) { if (game.selfWreck()) sound.play('wreck'); return; }
     if (e.code === 'KeyF') { toggleFullscreen(); return; }
     if (e.code === 'KeyM') { doAction('sound'); return; }
     if (PRESS_KEYS[e.code]) { game.press(PRESS_KEYS[e.code]); return; }
@@ -233,7 +234,7 @@ function goMenu() {
 }
 
 function doAction(a) {
-  const screen0 = game.screen, pick0 = game.sandboxPick, held = renderer.padHover ? renderer.hover : null;
+  const screen0 = game.screen, pick0 = game.sandboxPick, info0 = game.sandboxInfo, held = renderer.padHover ? renderer.hover : null;
   if (a === 'sound') {
     game.toggle('soundOn');
     sound.setEnabled(game.soundOn);
@@ -272,7 +273,8 @@ function doAction(a) {
   else if (a.startsWith('sb:')) { const [, key, d] = a.split(':'); game.stepSandbox(key, Number(d)); }
   else if (a.startsWith('sbPick:')) game.pickSandbox(a.slice(7));
   else if (a.startsWith('sbSet:')) game.setSandbox(game.sandboxPick, Number(a.slice(6)));
-  else if (a === 'sbPickClose') game.pickSandbox(null);
+  else if (a === 'sbPickClose') { game.pickSandbox(null); game.infoSandbox(null); }
+  else if (a.startsWith('sbInfo:')) game.infoSandbox(a.slice(7));
   else if (a === 'tweaks') game.openTweaks();
   else if (a === 'tweaksBack') game.closeTweaks();
   else if (a === 'endRun') game.endRun();
@@ -299,7 +301,9 @@ function doAction(a) {
   // closing it goes back to the setting it was opened from.
   if (held && game.screen === screen0) {
     const nav = navButtons(game.screen, game, renderer.tall), find = (act) => nav.find((b) => b.action === act);
-    if (game.sandboxPick === pick0) renderer.hover = nav.includes(held) ? held : null;
+    if (game.sandboxInfo) renderer.hover = find('sbPickClose') || null;
+    else if (info0) renderer.hover = find(`sbInfo:${info0}`) || null;
+    else if (game.sandboxPick === pick0) renderer.hover = nav.includes(held) ? held : null;
     else if (game.sandboxPick) renderer.hover = find(`sbSet:${game.sandbox[game.sandboxPick]}`) || null;
     else renderer.hover = find(`sbPick:${pick0}`) || null;
   }
@@ -475,7 +479,7 @@ document.addEventListener('dblclick', (e) => e.preventDefault());
 for (const ev of ['touchstart', 'touchend']) {
   document.addEventListener(ev, (e) => { if (e.cancelable) e.preventDefault(); }, { passive: false });
 }
-// Four fingers down at once while driving: the Esc easter egg's wreck (where it applies).
+// Four fingers down at once while driving: the wreck easter egg (where it applies).
 document.addEventListener('touchstart', (e) => {
   if (e.touches.length >= 4 && game?.screen === 'playing' && game.selfWreck()) sound.play('wreck');
 }, { passive: true });
@@ -681,8 +685,8 @@ function countFrame(now) {
 /** With a controller or the arrow keys in use, a menu just opened has its first button highlighted. */
 let navScreen = '', navPick = null;
 function highlightNewMenu() {
-  if (game.screen === navScreen && game.sandboxPick === navPick) return;
-  navScreen = game.screen; navPick = game.sandboxPick;
+  if (game.screen === navScreen && (game.sandboxPick || game.sandboxInfo) === navPick) return;
+  navScreen = game.screen; navPick = game.sandboxPick || game.sandboxInfo;
   if (!navInput || game.screen === 'playing') return;
   const list = navButtons(game.screen, game, renderer.tall);
   if (list.includes(renderer.hover)) { renderer.padHover = true; return; }

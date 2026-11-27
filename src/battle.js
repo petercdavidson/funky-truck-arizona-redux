@@ -581,13 +581,21 @@ export class Battle {
       // Steering: yours home in on the nearest enemy ahead of them; theirs drift towards you.
       let target = null;
       if (m.owner === 'you') {
-        let bestD = BATTLE.missile.range;
-        // (and Sandbox's birds: the nearest of them all ahead; never its tumbleweeds, though they blow up on one)
-        const aims = (this.enemies.length ? this.enemies : this.racers).filter((e) => !e.wreck).map((e) => e.centre);
-        for (const b of g.critters?.flying || []) aims.push([b.x, b.y]);
-        for (const [ex, ey] of aims) {
-          const d = Math.hypot(ex - m.x, ey - m.y);
-          if (d < bestD && Math.abs(wrapAngle(Math.atan2(ey - m.y, ex - m.x) - m.ang)) < BATTLE.missile.cone) { bestD = d; target = [ex, ey]; }
+        // Enemy cars first, then rival cars, and only with neither ahead in range, Sandbox's birds
+        // (never its tumbleweeds, though they blow up on one): the nearest ahead of the first of
+        // those with any.
+        const groups = [
+          this.enemies.filter((e) => !e.wreck).map((e) => e.centre),
+          this.racers.filter((e) => !e.wreck).map((e) => e.centre),
+          (g.critters?.flying || []).map((b) => [b.x, b.y]),
+        ];
+        for (const aims of groups) {
+          let bestD = BATTLE.missile.range;
+          for (const [ex, ey] of aims) {
+            const d = Math.hypot(ex - m.x, ey - m.y);
+            if (d < bestD && Math.abs(wrapAngle(Math.atan2(ey - m.y, ex - m.x) - m.ang)) < BATTLE.missile.cone) { bestD = d; target = [ex, ey]; }
+          }
+          if (target) break;
         }
       } else if (you) target = you.centre();
       if (target) {
